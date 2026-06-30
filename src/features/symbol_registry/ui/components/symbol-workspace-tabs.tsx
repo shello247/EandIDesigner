@@ -1,0 +1,92 @@
+"use client";
+
+import { useState } from "react";
+import { FileText, LayoutDashboard, NotebookPen } from "lucide-react";
+import type { SymbolDetail, SymbolVersionSummary } from "../../types";
+import { EngineerNotesPanel } from "./engineer-notes-panel";
+import { SvgPreviewPanel } from "./svg-preview-panel";
+import { SymbolDocumentsPanel } from "./symbol-documents-panel";
+import { TerminalMapTable } from "./terminal-map-table";
+import { ValidationPanel } from "./validation-panel";
+
+type WorkspaceTab = "overview" | "engineer_notes" | "documents";
+
+const tabs: Array<{
+  key: WorkspaceTab;
+  label: string;
+  icon: typeof LayoutDashboard;
+}> = [
+  { key: "overview", label: "Overview", icon: LayoutDashboard },
+  { key: "engineer_notes", label: "Engineer Notes", icon: NotebookPen },
+  { key: "documents", label: "Documents", icon: FileText }
+];
+
+export function SymbolWorkspaceTabs({
+  symbol,
+  latest
+}: {
+  symbol: SymbolDetail;
+  latest: SymbolVersionSummary;
+}) {
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap gap-2 border-b border-slate-200" role="tablist">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.key;
+
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              className={[
+                "inline-flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors",
+                isActive
+                  ? "border-teal-600 text-teal-700"
+                  : "border-transparent text-slate-500 hover:text-slate-900"
+              ].join(" ")}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              <Icon aria-hidden="true" size={14} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === "overview" ? (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
+          <SvgPreviewPanel
+            svg={latest.svg}
+            title={`Version ${latest.versionNumber}`}
+            metadata={latest.metadata}
+          />
+          <div className="space-y-5">
+            <TerminalMapTable versionId={latest.id} metadata={latest.metadata} />
+            <ValidationPanel issues={symbol.validationIssues} />
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "engineer_notes" ? (
+        <EngineerNotesPanel
+          symbolId={symbol.id}
+          versionId={latest.id}
+          notes={symbol.engineerNotes}
+        />
+      ) : null}
+
+      {activeTab === "documents" ? (
+        <SymbolDocumentsPanel
+          symbolId={symbol.id}
+          versionId={latest.id}
+          documents={symbol.documents}
+        />
+      ) : null}
+    </div>
+  );
+}

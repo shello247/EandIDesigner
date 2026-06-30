@@ -1,0 +1,46 @@
+import type { SymbolCategory, SymbolMetadata } from "@/features/symbol_registry/data/schema";
+import type {
+  DrawingModel,
+  DrawingStatus,
+  DrawingValidationIssue
+} from "../data/schema";
+
+export type ApprovedDrawingSymbol = {
+  symbolId: string;
+  symbolKey: string;
+  displayName: string;
+  manufacturer?: string | null;
+  model?: string | null;
+  category: SymbolCategory;
+  versionId: string;
+  versionNumber: number;
+  svg: string;
+  metadata: SymbolMetadata;
+};
+
+export type DrawingListItem = {
+  id: string;
+  drawingKey: string;
+  title: string;
+  status: DrawingStatus;
+  placementCount: number;
+  connectionCount: number;
+  blockingIssueCount: number;
+  updatedAt: string;
+};
+
+export type DrawingDetail = {
+  id: string;
+  drawingKey: string;
+  title: string;
+  status: DrawingStatus;
+  model: DrawingModel;
+  validationIssues: DrawingValidationIssue[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ActionResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string };
+

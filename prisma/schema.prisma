@@ -1,0 +1,147 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Symbol {
+  id               String                  @id @default(cuid())
+  symbolKey        String                  @unique
+  displayName      String
+  manufacturer     String?
+  model            String?
+  category         String
+  status           String                  @default("draft")
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  versions         SymbolVersion[]
+  sourceAssets     SymbolSourceAsset[]
+  validationIssues SymbolValidationIssue[]
+  engineerNotes    SymbolEngineerNote[]
+  documents        SymbolDocument[]
+
+  @@index([status])
+  @@index([category])
+}
+
+model SymbolVersion {
+  id                 String                  @id @default(cuid())
+  symbolId           String
+  symbol             Symbol                  @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+  versionNumber      Int
+  status             String                  @default("needs_review")
+  svg                String
+  metadataJson       String
+  sourceInputSummary String?
+  aiResponseId       String?
+  createdAt          DateTime                @default(now())
+  sourceAssets       SymbolSourceAsset[]
+  validationIssues   SymbolValidationIssue[]
+  engineerNotes      SymbolEngineerNote[]
+  documents          SymbolDocument[]
+
+  @@unique([symbolId, versionNumber])
+  @@index([symbolId, status])
+}
+
+model SymbolValidationIssue {
+  id        String         @id @default(cuid())
+  symbolId  String
+  versionId String?
+  symbol    Symbol         @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+  version   SymbolVersion? @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  severity  String
+  code      String
+  message   String
+  path      String?
+  createdAt DateTime       @default(now())
+
+  @@index([symbolId])
+  @@index([versionId])
+  @@index([severity])
+}
+
+model SymbolSourceAsset {
+  id        String         @id @default(cuid())
+  symbolId  String?
+  versionId String?
+  symbol    Symbol?        @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+  version   SymbolVersion? @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  fileName  String
+  mimeType  String
+  sizeBytes Int
+  dataUrl   String?
+  createdAt DateTime       @default(now())
+
+  @@index([symbolId])
+  @@index([versionId])
+}
+
+model SymbolEngineerNote {
+  id            String         @id @default(cuid())
+  symbolId      String
+  versionId     String?
+  symbol        Symbol         @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+  version       SymbolVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
+  notes         String
+  imageFileName String?
+  imageMimeType String?
+  imageSizeBytes Int?
+  imageDataUrl  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([symbolId])
+  @@index([versionId])
+  @@index([createdAt])
+}
+
+model SymbolDocument {
+  id          String         @id @default(cuid())
+  symbolId    String
+  versionId   String?
+  symbol      Symbol         @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+  version     SymbolVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
+  title       String
+  fileName    String
+  mimeType    String
+  sizeBytes   Int
+  dataUrl     String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([symbolId])
+  @@index([versionId])
+  @@index([createdAt])
+}
+
+model Drawing {
+  id               String                   @id @default(cuid())
+  drawingKey       String                   @unique
+  title            String
+  status           String                   @default("draft")
+  modelJson        String
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  validationIssues DrawingValidationIssue[]
+
+  @@index([status])
+  @@index([updatedAt])
+}
+
+model DrawingValidationIssue {
+  id        String   @id @default(cuid())
+  drawingId String
+  drawing   Drawing  @relation(fields: [drawingId], references: [id], onDelete: Cascade)
+  severity  String
+  code      String
+  message   String
+  path      String?
+  createdAt DateTime @default(now())
+
+  @@index([drawingId])
+  @@index([severity])
+}

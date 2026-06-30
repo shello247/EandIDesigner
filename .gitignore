@@ -1,0 +1,17 @@
+node_modules/
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.log
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+prisma/migrations/
+next-env.d.ts
