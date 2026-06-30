@@ -1,6 +1,6 @@
 import type { DrawingModel } from "../../../data/schema";
 import type { ViewportSize } from "../../../logic/services/viewport-transform";
-import type { AnchorHotspot } from "../types";
+import type { AnchorHotspot, PlacementResizeState } from "../types";
 
 export const MIN_PLACEMENT_SCALE = 0.05;
 export const MAX_PLACEMENT_SCALE = 6;
@@ -32,6 +32,42 @@ export function snap(value: number, gridSize: number): number {
 
 export function clampPlacementScale(scale: number): number {
   return Math.min(MAX_PLACEMENT_SCALE, Math.max(MIN_PLACEMENT_SCALE, scale));
+}
+
+export function calculatePlacementResizeUpdate(
+  resizeState: PlacementResizeState,
+  pointer: { x: number; y: number }
+) {
+  const horizontalDistance =
+    resizeState.handle === "nw" || resizeState.handle === "sw"
+      ? resizeState.fixedPoint.x - pointer.x
+      : pointer.x - resizeState.fixedPoint.x;
+  const verticalDistance =
+    resizeState.handle === "nw" || resizeState.handle === "ne"
+      ? resizeState.fixedPoint.y - pointer.y
+      : pointer.y - resizeState.fixedPoint.y;
+  const nextScale = clampPlacementScale(
+    Math.max(
+      horizontalDistance / resizeState.baseSize.width,
+      verticalDistance / resizeState.baseSize.height
+    )
+  );
+  const nextWidth = resizeState.baseSize.width * nextScale;
+  const nextHeight = resizeState.baseSize.height * nextScale;
+  const nextX =
+    resizeState.handle === "nw" || resizeState.handle === "sw"
+      ? resizeState.fixedPoint.x - nextWidth
+      : resizeState.fixedPoint.x;
+  const nextY =
+    resizeState.handle === "nw" || resizeState.handle === "ne"
+      ? resizeState.fixedPoint.y - nextHeight
+      : resizeState.fixedPoint.y;
+
+  return {
+    x: Number(nextX.toFixed(2)),
+    y: Number(nextY.toFixed(2)),
+    scale: Number(nextScale.toFixed(3))
+  };
 }
 
 export function getViewportSize(element: HTMLDivElement): ViewportSize {

@@ -23,6 +23,24 @@ export type PlacementResizeState = {
   baseSize: { width: number; height: number };
 };
 
+export type PanState = {
+  pointerId: number;
+  startPointer: { x: number; y: number };
+  startPan: { panX: number; panY: number };
+};
+
+export type RouteDragState = {
+  connectionId: string;
+  pointId: string;
+  pointerId: number;
+};
+
+export type RouteLabelDragState = {
+  connectionId: string;
+  pointerId: number;
+  labelOffset: { x: number; y: number };
+};
+
 export type AnchorHotspot = {
   id: string;
   placementId: string;

@@ -8,8 +8,7 @@ import {
   useState,
   type Dispatch,
   type PointerEvent,
-  type SetStateAction,
-  type WheelEvent
+  type SetStateAction
 } from "react";
 import type { DrawingModel } from "../../data/schema";
 import type {
@@ -19,12 +18,7 @@ import type {
 import type { ApprovedDrawingSymbol } from "../../types";
 import { getAnchorWorldPoint } from "../../logic/services/drawing-geometry";
 import { renderDrawingToSvg } from "../../logic/services/drawing-svg-renderer";
-import {
-  addRouteControlPoint,
-  removeRouteControlPoint,
-  updateRouteLabelPosition,
-  updateRoutePoint
-} from "../../logic/services/connection-route-geometry";
+import { addRouteControlPoint } from "../../logic/services/connection-route-geometry";
 import {
   getRenderableConnectionRoute,
   routeLabelBox
@@ -33,7 +27,6 @@ import {
   calculateFitTransform,
   clampZoom,
   type ViewportTransform,
-  zoomAtPoint,
   zoomAtViewportCenter
 } from "../../logic/services/viewport-transform";
 import { AnchorOverlay, AnchorTooltip } from "../canvas/AnchorOverlay";
@@ -41,37 +34,21 @@ import { PlacementOverlay } from "../canvas/PlacementOverlay";
 import { RouteHandlesOverlay } from "../canvas/RouteHandlesOverlay";
 import { RouteLabelOverlay } from "../canvas/RouteLabelOverlay";
 import { useCanvasKeyboardShortcuts } from "../canvas/hooks/useCanvasKeyboardShortcuts";
+import { usePlacementResize } from "../canvas/hooks/usePlacementResize";
+import { useRouteLabelDrag } from "../canvas/hooks/useRouteLabelDrag";
+import { useRoutePointDrag } from "../canvas/hooks/useRoutePointDrag";
+import { useViewportPan } from "../canvas/hooks/useViewportPan";
 import type {
   ConnectionDraft,
   ConnectionSegment,
-  DragState,
-  PlacementResizeState
+  DragState
 } from "../canvas/types";
 import {
-  clampPlacementScale,
   getViewportSize,
   packageKey,
   toSvgPoint
 } from "../canvas/utils/canvasGeometry";
 import { DrawingViewportToolbar } from "./drawing-viewport-toolbar";
-
-type PanState = {
-  pointerId: number;
-  startPointer: { x: number; y: number };
-  startPan: { panX: number; panY: number };
-};
-
-type RouteDragState = {
-  connectionId: string;
-  pointId: string;
-  pointerId: number;
-};
-
-type RouteLabelDragState = {
-  connectionId: string;
-  pointerId: number;
-  labelOffset: { x: number; y: number };
-};
 
 const SHEET_PIXEL_SCALE = 2;
 const ZOOM_STEP = 1.2;
@@ -127,15 +104,10 @@ export function SvgDrawingSurface({
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const didInitialFitRef = useRef(false);
-  const resizeStateRef = useRef<PlacementResizeState | null>(null);
-  const panStateRef = useRef<PanState | null>(null);
-  const routeDragStateRef = useRef<RouteDragState | null>(null);
-  const routeLabelDragStateRef = useRef<RouteLabelDragState | null>(null);
   const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null);
   const [selectedRoutePointId, setSelectedRoutePointId] = useState<string | null>(
     null
   );
-  const [isPanning, setIsPanning] = useState(false);
   const sheetPixelSize = useMemo(
     () => ({
       width: model.sheet.width * SHEET_PIXEL_SCALE,
@@ -321,86 +293,18 @@ export function SvgDrawingSurface({
     return () => observer.disconnect();
   }, [setViewportTransform, sheetPixelSize]);
 
-  const handleWheel = useCallback(
-    (event: WheelEvent<HTMLDivElement>) => {
-      event.preventDefault();
-
-      const rect = event.currentTarget.getBoundingClientRect();
-
-      if (event.ctrlKey) {
-        const pointerX = event.clientX - rect.left;
-        const pointerY = event.clientY - rect.top;
-
-        setViewportTransform((current) =>
-          zoomAtPoint({
-            current,
-            nextZoom: clampZoom(current.zoom * Math.exp(-event.deltaY * 0.0015)),
-            pointerX,
-            pointerY
-          })
-        );
-        return;
-      }
-
-      setViewportTransform((current) => ({
-        ...current,
-        panX: Number((current.panX - event.deltaX).toFixed(3)),
-        panY: Number((current.panY - event.deltaY).toFixed(3))
-      }));
-    },
-    [setViewportTransform]
-  );
-
-  const endMiddleButtonPan = useCallback(() => {
-    panStateRef.current = null;
-    setIsPanning(false);
-  }, []);
-
-  const startMiddleButtonPan = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      if (event.button !== 1) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      viewportRef.current?.focus();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      setActiveAnchorId(null);
-      setIsPanning(true);
-      panStateRef.current = {
-        pointerId: event.pointerId,
-        startPointer: { x: event.clientX, y: event.clientY },
-        startPan: {
-          panX: viewportTransform.panX,
-          panY: viewportTransform.panY
-        }
-      };
-    },
-    [viewportTransform.panX, viewportTransform.panY]
-  );
-
-  const updateMiddleButtonPan = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      const panState = panStateRef.current;
-
-      if (!panState || panState.pointerId !== event.pointerId) {
-        return;
-      }
-
-      event.preventDefault();
-      setViewportTransform((current) => ({
-        ...current,
-        panX: Number(
-          (panState.startPan.panX + event.clientX - panState.startPointer.x).toFixed(3)
-        ),
-        panY: Number(
-          (panState.startPan.panY + event.clientY - panState.startPointer.y).toFixed(3)
-        )
-      }));
-    },
-    [setViewportTransform]
-  );
+  const {
+    isPanning,
+    handleWheel,
+    startMiddleButtonPan,
+    updateMiddleButtonPan,
+    endMiddleButtonPan
+  } = useViewportPan({
+    viewportRef,
+    viewportTransform,
+    setViewportTransform,
+    onActiveAnchorChange: setActiveAnchorId
+  });
 
   const updateConnectionPointer = useCallback(
     (event: PointerEvent<SVGElement>) => {
@@ -413,144 +317,38 @@ export function SvgDrawingSurface({
     [connectionDraft.from, connectionMode, model.sheet, onConnectionPointerMove]
   );
 
-  const updateDraggedRoutePoint = useCallback(
-    (event: PointerEvent<SVGElement>) => {
-      const routeDragState = routeDragStateRef.current;
-
-      if (!routeDragState || routeDragState.pointerId !== event.pointerId) {
-        return;
-      }
-
-      const segment = connectionSegments.find(
-        (candidate) => candidate.connection.id === routeDragState.connectionId
-      );
-
-      if (!segment) {
-        return;
-      }
-
-      event.preventDefault();
-      onConnectionRouteChange(
-        routeDragState.connectionId,
-        updateRoutePoint({
-          route: segment.route,
-          pointId: routeDragState.pointId,
-          point: toSvgPoint(event, model.sheet),
-          sheet: model.sheet
-        })
-      );
-    },
-    [connectionSegments, model.sheet, onConnectionRouteChange]
-  );
-
-  const updateDraggedRouteLabel = useCallback(
-    (event: PointerEvent<SVGElement>) => {
-      const routeLabelDragState = routeLabelDragStateRef.current;
-
-      if (
-        !routeLabelDragState ||
-        routeLabelDragState.pointerId !== event.pointerId
-      ) {
-        return;
-      }
-
-      const segment = connectionSegments.find(
-        (candidate) =>
-          candidate.connection.id === routeLabelDragState.connectionId
-      );
-
-      if (!segment) {
-        return;
-      }
-
-      event.preventDefault();
-      const pointer = toSvgPoint(event, model.sheet);
-      onConnectionRouteChange(
-        routeLabelDragState.connectionId,
-        updateRouteLabelPosition({
-          route: segment.route,
-          point: {
-            x: pointer.x + routeLabelDragState.labelOffset.x,
-            y: pointer.y + routeLabelDragState.labelOffset.y
-          },
-          sheet: model.sheet
-        })
-      );
-    },
-    [connectionSegments, model.sheet, onConnectionRouteChange]
-  );
-
-  const handleRoutePointPointerDown = useCallback(
-    (pointId: string, event: PointerEvent<SVGRectElement>) => {
-      if (event.button !== 0 || !selectedConnectionSegment) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      viewportRef.current?.focus();
-      onConnectionSelect(selectedConnectionSegment.connection.id);
-      setSelectedRoutePointId(pointId);
-      routeDragStateRef.current = {
-        connectionId: selectedConnectionSegment.connection.id,
-        pointId,
-        pointerId: event.pointerId
-      };
-    },
-    [onConnectionSelect, selectedConnectionSegment]
-  );
-
-  const endRoutePointDrag = useCallback(() => {
-    routeDragStateRef.current = null;
+  const focusCanvas = useCallback(() => {
+    viewportRef.current?.focus();
   }, []);
 
-  const deleteRoutePoint = useCallback(
-    (pointId: string) => {
-      if (!selectedConnectionSegment) {
-        return;
-      }
+  const {
+    updateDraggedRoutePoint,
+    handleRoutePointPointerDown,
+    endRoutePointDrag,
+    deleteRoutePoint
+  } = useRoutePointDrag({
+    model,
+    connectionSegments,
+    selectedConnectionSegment,
+    onFocusCanvas: focusCanvas,
+    onConnectionSelect,
+    onConnectionRouteChange,
+    setSelectedRoutePointId
+  });
 
-      routeDragStateRef.current = null;
-      onConnectionRouteChange(
-        selectedConnectionSegment.connection.id,
-        removeRouteControlPoint(selectedConnectionSegment.route, pointId)
-      );
-      setSelectedRoutePointId(null);
-    },
-    [onConnectionRouteChange, selectedConnectionSegment]
-  );
-
-  const handleRouteLabelPointerDown = useCallback(
-    (
-      handlePoint: { x: number; y: number },
-      event: PointerEvent<SVGCircleElement>
-    ) => {
-      if (event.button !== 0 || !selectedConnectionSegment) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      viewportRef.current?.focus();
-      onConnectionSelect(selectedConnectionSegment.connection.id);
-      setSelectedRoutePointId(null);
-      routeLabelDragStateRef.current = {
-        connectionId: selectedConnectionSegment.connection.id,
-        pointerId: event.pointerId,
-        labelOffset: {
-          x: selectedConnectionSegment.labelPoint.x - handlePoint.x,
-          y: selectedConnectionSegment.labelPoint.y - handlePoint.y
-        }
-      };
-    },
-    [onConnectionSelect, selectedConnectionSegment]
-  );
-
-  const endRouteLabelDrag = useCallback(() => {
-    routeLabelDragStateRef.current = null;
-  }, []);
+  const {
+    updateDraggedRouteLabel,
+    handleRouteLabelPointerDown,
+    endRouteLabelDrag
+  } = useRouteLabelDrag({
+    model,
+    connectionSegments,
+    selectedConnectionSegment,
+    onFocusCanvas: focusCanvas,
+    onConnectionSelect,
+    onConnectionRouteChange,
+    setSelectedRoutePointId
+  });
 
   const selectHotspotPlacement = useCallback(
     (event: PointerEvent<SVGSVGElement>) => {
@@ -577,74 +375,15 @@ export function SvgDrawingSurface({
     [connectionMode, onConnectionSelect, onSelectPlacement]
   );
 
-  const updatePlacementFromResize = useCallback(
-    (event: PointerEvent<SVGElement>) => {
-      const resizeState = resizeStateRef.current;
-
-      if (!resizeState) {
-        return;
-      }
-
-      const placement = model.placements.find(
-        (candidate) => candidate.id === resizeState.placementId
-      );
-      const symbol = placement
-        ? symbolsByKey.get(packageKey(placement.symbolId, placement.versionId))
-        : undefined;
-
-      if (!placement || !symbol) {
-        return;
-      }
-
-      const pointer = toSvgPoint(event, model.sheet);
-      const horizontalDistance =
-        resizeState.handle === "nw" || resizeState.handle === "sw"
-          ? resizeState.fixedPoint.x - pointer.x
-          : pointer.x - resizeState.fixedPoint.x;
-      const verticalDistance =
-        resizeState.handle === "nw" || resizeState.handle === "ne"
-          ? resizeState.fixedPoint.y - pointer.y
-          : pointer.y - resizeState.fixedPoint.y;
-      const nextScale = clampPlacementScale(
-        Math.max(
-          horizontalDistance / resizeState.baseSize.width,
-          verticalDistance / resizeState.baseSize.height
-        )
-      );
-      const nextWidth = resizeState.baseSize.width * nextScale;
-      const nextHeight = resizeState.baseSize.height * nextScale;
-      const nextX =
-        resizeState.handle === "nw" || resizeState.handle === "sw"
-          ? resizeState.fixedPoint.x - nextWidth
-          : resizeState.fixedPoint.x;
-      const nextY =
-        resizeState.handle === "nw" || resizeState.handle === "ne"
-          ? resizeState.fixedPoint.y - nextHeight
-          : resizeState.fixedPoint.y;
-
-      onPlacementChange(resizeState.placementId, {
-        x: Number(nextX.toFixed(2)),
-        y: Number(nextY.toFixed(2)),
-        scale: Number(nextScale.toFixed(3))
-      });
-    },
-    [model.placements, model.sheet, onPlacementChange, symbolsByKey]
-  );
-
-  const focusCanvas = useCallback(() => {
-    viewportRef.current?.focus();
-  }, []);
-
-  const handlePlacementResizeStart = useCallback(
-    (state: PlacementResizeState) => {
-      resizeStateRef.current = state;
-    },
-    []
-  );
-
-  const endPlacementResize = useCallback(() => {
-    resizeStateRef.current = null;
-  }, []);
+  const {
+    handlePlacementResizeStart,
+    updatePlacementFromResize,
+    endPlacementResize
+  } = usePlacementResize({
+    model,
+    symbolsByKey,
+    onPlacementChange
+  });
 
   const clearCanvasSelection = useCallback(() => {
     onSelectPlacement(undefined);
