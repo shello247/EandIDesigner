@@ -13,19 +13,11 @@ import {
 } from "react";
 import type { DrawingModel } from "../../data/schema";
 import type {
-  DrawingConnection,
   DrawingConnectionRoute,
   DrawingEndpoint
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
-import type {
-  SymbolAnchor,
-  SymbolTerminal
-} from "@/features/symbol_registry/data/schema";
-import {
-  getAnchorWorldPoint,
-  getPlacementBounds
-} from "../../logic/services/drawing-geometry";
+import { getAnchorWorldPoint } from "../../logic/services/drawing-geometry";
 import { renderDrawingToSvg } from "../../logic/services/drawing-svg-renderer";
 import {
   addRouteControlPoint,
@@ -35,62 +27,38 @@ import {
 } from "../../logic/services/connection-route-geometry";
 import {
   getRenderableConnectionRoute,
-  routeLabelBox,
-  visibleRouteControlPoints
+  routeLabelBox
 } from "../../logic/services/connection-route-renderer";
 import {
   calculateFitTransform,
   clampZoom,
-  type ViewportSize,
   type ViewportTransform,
   zoomAtPoint,
   zoomAtViewportCenter
 } from "../../logic/services/viewport-transform";
+import { AnchorOverlay, AnchorTooltip } from "../canvas/AnchorOverlay";
+import { PlacementOverlay } from "../canvas/PlacementOverlay";
+import { RouteHandlesOverlay } from "../canvas/RouteHandlesOverlay";
+import { RouteLabelOverlay } from "../canvas/RouteLabelOverlay";
+import { useCanvasKeyboardShortcuts } from "../canvas/hooks/useCanvasKeyboardShortcuts";
+import type {
+  ConnectionDraft,
+  ConnectionSegment,
+  DragState,
+  PlacementResizeState
+} from "../canvas/types";
+import {
+  clampPlacementScale,
+  getViewportSize,
+  packageKey,
+  toSvgPoint
+} from "../canvas/utils/canvasGeometry";
 import { DrawingViewportToolbar } from "./drawing-viewport-toolbar";
-
-type DragState = {
-  placementId: string;
-  startPointer: { x: number; y: number };
-  startPlacement: { x: number; y: number };
-};
-
-type ResizeHandle = "nw" | "ne" | "sw" | "se";
-
-type ResizeState = {
-  placementId: string;
-  handle: ResizeHandle;
-  fixedPoint: { x: number; y: number };
-  baseSize: { width: number; height: number };
-};
 
 type PanState = {
   pointerId: number;
   startPointer: { x: number; y: number };
   startPan: { panX: number; panY: number };
-};
-
-type AnchorHotspot = {
-  id: string;
-  placementId: string;
-  placementTag: string;
-  symbolName: string;
-  symbolModel?: string | null;
-  anchor: SymbolAnchor;
-  terminal?: SymbolTerminal;
-  point: { x: number; y: number };
-};
-
-type ConnectionDraft = {
-  from?: DrawingEndpoint;
-  pointer?: { x: number; y: number };
-};
-
-type ConnectionSegment = {
-  connection: DrawingConnection;
-  route: DrawingConnectionRoute;
-  pathData: string;
-  label: string | null;
-  labelPoint: { x: number; y: number; anchor: "start" | "middle" };
 };
 
 type RouteDragState = {
@@ -107,72 +75,6 @@ type RouteLabelDragState = {
 
 const SHEET_PIXEL_SCALE = 2;
 const ZOOM_STEP = 1.2;
-const MIN_PLACEMENT_SCALE = 0.05;
-const MAX_PLACEMENT_SCALE = 6;
-const LABEL_MOVE_CURSOR =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%23fbbf24' stroke='%23783d05' stroke-width='2'/%3E%3Cpath d='M12 5v14M5 12h14M9 8l3-3 3 3M9 16l3 3 3-3M8 9l-3 3 3 3M16 9l3 3-3 3' stroke='%231f2937' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\") 12 12, move";
-
-function packageKey(symbolId: string, versionId: string): string {
-  return `${symbolId}:${versionId}`;
-}
-
-function toSvgPoint(
-  event: {
-    currentTarget: SVGElement;
-    clientX: number;
-    clientY: number;
-  },
-  sheet: DrawingModel["sheet"]
-) {
-  const svgElement = event.currentTarget.ownerSVGElement ?? event.currentTarget;
-  const rect = svgElement.getBoundingClientRect();
-
-  return {
-    x: ((event.clientX - rect.left) / rect.width) * sheet.width,
-    y: ((event.clientY - rect.top) / rect.height) * sheet.height
-  };
-}
-
-function snap(value: number, gridSize: number): number {
-  return Number((Math.round(value / gridSize) * gridSize).toFixed(2));
-}
-
-function clampPlacementScale(scale: number): number {
-  return Math.min(MAX_PLACEMENT_SCALE, Math.max(MIN_PLACEMENT_SCALE, scale));
-}
-
-function getViewportSize(element: HTMLDivElement): ViewportSize {
-  const rect = element.getBoundingClientRect();
-
-  return {
-    width: rect.width,
-    height: rect.height
-  };
-}
-
-function getTooltipPosition(
-  point: { x: number; y: number },
-  sheet: DrawingModel["sheet"]
-) {
-  const left = Math.max(0, Math.min(100, (point.x / sheet.width) * 100));
-  const top = Math.max(0, Math.min(100, (point.y / sheet.height) * 100));
-  const translateX = left > 68 ? "-100%" : "12px";
-  const translateY = top > 72 ? "-100%" : "12px";
-
-  return {
-    left: `${left}%`,
-    top: `${top}%`,
-    transform: `translate(${translateX}, ${translateY})`
-  };
-}
-
-function getAnchorLabel(hotspot: AnchorHotspot): string {
-  if (hotspot.terminal) {
-    return `Show data for ${hotspot.placementTag} terminal ${hotspot.terminal.key}`;
-  }
-
-  return `Show data for ${hotspot.placementTag} anchor ${hotspot.anchor.key}`;
-}
 
 export function SvgDrawingSurface({
   model,
@@ -225,7 +127,7 @@ export function SvgDrawingSurface({
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const didInitialFitRef = useRef(false);
-  const resizeStateRef = useRef<ResizeState | null>(null);
+  const resizeStateRef = useRef<PlacementResizeState | null>(null);
   const panStateRef = useRef<PanState | null>(null);
   const routeDragStateRef = useRef<RouteDragState | null>(null);
   const routeLabelDragStateRef = useRef<RouteLabelDragState | null>(null);
@@ -578,6 +480,78 @@ export function SvgDrawingSurface({
     [connectionSegments, model.sheet, onConnectionRouteChange]
   );
 
+  const handleRoutePointPointerDown = useCallback(
+    (pointId: string, event: PointerEvent<SVGRectElement>) => {
+      if (event.button !== 0 || !selectedConnectionSegment) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      viewportRef.current?.focus();
+      onConnectionSelect(selectedConnectionSegment.connection.id);
+      setSelectedRoutePointId(pointId);
+      routeDragStateRef.current = {
+        connectionId: selectedConnectionSegment.connection.id,
+        pointId,
+        pointerId: event.pointerId
+      };
+    },
+    [onConnectionSelect, selectedConnectionSegment]
+  );
+
+  const endRoutePointDrag = useCallback(() => {
+    routeDragStateRef.current = null;
+  }, []);
+
+  const deleteRoutePoint = useCallback(
+    (pointId: string) => {
+      if (!selectedConnectionSegment) {
+        return;
+      }
+
+      routeDragStateRef.current = null;
+      onConnectionRouteChange(
+        selectedConnectionSegment.connection.id,
+        removeRouteControlPoint(selectedConnectionSegment.route, pointId)
+      );
+      setSelectedRoutePointId(null);
+    },
+    [onConnectionRouteChange, selectedConnectionSegment]
+  );
+
+  const handleRouteLabelPointerDown = useCallback(
+    (
+      handlePoint: { x: number; y: number },
+      event: PointerEvent<SVGCircleElement>
+    ) => {
+      if (event.button !== 0 || !selectedConnectionSegment) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      viewportRef.current?.focus();
+      onConnectionSelect(selectedConnectionSegment.connection.id);
+      setSelectedRoutePointId(null);
+      routeLabelDragStateRef.current = {
+        connectionId: selectedConnectionSegment.connection.id,
+        pointerId: event.pointerId,
+        labelOffset: {
+          x: selectedConnectionSegment.labelPoint.x - handlePoint.x,
+          y: selectedConnectionSegment.labelPoint.y - handlePoint.y
+        }
+      };
+    },
+    [onConnectionSelect, selectedConnectionSegment]
+  );
+
+  const endRouteLabelDrag = useCallback(() => {
+    routeLabelDragStateRef.current = null;
+  }, []);
+
   const selectHotspotPlacement = useCallback(
     (event: PointerEvent<SVGSVGElement>) => {
       if (event.button !== 0 || connectionMode === "connecting") {
@@ -657,6 +631,46 @@ export function SvgDrawingSurface({
     [model.placements, model.sheet, onPlacementChange, symbolsByKey]
   );
 
+  const focusCanvas = useCallback(() => {
+    viewportRef.current?.focus();
+  }, []);
+
+  const handlePlacementResizeStart = useCallback(
+    (state: PlacementResizeState) => {
+      resizeStateRef.current = state;
+    },
+    []
+  );
+
+  const endPlacementResize = useCallback(() => {
+    resizeStateRef.current = null;
+  }, []);
+
+  const clearCanvasSelection = useCallback(() => {
+    onSelectPlacement(undefined);
+    onConnectionSelect(undefined);
+  }, [onConnectionSelect, onSelectPlacement]);
+
+  const deleteSelectedRoutePoint = useCallback(() => {
+    if (!selectedRoutePointId) {
+      return;
+    }
+
+    deleteRoutePoint(selectedRoutePointId);
+  }, [deleteRoutePoint, selectedRoutePointId]);
+
+  const handleCanvasKeyDown = useCanvasKeyboardShortcuts({
+    connectionMode,
+    selectedPlacementId,
+    canDeleteSelectedRoutePoint: Boolean(
+      selectedConnectionSegment && selectedRoutePointId
+    ),
+    onConnectionCancel,
+    onClearSelection: clearCanvasSelection,
+    onDeleteSelectedRoutePoint: deleteSelectedRoutePoint,
+    onPlacementRemove
+  });
+
   return (
     <section className="tool-panel drawing-canvas-panel overflow-hidden">
       <div className="drawing-canvas-header">
@@ -694,44 +708,7 @@ export function SvgDrawingSurface({
           viewportRef.current?.focus();
           onSelectPlacement(undefined);
         }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            if (connectionMode === "connecting") {
-              onConnectionCancel();
-              return;
-            }
-
-            onSelectPlacement(undefined);
-            onConnectionSelect(undefined);
-            return;
-          }
-
-          if (
-            selectedConnectionSegment &&
-            selectedRoutePointId &&
-            (event.key === "Delete" || event.key === "Backspace")
-          ) {
-            event.preventDefault();
-            onConnectionRouteChange(
-              selectedConnectionSegment.connection.id,
-              removeRouteControlPoint(
-                selectedConnectionSegment.route,
-                selectedRoutePointId
-              )
-            );
-            setSelectedRoutePointId(null);
-            return;
-          }
-
-          if (
-            selectedPlacementId &&
-            (event.key === "Delete" || event.key === "Backspace")
-          ) {
-            event.preventDefault();
-            onPlacementRemove(selectedPlacementId);
-          }
-        }}
+        onKeyDown={handleCanvasKeyDown}
         tabIndex={0}
       >
         <div
@@ -863,635 +840,58 @@ export function SvgDrawingSurface({
                   strokeLinecap="round"
                 />
               ) : null}
-              {model.placements.map((placement) => {
-                const symbol = symbolsByKey.get(
-                  packageKey(placement.symbolId, placement.versionId)
-                );
-
-                if (!symbol) {
-                  return null;
-                }
-
-                const bounds = getPlacementBounds(placement, symbol.metadata);
-                const isSelected = selectedPlacementId === placement.id;
-                const handleSize = Math.max(
-                  3,
-                  Math.min(6, 5 / viewportTransform.zoom)
-                );
-                const handles: Array<{
-                  key: ResizeHandle;
-                  x: number;
-                  y: number;
-                  cursor: string;
-                  fixedPoint: { x: number; y: number };
-                }> = [
-                  {
-                    key: "nw",
-                    x: bounds.x,
-                    y: bounds.y,
-                    cursor: "nwse-resize",
-                    fixedPoint: {
-                      x: bounds.x + bounds.width,
-                      y: bounds.y + bounds.height
-                    }
-                  },
-                  {
-                    key: "ne",
-                    x: bounds.x + bounds.width,
-                    y: bounds.y,
-                    cursor: "nesw-resize",
-                    fixedPoint: {
-                      x: bounds.x,
-                      y: bounds.y + bounds.height
-                    }
-                  },
-                  {
-                    key: "sw",
-                    x: bounds.x,
-                    y: bounds.y + bounds.height,
-                    cursor: "nesw-resize",
-                    fixedPoint: {
-                      x: bounds.x + bounds.width,
-                      y: bounds.y
-                    }
-                  },
-                  {
-                    key: "se",
-                    x: bounds.x + bounds.width,
-                    y: bounds.y + bounds.height,
-                    cursor: "nwse-resize",
-                    fixedPoint: {
-                      x: bounds.x,
-                      y: bounds.y
-                    }
-                  }
-                ];
-
-                return (
-                  <g key={placement.id}>
-                    <rect
-                      data-placement-id={placement.id}
-                      x={bounds.x}
-                      y={bounds.y}
-                      width={bounds.width}
-                      height={bounds.height}
-                      className={[
-                        "cursor-move fill-transparent",
-                        isSelected ? "stroke-sky-600" : "stroke-transparent"
-                      ].join(" ")}
-                      pointerEvents="all"
-                      strokeDasharray={isSelected ? "3 2" : undefined}
-                      strokeWidth={isSelected ? 1 : 0}
-                      onPointerDown={(event) => {
-                        if (event.button !== 0) {
-                          return;
-                        }
-
-                        if (connectionMode === "connecting") {
-                          return;
-                        }
-
-                        const pointer = toSvgPoint(event, model.sheet);
-                        event.currentTarget.setPointerCapture(event.pointerId);
-                        viewportRef.current?.focus();
-                        onSelectPlacement(placement.id);
-                        onConnectionSelect(undefined);
-                        onDragStart({
-                          placementId: placement.id,
-                          startPointer: pointer,
-                          startPlacement: { x: placement.x, y: placement.y }
-                        });
-                      }}
-                      onMouseDown={(event) => {
-                        if (event.button !== 0 || connectionMode === "connecting") {
-                          return;
-                        }
-
-                        viewportRef.current?.focus();
-                        onSelectPlacement(placement.id);
-                        onConnectionSelect(undefined);
-                      }}
-                      onPointerMove={(event) => {
-                        if (!dragState || dragState.placementId !== placement.id) {
-                          return;
-                        }
-
-                        const pointer = toSvgPoint(event, model.sheet);
-                        onDragMove(
-                          placement.id,
-                          snap(
-                            dragState.startPlacement.x +
-                              pointer.x -
-                              dragState.startPointer.x,
-                            model.sheet.gridSize
-                          ),
-                          snap(
-                            dragState.startPlacement.y +
-                              pointer.y -
-                              dragState.startPointer.y,
-                            model.sheet.gridSize
-                          )
-                        );
-                      }}
-                      onPointerUp={onDragEnd}
-                      onPointerCancel={onDragEnd}
-                    />
-                    {isSelected ? (
-                      <g>
-                        {handles.map((handle) => (
-                          <rect
-                            key={handle.key}
-                            data-resize-handle={handle.key}
-                            x={handle.x - handleSize / 2}
-                            y={handle.y - handleSize / 2}
-                            width={handleSize}
-                            height={handleSize}
-                            rx={handleSize * 0.2}
-                            className="fill-white stroke-sky-600"
-                            strokeWidth={0.8}
-                            style={{ cursor: handle.cursor }}
-                            onPointerDown={(event) => {
-                              if (event.button !== 0) {
-                                return;
-                              }
-
-                              event.stopPropagation();
-                              event.currentTarget.setPointerCapture(event.pointerId);
-                              viewportRef.current?.focus();
-                              onSelectPlacement(placement.id);
-                              resizeStateRef.current = {
-                                placementId: placement.id,
-                                handle: handle.key,
-                                fixedPoint: handle.fixedPoint,
-                                baseSize: {
-                                  width: symbol.metadata.viewBox.width,
-                                  height: symbol.metadata.viewBox.height
-                                }
-                              };
-                            }}
-                            onPointerMove={updatePlacementFromResize}
-                            onPointerUp={() => {
-                              resizeStateRef.current = null;
-                            }}
-                            onPointerCancel={() => {
-                              resizeStateRef.current = null;
-                            }}
-                          >
-                            <title>Resize placement</title>
-                          </rect>
-                        ))}
-                        <g
-                          data-testid="canvas-placement-delete"
-                          role="button"
-                          aria-label={`Delete ${placement.tag}`}
-                          tabIndex={0}
-                          transform={`translate(${bounds.x + bounds.width + 3} ${bounds.y - 10})`}
-                          className="cursor-pointer"
-                          onPointerDown={(event) => {
-                            if (event.button !== 0) {
-                              return;
-                            }
-
-                            event.stopPropagation();
-                            onPlacementRemove(placement.id);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              onPlacementRemove(placement.id);
-                            }
-                          }}
-                        >
-                          <rect
-                            x="0"
-                            y="0"
-                            width="16"
-                            height="8"
-                            rx="2"
-                            className="fill-white stroke-red-500"
-                            strokeWidth="0.6"
-                          />
-                          <text
-                            x="8"
-                            y="5.7"
-                            textAnchor="middle"
-                            fontSize="5"
-                            fontWeight="700"
-                            fill="#dc2626"
-                          >
-                            x
-                          </text>
-                          <title>Delete placement</title>
-                        </g>
-                      </g>
-                    ) : null}
-                    {symbol.metadata.anchors.map((anchor) => {
-                      const hotspotId = `${placement.id}:${anchor.key}`;
-                      const hotspot = anchorHotspots.find(
-                        (candidate) => candidate.id === hotspotId
-                      );
-
-                      if (!hotspot) {
-                        return null;
-                      }
-
-                      const isActive = activeAnchorId === hotspot.id;
-                      const endpoint = {
-                        placementId: placement.id,
-                        anchorKey: anchor.key
-                      };
-                      const isConnectionSource =
-                        sourceAnchorHotspot?.id === hotspot.id;
-                      const isValidConnectionTarget =
-                        connectionMode === "connecting" &&
-                        Boolean(connectionDraft.from) &&
-                        !isConnectionSource;
-
-                      return (
-                        <g key={hotspot.id}>
-                          {isActive || isConnectionSource ? (
-                            <circle
-                              cx={hotspot.point.x}
-                              cy={hotspot.point.y}
-                              r={isConnectionSource ? anchorGlowRadius * 1.35 : anchorGlowRadius}
-                              className={[
-                                "pointer-events-none",
-                                isConnectionSource
-                                  ? "fill-sky-400 opacity-25"
-                                  : "fill-teal-400 opacity-20"
-                              ].join(" ")}
-                            />
-                          ) : null}
-                          <circle
-                            data-testid="canvas-anchor-marker"
-                            cx={hotspot.point.x}
-                            cy={hotspot.point.y}
-                            r={anchorMarkerRadius}
-                            className={[
-                              "pointer-events-none transition-colors",
-                              isConnectionSource
-                                ? "fill-sky-50 stroke-sky-600"
-                                : isValidConnectionTarget
-                                  ? "fill-emerald-50 stroke-emerald-600"
-                                  : isActive
-                                ? "fill-teal-50 stroke-teal-600"
-                                : "fill-white stroke-teal-600 opacity-80"
-                            ].join(" ")}
-                            strokeWidth={
-                              isConnectionSource || isValidConnectionTarget
-                                ? anchorStrokeWidth * 1.5
-                                : anchorStrokeWidth
-                            }
-                          />
-                          <circle
-                            data-testid="canvas-anchor-hotspot"
-                            data-anchor-hotspot={hotspot.id}
-                            role="button"
-                            tabIndex={0}
-                            aria-label={getAnchorLabel(hotspot)}
-                            cx={hotspot.point.x}
-                            cy={hotspot.point.y}
-                            r={anchorHitRadius}
-                            className={[
-                              "pointer-events-auto fill-transparent",
-                              connectionMode === "connecting"
-                                ? "cursor-crosshair"
-                                : "cursor-help"
-                            ].join(" ")}
-                            onPointerEnter={() => setActiveAnchorId(hotspot.id)}
-                            onPointerLeave={() => setActiveAnchorId(null)}
-                            onPointerDown={(event) => {
-                              if (event.button !== 0) {
-                                return;
-                              }
-
-                              if (connectionMode !== "connecting") {
-                                viewportRef.current?.focus();
-                                onSelectPlacement(placement.id);
-                                onConnectionSelect(undefined);
-                                return;
-                              }
-
-                              event.preventDefault();
-                              event.stopPropagation();
-                              viewportRef.current?.focus();
-                              onConnectionAnchorClick(endpoint);
-                            }}
-                            onClick={() => {
-                              if (connectionMode === "connecting") {
-                                return;
-                              }
-
-                              viewportRef.current?.focus();
-                              onSelectPlacement(placement.id);
-                              onConnectionSelect(undefined);
-                            }}
-                            onMouseDown={(event) => {
-                              if (
-                                event.button !== 0 ||
-                                connectionMode === "connecting"
-                              ) {
-                                return;
-                              }
-
-                              viewportRef.current?.focus();
-                              onSelectPlacement(placement.id);
-                              onConnectionSelect(undefined);
-                            }}
-                            onPointerUp={(event) => {
-                              if (
-                                event.button !== 0 ||
-                                connectionMode === "connecting"
-                              ) {
-                                return;
-                              }
-
-                              viewportRef.current?.focus();
-                              onSelectPlacement(placement.id);
-                              onConnectionSelect(undefined);
-                            }}
-                            onMouseUp={(event) => {
-                              if (
-                                event.button !== 0 ||
-                                connectionMode === "connecting"
-                              ) {
-                                return;
-                              }
-
-                              viewportRef.current?.focus();
-                              onSelectPlacement(placement.id);
-                              onConnectionSelect(undefined);
-                            }}
-                            onFocus={() => setActiveAnchorId(hotspot.id)}
-                            onBlur={() => setActiveAnchorId(null)}
-                          >
-                            <title>{getAnchorLabel(hotspot)}</title>
-                          </circle>
-                        </g>
-                      );
-                    })}
-                  </g>
-                );
-              })}
-              {selectedConnectionSegment ? (
-                <g data-testid="canvas-route-handles">
-                  {visibleRouteControlPoints(selectedConnectionSegment.route).map(
-                    (point) => {
-                      const isRoutePointSelected = selectedRoutePointId === point.id;
-                      const size = Math.max(
-                        2.6,
-                        Math.min(4.8, 4 / viewportTransform.zoom)
-                      );
-                      const deleteSize = Math.max(
-                        4,
-                        Math.min(7, 6 / viewportTransform.zoom)
-                      );
-
-                      return (
-                        <g key={point.id}>
-                          <rect
-                            data-testid="canvas-route-point"
-                            data-route-point-id={point.id}
-                            x={point.x - size / 2}
-                            y={point.y - size / 2}
-                            width={size}
-                            height={size}
-                            rx={size * 0.22}
-                            className={[
-                              "cursor-move fill-white",
-                              isRoutePointSelected
-                                ? "stroke-sky-700"
-                                : "stroke-sky-500"
-                            ].join(" ")}
-                            strokeWidth={0.65 / viewportTransform.zoom}
-                            onPointerDown={(event) => {
-                              if (event.button !== 0) {
-                                return;
-                              }
-
-                              event.preventDefault();
-                              event.stopPropagation();
-                              event.currentTarget.setPointerCapture(event.pointerId);
-                              viewportRef.current?.focus();
-                              onConnectionSelect(
-                                selectedConnectionSegment.connection.id
-                              );
-                              setSelectedRoutePointId(point.id);
-                              routeDragStateRef.current = {
-                                connectionId:
-                                  selectedConnectionSegment.connection.id,
-                                pointId: point.id,
-                                pointerId: event.pointerId
-                              };
-                            }}
-                            onPointerMove={updateDraggedRoutePoint}
-                            onPointerUp={() => {
-                              routeDragStateRef.current = null;
-                            }}
-                            onPointerCancel={() => {
-                              routeDragStateRef.current = null;
-                            }}
-                          >
-                            <title>
-                              Drag route point. Press Delete or use the red x to
-                              remove.
-                            </title>
-                          </rect>
-                          {isRoutePointSelected ? (
-                            <g
-                              data-testid="canvas-route-point-delete"
-                              role="button"
-                              tabIndex={0}
-                              aria-label="Delete route point"
-                              transform={`translate(${point.x + size / 2 + 1.5} ${point.y - size / 2 - deleteSize - 1.2})`}
-                              className="cursor-pointer"
-                              onPointerDown={(event) => {
-                                if (event.button !== 0) {
-                                  return;
-                                }
-
-                                event.preventDefault();
-                                event.stopPropagation();
-                                routeDragStateRef.current = null;
-                                onConnectionRouteChange(
-                                  selectedConnectionSegment.connection.id,
-                                  removeRouteControlPoint(
-                                    selectedConnectionSegment.route,
-                                    point.id
-                                  )
-                                );
-                                setSelectedRoutePointId(null);
-                              }}
-                              onKeyDown={(event) => {
-                                if (event.key !== "Enter" && event.key !== " ") {
-                                  return;
-                                }
-
-                                event.preventDefault();
-                                onConnectionRouteChange(
-                                  selectedConnectionSegment.connection.id,
-                                  removeRouteControlPoint(
-                                    selectedConnectionSegment.route,
-                                    point.id
-                                  )
-                                );
-                                setSelectedRoutePointId(null);
-                              }}
-                            >
-                              <rect
-                                x="0"
-                                y="0"
-                                width={deleteSize}
-                                height={deleteSize}
-                                rx={deleteSize * 0.28}
-                                className="fill-white stroke-red-500"
-                                strokeWidth={0.55 / viewportTransform.zoom}
-                              />
-                              <text
-                                x={deleteSize / 2}
-                                y={deleteSize * 0.72}
-                                textAnchor="middle"
-                                className="pointer-events-none fill-red-600 font-bold"
-                                fontSize={deleteSize * 0.78}
-                              >
-                                x
-                              </text>
-                              <title>Delete route point</title>
-                            </g>
-                          ) : null}
-                        </g>
-                      );
-                    }
-                  )}
-                </g>
-              ) : null}
-              {selectedConnectionSegment && selectedConnectionSegment.label ? (
-                <g data-testid="canvas-route-label-handle-layer">
-                  {(() => {
-                    const box = routeLabelBox(
-                      selectedConnectionSegment.label,
-                      selectedConnectionSegment.labelPoint
-                    );
-                    const handleRadius = Math.max(
-                      1.15,
-                      Math.min(2.2, 2 / viewportTransform.zoom)
-                    );
-                    const handlePoint = {
-                      x: Number((box.x - handleRadius - 0.7).toFixed(2)),
-                      y: Number(
-                        (selectedConnectionSegment.labelPoint.y - 1.25).toFixed(2)
-                      )
-                    };
-
-                    return (
-                      <circle
-                        data-testid="canvas-route-label-handle"
-                        cx={handlePoint.x}
-                        cy={handlePoint.y}
-                        r={handleRadius}
-                        className="fill-amber-300 stroke-amber-700"
-                        style={{ cursor: LABEL_MOVE_CURSOR }}
-                        strokeWidth={0.45 / viewportTransform.zoom}
-                        onPointerDown={(event) => {
-                          if (event.button !== 0) {
-                            return;
-                          }
-
-                          event.preventDefault();
-                          event.stopPropagation();
-                          event.currentTarget.setPointerCapture(event.pointerId);
-                          viewportRef.current?.focus();
-                          onConnectionSelect(
-                            selectedConnectionSegment.connection.id
-                          );
-                          setSelectedRoutePointId(null);
-                          routeLabelDragStateRef.current = {
-                            connectionId:
-                              selectedConnectionSegment.connection.id,
-                            pointerId: event.pointerId,
-                            labelOffset: {
-                              x:
-                                selectedConnectionSegment.labelPoint.x -
-                                handlePoint.x,
-                              y:
-                                selectedConnectionSegment.labelPoint.y -
-                                handlePoint.y
-                            }
-                          };
-                        }}
-                        onPointerMove={updateDraggedRouteLabel}
-                        onPointerUp={() => {
-                          routeLabelDragStateRef.current = null;
-                        }}
-                        onPointerCancel={() => {
-                          routeLabelDragStateRef.current = null;
-                        }}
-                      >
-                        <title>Drag wire label</title>
-                      </circle>
-                    );
-                  })()}
-                </g>
-              ) : null}
+              <PlacementOverlay
+                model={model}
+                symbolsByKey={symbolsByKey}
+                selectedPlacementId={selectedPlacementId}
+                connectionMode={connectionMode}
+                viewportZoom={viewportTransform.zoom}
+                dragState={dragState}
+                onFocusCanvas={focusCanvas}
+                onSelectPlacement={onSelectPlacement}
+                onConnectionSelect={onConnectionSelect}
+                onDragStart={onDragStart}
+                onDragMove={onDragMove}
+                onDragEnd={onDragEnd}
+                onPlacementRemove={onPlacementRemove}
+                onResizeStart={handlePlacementResizeStart}
+                onResizeMove={updatePlacementFromResize}
+                onResizeEnd={endPlacementResize}
+              />
+              <AnchorOverlay
+                anchorHotspots={anchorHotspots}
+                activeAnchorId={activeAnchorId}
+                sourceAnchorHotspot={sourceAnchorHotspot}
+                connectionMode={connectionMode}
+                connectionDraftFrom={connectionDraft.from}
+                anchorMarkerRadius={anchorMarkerRadius}
+                anchorHitRadius={anchorHitRadius}
+                anchorGlowRadius={anchorGlowRadius}
+                anchorStrokeWidth={anchorStrokeWidth}
+                onActiveAnchorChange={setActiveAnchorId}
+                onFocusCanvas={focusCanvas}
+                onSelectPlacement={onSelectPlacement}
+                onConnectionSelect={onConnectionSelect}
+                onConnectionAnchorClick={onConnectionAnchorClick}
+              />
+              <RouteHandlesOverlay
+                selectedConnectionSegment={selectedConnectionSegment}
+                selectedRoutePointId={selectedRoutePointId}
+                viewportZoom={viewportTransform.zoom}
+                onRoutePointPointerDown={handleRoutePointPointerDown}
+                onRoutePointPointerMove={updateDraggedRoutePoint}
+                onRoutePointPointerEnd={endRoutePointDrag}
+                onRoutePointDelete={deleteRoutePoint}
+              />
+              <RouteLabelOverlay
+                selectedConnectionSegment={selectedConnectionSegment}
+                viewportZoom={viewportTransform.zoom}
+                onRouteLabelPointerDown={handleRouteLabelPointerDown}
+                onRouteLabelPointerMove={updateDraggedRouteLabel}
+                onRouteLabelPointerEnd={endRouteLabelDrag}
+              />
             </svg>
-            {activeAnchorHotspot ? (
-              <div
-                data-testid="canvas-anchor-tooltip"
-                data-anchor-tooltip={activeAnchorHotspot.id}
-                className="pointer-events-none absolute z-20 w-64 rounded-md border border-teal-200 bg-white/95 p-3 text-[11px] leading-snug text-slate-700 shadow-lg shadow-slate-900/10"
-                style={getTooltipPosition(
-                  activeAnchorHotspot.point,
-                  model.sheet
-                )}
-                role="status"
-              >
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-xs font-semibold text-slate-950">
-                      {activeAnchorHotspot.placementTag}
-                    </div>
-                    <div className="truncate text-[10px] font-medium text-slate-500">
-                      {activeAnchorHotspot.symbolName}
-                    </div>
-                  </div>
-                  <div className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700">
-                    {activeAnchorHotspot.terminal?.requiredForWiring
-                      ? "Required"
-                      : "Reference"}
-                  </div>
-                </div>
-                <dl className="space-y-1.5">
-                  <div className="grid grid-cols-[68px_minmax(0,1fr)] gap-2">
-                    <dt className="font-semibold text-slate-500">Anchor</dt>
-                    <dd>{activeAnchorHotspot.anchor.key}</dd>
-                  </div>
-                  <div className="grid grid-cols-[68px_minmax(0,1fr)] gap-2">
-                    <dt className="font-semibold text-slate-500">Type</dt>
-                    <dd className="capitalize">
-                      {activeAnchorHotspot.anchor.kind}
-                    </dd>
-                  </div>
-                  <div className="grid grid-cols-[68px_minmax(0,1fr)] gap-2">
-                    <dt className="font-semibold text-slate-500">Terminal</dt>
-                    <dd>{activeAnchorHotspot.terminal?.key ?? "-"}</dd>
-                  </div>
-                  <div className="grid grid-cols-[68px_minmax(0,1fr)] gap-2">
-                    <dt className="font-semibold text-slate-500">Label</dt>
-                    <dd>{activeAnchorHotspot.terminal?.label ?? "-"}</dd>
-                  </div>
-                  <div className="grid grid-cols-[68px_minmax(0,1fr)] gap-2">
-                    <dt className="font-semibold text-slate-500">Function</dt>
-                    <dd>{activeAnchorHotspot.terminal?.function ?? "-"}</dd>
-                  </div>
-                  {activeAnchorHotspot.symbolModel ? (
-                    <div className="grid grid-cols-[68px_minmax(0,1fr)] gap-2">
-                      <dt className="font-semibold text-slate-500">Model</dt>
-                      <dd>{activeAnchorHotspot.symbolModel}</dd>
-                    </div>
-                  ) : null}
-                </dl>
-              </div>
-            ) : null}
+            <AnchorTooltip hotspot={activeAnchorHotspot} sheet={model.sheet} />
           </div>
         </div>
       </div>

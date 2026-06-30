@@ -16,6 +16,15 @@ import {
   approveDrawingAction,
   saveDrawingAction
 } from "../../api/actions";
+import {
+  addConnection as addConnectionCommand,
+  addPlacement as addPlacementCommand,
+  deleteConnection as deleteConnectionCommand,
+  deletePlacement as deletePlacementCommand,
+  updateConnection as updateConnectionCommand,
+  updateConnectionRoute as updateConnectionRouteCommand,
+  updatePlacementProperties
+} from "../../logic/commands/drawing-model-commands";
 import { generateDefaultOrthogonalRoute } from "../../logic/services/connection-route-geometry";
 import { createConnectionFromEndpoints } from "../../logic/services/drawing-connections";
 import type { ViewportTransform } from "../../logic/services/viewport-transform";
@@ -177,10 +186,7 @@ export function DrawingCanvasShell({
       scale: defaultScale(symbol)
     };
 
-    setModel((current) => ({
-      ...current,
-      placements: [...current.placements, placement]
-    }));
+    setModel((current) => addPlacementCommand(current, placement));
     setSelectedPlacementId(placement.id);
     setSelectedConnectionId(undefined);
   };
@@ -189,27 +195,13 @@ export function DrawingCanvasShell({
     placementId: string,
     updates: Partial<DrawingPlacement>
   ) => {
-    setModel((current) => ({
-      ...current,
-      placements: current.placements.map((placement) =>
-        placement.id === placementId ? { ...placement, ...updates } : placement
-      )
-    }));
+    setModel((current) =>
+      updatePlacementProperties(current, placementId, updates)
+    );
   };
 
   const removePlacement = (placementId: string) => {
-    setModel((current) => ({
-      ...current,
-      placements: current.placements.filter(
-        (placement) => placement.id !== placementId
-      ),
-      connections: current.connections.filter(
-        (connection) =>
-          connection.from.placementId !== placementId &&
-          connection.to.placementId !== placementId &&
-          connection.cablePlacementId !== placementId
-      )
-    }));
+    setModel((current) => deletePlacementCommand(current, placementId));
     setSelectedPlacementId(undefined);
     setSelectedConnectionId(undefined);
     setConnectionDraft({});
@@ -219,48 +211,45 @@ export function DrawingCanvasShell({
     connectionId: string,
     updates: Partial<DrawingConnection>
   ) => {
-    setModel((current) => ({
-      ...current,
-      connections: current.connections.map((connection) =>
-        connection.id === connectionId ? { ...connection, ...updates } : connection
-      )
-    }));
+    setModel((current) =>
+      updateConnectionCommand(current, connectionId, updates)
+    );
   };
 
   const updateConnectionRoute = (
     connectionId: string,
     route: DrawingConnectionRoute
   ) => {
-    updateConnection(connectionId, { route });
+    setModel((current) =>
+      updateConnectionRouteCommand(current, connectionId, route)
+    );
   };
 
   const resetConnectionRoute = (connectionId: string) => {
-    setModel((current) => ({
-      ...current,
-      connections: current.connections.map((connection) => {
-        if (connection.id !== connectionId) {
-          return connection;
-        }
+    setModel((current) => {
+      const connection = current.connections.find(
+        (candidate) => candidate.id === connectionId
+      );
 
-        const route = generateDefaultOrthogonalRoute({
-          model: current,
-          symbols,
-          connection,
-          mode: "auto"
-        });
+      if (!connection) {
+        return current;
+      }
 
-        return route ? { ...connection, route } : connection;
-      })
-    }));
+      const route = generateDefaultOrthogonalRoute({
+        model: current,
+        symbols,
+        connection,
+        mode: "auto"
+      });
+
+      return route
+        ? updateConnectionRouteCommand(current, connectionId, route)
+        : current;
+    });
   };
 
   const removeConnection = (connectionId: string) => {
-    setModel((current) => ({
-      ...current,
-      connections: current.connections.filter(
-        (connection) => connection.id !== connectionId
-      )
-    }));
+    setModel((current) => deleteConnectionCommand(current, connectionId));
     setSelectedConnectionId((current) =>
       current === connectionId ? undefined : current
     );
@@ -328,10 +317,7 @@ export function DrawingCanvasShell({
       ? { ...result.connection, route }
       : result.connection;
 
-    setModel((current) => ({
-      ...current,
-      connections: [...current.connections, routedConnection]
-    }));
+    setModel((current) => addConnectionCommand(current, routedConnection));
     setSelectedConnectionId(routedConnection.id);
     setSelectedPlacementId(undefined);
     setConnectionDraft({});
