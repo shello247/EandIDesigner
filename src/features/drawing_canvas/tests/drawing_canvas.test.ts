@@ -7,6 +7,7 @@ import {
 } from "../data/schema";
 import type { ApprovedDrawingSymbol } from "../types";
 import { renderDrawingToSvg } from "../logic/services/drawing-svg-renderer";
+import { buildDrawingPdfPrintHtml } from "../logic/services/drawing-pdf-export";
 import {
   generateDefaultOrthogonalRoute,
   removeRouteControlPoint,
@@ -19,7 +20,6 @@ import {
 } from "../logic/services/connection-route-renderer";
 import {
   createConnectionFromEndpoints,
-  getConnectionCableDefaults,
   isDuplicateConnection
 } from "../logic/services/drawing-connections";
 import { getConnectionTransitionGroups } from "../logic/services/drawing-connection-groups";
@@ -28,7 +28,6 @@ import {
   deriveWireId,
   normalizeCableConductorKey
 } from "../logic/services/drawing-identification";
-import { validateDrawing } from "../logic/use_cases/validate-drawing";
 
 const metadata: SymbolMetadata = {
   symbolKey: "test_symbol",
@@ -108,45 +107,6 @@ function validModel(): DrawingModel {
 }
 
 describe("drawing canvas domain", () => {
-  it("validates a drawing model and warns when no cable placement is assigned", () => {
-    const result = validateDrawing(validModel(), [approvedSymbol]);
-
-    expect(result.blockingIssueCount).toBe(0);
-    expect(result.issues.map((issue) => issue.code)).toContain(
-      "CONNECTION_CABLE_PLACEMENT_UNSET"
-    );
-  });
-
-  it("blocks duplicate placement tags", () => {
-    const model = validModel();
-    model.placements[1].tag = "TT-101";
-    const result = validateDrawing(model, [approvedSymbol]);
-
-    expect(result.issues.map((issue) => issue.code)).toContain(
-      "PLACEMENT_TAG_DUPLICATE"
-    );
-  });
-
-  it("blocks missing approved symbol versions", () => {
-    const model = validModel();
-    model.placements[0].versionId = "missing";
-    const result = validateDrawing(model, [approvedSymbol]);
-
-    expect(result.issues.map((issue) => issue.code)).toContain(
-      "PLACEMENT_SYMBOL_NOT_APPROVED"
-    );
-  });
-
-  it("blocks invalid connection anchors", () => {
-    const model = validModel();
-    model.connections[0].from.anchorKey = "NOPE";
-    const result = validateDrawing(model, [approvedSymbol]);
-
-    expect(result.issues.map((issue) => issue.code)).toContain(
-      "CONNECTION_ANCHOR_MISSING"
-    );
-  });
-
   it("creates semantic connections with cable defaults", () => {
     const model = validModel();
     model.placements.push({
@@ -198,54 +158,14 @@ describe("drawing canvas domain", () => {
     ).toBe(true);
 
     model.connections[0].to = { placementId: "p1", anchorKey: "T1" };
-    expect(validateDrawing(model, [approvedSymbol]).issues.map((issue) => issue.code)).toContain(
-      "CONNECTION_ENDPOINT_SAME"
-    );
-  });
-
-  it("blocks unconnected required terminals", () => {
-    const model = validModel();
-    model.connections = model.connections.slice(0, 1);
-    const result = validateDrawing(model, [approvedSymbol]);
-
-    expect(result.issues.map((issue) => issue.code)).toContain(
-      "REQUIRED_TERMINAL_UNCONNECTED"
-    );
-  });
-
-  it("warns on duplicate pairs and missing conductor keys", () => {
-    const model = validModel();
-    model.placements.push({
-      id: "cable_1",
-      symbolId: "sym_1",
-      versionId: "ver_1",
-      role: "cable_assembly",
-      tag: "CBL-1",
-      x: 220,
-      y: 30,
-      rotation: 0,
-      scale: 0.5
-    });
-    model.connections.push({
-      id: "c3",
-      from: { placementId: "p2", anchorKey: "T2" },
-      to: { placementId: "p1", anchorKey: "T1" },
-      label: "Duplicate reversed",
-      ...getConnectionCableDefaults(
+    expect(
+      createConnectionFromEndpoints({
         model,
-        { placementId: "p2", anchorKey: "T2" },
-        { placementId: "p1", anchorKey: "T1" }
-      )
-    });
-
-    const result = validateDrawing(model, [approvedSymbol]);
-
-    expect(result.issues.map((issue) => issue.code)).toContain(
-      "CONNECTION_DUPLICATE_PAIR"
-    );
-    expect(result.issues.map((issue) => issue.code)).toContain(
-      "CONNECTION_CONDUCTOR_KEY_UNSET"
-    );
+        symbols: [approvedSymbol],
+        from: { placementId: "p1", anchorKey: "T1" },
+        to: { placementId: "p1", anchorKey: "T1" }
+      }).ok
+    ).toBe(false);
   });
 
   it("renders a deterministic SVG with embedded placements", () => {
@@ -258,12 +178,89 @@ describe("drawing canvas domain", () => {
     expect(svg).toContain('data-placement-id="p1"');
     expect(svg).toContain('data-connection-id="c1"');
     expect(svg).toContain('data-route-style="orthogonal"');
+    expect(svg).toContain('data-placement-title="p1"');
     expect(svg).toContain("<path");
     expect(svg).not.toContain("canvas-connection-preview");
     expect(svg).toContain("Signal");
+    expect(svg).toContain("Test Symbol");
     expect(svg).toContain('data-title-block="professional"');
     expect(svg).toContain("DRAWING NUMBER");
+    expect(svg.indexOf('data-placement-id="p1"')).toBeLessThan(
+      svg.indexOf('data-connection-id="c1"')
+    );
     expect((svg.match(/<svg/g) ?? []).length).toBe(1);
+  });
+
+  it("moves the placement tag with the placement title label group", () => {
+    const model = validModel();
+    model.placements[0].labelPosition = { x: 55, y: 66 };
+
+    const svg = renderDrawingToSvg({
+      model,
+      approvedSymbols: [approvedSymbol]
+    });
+
+    expect(svg).toContain(
+      'data-placement-tag="p1" x="55" y="60.8"'
+    );
+    expect(svg).toContain(
+      'data-placement-title="p1" x="55" y="66"'
+    );
+  });
+
+  it("renders movable title labels for cable assembly placements", () => {
+    const model = validModel();
+    model.placements[1] = {
+      ...model.placements[1],
+      role: "cable_assembly",
+      tag: "C-101",
+      labelPosition: { x: 88, y: 77 }
+    };
+
+    const svg = renderDrawingToSvg({
+      model,
+      approvedSymbols: [approvedSymbol]
+    });
+
+    expect(svg).toContain(
+      'data-placement-tag="p2" x="88" y="71.8"'
+    );
+    expect(svg).toContain(
+      'data-placement-title="p2" x="88" y="77"'
+    );
+  });
+
+  it("builds print-ready HTML for single page PDF export", () => {
+    const model = validModel();
+    const svg = renderDrawingToSvg({
+      model,
+      approvedSymbols: [approvedSymbol],
+      showAnchors: false,
+      showConnections: true
+    });
+    const html = buildDrawingPdfPrintHtml({
+      title: "Test Drawing",
+      sheet: model.sheet,
+      svg
+    });
+
+    expect(html).toContain("<!doctype html>");
+    expect(html).toContain("<title>Test Drawing</title>");
+    expect(html).toContain("size: 420mm 297mm");
+    expect(html).not.toContain("window.print()");
+    expect(html).toContain('data-placement-id="p1"');
+    expect(html).not.toContain('stroke="#0f766e"');
+
+    const printHtml = buildDrawingPdfPrintHtml({
+      title: "Test Drawing",
+      sheet: model.sheet,
+      svg,
+      drawingUrl: "/drawings/example"
+    });
+
+    expect(printHtml).toContain("window.print()");
+    expect(printHtml).toContain("requestPrint");
+    expect(printHtml).toContain("Back to drawing");
   });
 
   it("keeps old drawing models without routes compatible", () => {
@@ -271,54 +268,80 @@ describe("drawing canvas domain", () => {
 
     expect(drawingModelSchema.parse(model).connections[0].route).toBeUndefined();
     expect(drawingModelSchema.parse(model).connections[0].wireId).toBeUndefined();
+    expect(
+      drawingModelSchema.parse(model).placements[0].labelPosition
+    ).toBeUndefined();
+    expect(
+      drawingModelSchema.parse(model).placements[0].deviceTitlePosition
+    ).toBeUndefined();
   });
 
-  it("validates recommended ISA-ish device tags and cable IDs without tag warnings", () => {
+  it("parses old simple annotations and new note leaders", () => {
     const model = validModel();
-    model.placements[0].tag = "LIT-101";
-    model.placements[1] = {
-      ...model.placements[1],
-      role: "cable_assembly",
-      tag: "C-101"
-    };
-    model.connections = [
+    model.annotations = [
       {
-        id: "c1",
-        from: { placementId: "p1", anchorKey: "T1" },
-        to: { placementId: "p2", anchorKey: "T1" },
-        cablePlacementId: "p2",
-        conductorKey: "T1",
-        wireId: "C-101-WHT"
+        id: "old_note",
+        text: "Existing note",
+        x: 20,
+        y: 30,
+        kind: "note"
+      },
+      {
+        id: "leader_note",
+        title: "Installation Instructions",
+        text: "Seal fitting required",
+        x: 40,
+        y: 50,
+        width: 70,
+        height: 24,
+        kind: "note",
+        leader: {
+          enabled: true,
+          targetX: 100,
+          targetY: 90
+        }
       }
     ];
 
-    const codes = validateDrawing(model, [approvedSymbol]).issues.map(
-      (issue) => issue.code
-    );
-
-    expect(codes).not.toContain("PLACEMENT_DEVICE_TAG_FORMAT");
-    expect(codes).not.toContain("PLACEMENT_CABLE_ID_FORMAT");
-    expect(codes).not.toContain("CONNECTION_WIRE_ID_UNSET");
+    const parsed = drawingModelSchema.parse(model);
+    expect(parsed.annotations[0].width).toBeUndefined();
+    expect(parsed.annotations[0].title).toBeUndefined();
+    expect(parsed.annotations[1].title).toBe("Installation Instructions");
+    expect(parsed.annotations[1].leader?.enabled).toBe(true);
   });
 
-  it("warns on non-standard device tags, cable IDs, and missing wire IDs", () => {
+  it("renders note blocks with wrapped text and leader arrows", () => {
     const model = validModel();
-    model.placements[0].tag = "FMP51";
-    model.placements[1] = {
-      ...model.placements[1],
-      role: "cable_assembly",
-      tag: "CLX-1P"
-    };
-    model.connections[0].cablePlacementId = "p2";
-    model.connections[0].conductorKey = "T1";
+    model.annotations = [
+      {
+        id: "note_1",
+        title: "Installation Instructions",
+        text: "Install Class I Division 1 seal fitting",
+        x: 60,
+        y: 70,
+        width: 58,
+        height: 24,
+        kind: "note",
+        leader: {
+          enabled: true,
+          targetX: 130,
+          targetY: 95
+        }
+      }
+    ];
 
-    const codes = validateDrawing(model, [approvedSymbol]).issues.map(
-      (issue) => issue.code
-    );
+    const svg = renderDrawingToSvg({
+      model,
+      approvedSymbols: [approvedSymbol]
+    });
 
-    expect(codes).toContain("PLACEMENT_DEVICE_TAG_FORMAT");
-    expect(codes).toContain("PLACEMENT_CABLE_ID_FORMAT");
-    expect(codes).toContain("CONNECTION_WIRE_ID_UNSET");
+    expect(svg).toContain('data-annotation-id="note_1"');
+    expect(svg).toContain('data-annotation-leader="note_1"');
+    expect(svg).toContain("Installation Instructions");
+    expect(svg).toContain('stroke="#cbd5e1"');
+    expect(svg).toContain('marker-end="url(#ei-note-arrow)"');
+    expect(svg).toContain("<tspan");
+    expect(svg).not.toContain("<foreignObject");
   });
 
   it("groups six conductor connections by transition pair", () => {
@@ -386,61 +409,6 @@ describe("drawing canvas domain", () => {
     expect(normalizeCableConductorKey("CH2_T1")).toBe("WHT");
     expect(deriveWireId(model, [approvedSymbol], firstEnd)).toBe("C-101-WHT");
     expect(deriveWireId(model, [approvedSymbol], secondEnd)).toBe("C-101-WHT");
-  });
-
-  it("allows the same wire ID on one cable but warns across different cable IDs", () => {
-    const model = validModel();
-    model.placements = [
-      { ...model.placements[0], id: "dev1", tag: "LIT-101" },
-      {
-        ...model.placements[1],
-        id: "cable1",
-        role: "cable_assembly",
-        tag: "C-101"
-      },
-      {
-        ...model.placements[1],
-        id: "cable2",
-        role: "cable_assembly",
-        tag: "C-102",
-        x: 220
-      }
-    ];
-    model.connections = [
-      {
-        id: "same_cable_a",
-        from: { placementId: "dev1", anchorKey: "T1" },
-        to: { placementId: "cable1", anchorKey: "T1" },
-        cablePlacementId: "cable1",
-        conductorKey: "T1",
-        wireId: "C-101-WHT"
-      },
-      {
-        id: "same_cable_b",
-        from: { placementId: "cable1", anchorKey: "T1" },
-        to: { placementId: "dev1", anchorKey: "T2" },
-        cablePlacementId: "cable1",
-        conductorKey: "T1",
-        wireId: "C-101-WHT"
-      }
-    ];
-
-    expect(validateDrawing(model, [approvedSymbol]).issues.map((issue) => issue.code)).not.toContain(
-      "CONNECTION_WIRE_ID_CABLE_CONFLICT"
-    );
-
-    model.connections.push({
-      id: "other_cable",
-      from: { placementId: "dev1", anchorKey: "T2" },
-      to: { placementId: "cable2", anchorKey: "T1" },
-      cablePlacementId: "cable2",
-      conductorKey: "T1",
-      wireId: "C-101-WHT"
-    });
-
-    expect(validateDrawing(model, [approvedSymbol]).issues.map((issue) => issue.code)).toContain(
-      "CONNECTION_WIRE_ID_CABLE_CONFLICT"
-    );
   });
 
   it("builds schedule-ready cable rows from drawing model data", () => {
@@ -557,32 +525,6 @@ describe("drawing canvas domain", () => {
     expect(svg).toContain('y="88.77"');
   });
 
-  it("validates corrupt route data as blocking", () => {
-    const model = validModel();
-    const route = generateDefaultOrthogonalRoute({
-      model,
-      symbols: [approvedSymbol],
-      connection: model.connections[0]
-    });
-
-    model.connections[0].route = route
-      ? {
-          ...route,
-          points: [
-            route.points[0],
-            { id: "bad", kind: "control", x: 999, y: 999 },
-            route.points[route.points.length - 1]
-          ]
-        }
-      : undefined;
-
-    const result = validateDrawing(model, [approvedSymbol]);
-
-    expect(result.issues.map((issue) => issue.code)).toContain(
-      "CONNECTION_ROUTE_POINT_OUT_OF_BOUNDS"
-    );
-  });
-
   it("offsets parallel cable-assigned routes without moving endpoints", () => {
     const model = validModel();
     model.placements.push({
@@ -619,28 +561,6 @@ describe("drawing canvas domain", () => {
       expect.objectContaining({ x: 125, y: 40 })
     );
     expect(firstRoute?.points[1].y).not.toBe(secondRoute?.points[1].y);
-  });
-
-  it("warns when a cable assignment is detached from both endpoints", () => {
-    const model = validModel();
-    model.placements.push({
-      id: "cable_1",
-      symbolId: "sym_1",
-      versionId: "ver_1",
-      role: "cable_assembly",
-      tag: "CBL-1",
-      x: 220,
-      y: 30,
-      rotation: 0,
-      scale: 0.5
-    });
-    model.connections[0].cablePlacementId = "cable_1";
-
-    const result = validateDrawing(model, [approvedSymbol]);
-
-    expect(result.issues.map((issue) => issue.code)).toContain(
-      "CONNECTION_CABLE_ENDPOINT_DETACHED"
-    );
   });
 
   it("suppresses generic route labels and renders useful labels with backing", () => {

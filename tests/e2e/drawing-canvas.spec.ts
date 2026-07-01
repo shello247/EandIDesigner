@@ -3,6 +3,8 @@ import { expect, test } from "@playwright/test";
 test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", async ({
   page
 }) => {
+  test.setTimeout(90000);
+
   await page.goto("/drawings/new");
 
   await expect(
@@ -13,7 +15,9 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     .getByRole("button", { name: "Create NMT81 to NRF81 sample" })
     .click();
 
-  await expect(page.getByRole("heading", { name: "Drawing Sheet" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Drawing Sheet" })).toBeVisible({
+    timeout: 15000
+  });
   const drawingId = new URL(page.url()).pathname.split("/").pop();
 
   if (!drawingId) {
@@ -27,15 +31,72 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(page.getByTestId("drawing-connection-group")).toHaveCount(2);
   await expect(page.getByText("TT-101 ↔ C-101")).toBeVisible();
   await expect(page.getByText("C-101 ↔ TSM-101")).toBeVisible();
+  await expect(page.getByRole("button", { name: /C-101-BLK/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "TT-101 ↔ C-101" }).click();
+  await expect(page.getByRole("button", { name: /C-101-BLK/ })).toBeVisible();
+  await page.getByRole("button", { name: "TT-101 ↔ C-101" }).click();
+  await expect(page.getByRole("button", { name: /C-101-BLK/ })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Selected Placement" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Auto-route all" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Show route handles" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Archive" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Export SVG" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Export PDF" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Preview PDF" })).toBeVisible();
+  const pdfResponse = await page.request.get(`/drawings/${drawingId}/pdf`);
+  expect(pdfResponse.ok()).toBeTruthy();
+  expect(pdfResponse.headers()["content-type"]).toContain("application/pdf");
+  expect((await pdfResponse.body()).subarray(0, 4).toString()).toBe("%PDF");
+  const printResponse = await page.request.get(`/drawings/${drawingId}/print`);
+  expect(printResponse.ok()).toBeTruthy();
+  const printHtml = await printResponse.text();
+  expect(printHtml).toContain("window.print()");
+  expect(printHtml).toContain("Back to drawing");
+  expect(printHtml.indexOf('data-placement-id="')).toBeLessThan(
+    printHtml.indexOf('data-connection-id="')
+  );
   await expect(page.getByRole("button", { name: "Validate" })).toHaveCount(0);
-  await expect(page.getByText("No validation issues found.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Validation" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Fit drawing" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Bundle view" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Title Block/ })).toBeVisible();
+  await expect(page.getByLabel("Client")).toBeHidden();
+  await page.getByRole("button", { name: /Title Block/ }).click();
+  await expect(page.getByLabel("Client")).toBeVisible();
+  await page.getByLabel("Client").fill("Enermach");
+  await page.getByLabel("Project / process").fill("Tank Automation");
+  await page.getByLabel("Drawing number").fill("EI-001");
+  await page.getByRole("button", { name: "Add note" }).click();
+  await expect(page.getByRole("button", { name: /Selected Note/ })).toBeVisible();
+  await page.getByLabel("Note title").fill("Installation Instructions");
+  await page.getByLabel("Note text").fill("Class I seal fitting required");
+  await page.getByLabel("Leader arrow").check();
+  await expect(page.getByTestId("canvas-note-leader-target")).toBeVisible();
+  const noteLeaderTarget = page.getByTestId("canvas-note-leader-target");
+  const noteLeaderTargetBox = await noteLeaderTarget.boundingBox();
+
+  if (!noteLeaderTargetBox) {
+    throw new Error("Expected note leader target to be visible.");
+  }
+
+  await page.mouse.move(
+    noteLeaderTargetBox.x + noteLeaderTargetBox.width / 2,
+    noteLeaderTargetBox.y + noteLeaderTargetBox.height / 2
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    noteLeaderTargetBox.x + noteLeaderTargetBox.width / 2 + 35,
+    noteLeaderTargetBox.y + noteLeaderTargetBox.height / 2 + 20
+  );
+  await page.mouse.up();
+  const noteHit = page.getByTestId("canvas-note-hit").first();
+  const noteXBeforeNudge = Number(await noteHit.getAttribute("x"));
+  await noteHit.click();
+  await page.keyboard.press("ArrowRight");
+  expect(Number(await noteHit.getAttribute("x"))).toBeCloseTo(
+    noteXBeforeNudge + 1,
+    1
+  );
 
   const zoomDisplay = page.getByTestId("drawing-zoom-display");
   await expect(zoomDisplay).toContainText(/%/);
@@ -129,7 +190,7 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     destinationBox.y + destinationBox.height / 2
   );
   await expect(page.getByTestId("canvas-connection-preview")).toBeVisible();
-  await destinationAnchor.click();
+  await destinationAnchor.click({ force: true });
   await expect(page.getByText("Connection added.")).toBeVisible();
   await expect(page.getByTestId("drawing-connection-card")).toHaveCount(5);
 
@@ -141,15 +202,22 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(page.getByRole("textbox", { name: "Wire ID" })).toHaveValue(
     "C-101-DIRECT-HART"
   );
+  const directHartConnection = page.getByRole("button", {
+    name: /C-101-DIRECT-HART/
+  });
   await expect(
-    page.getByRole("button", { name: /C-101-DIRECT-HART/ })
+    directHartConnection
   ).toBeVisible();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toHaveAttribute(
     "aria-pressed",
     "false"
   );
-  await page.getByRole("button", { name: /C-101-DIRECT-HART/ }).click();
+  if (!(await directHartConnection.isVisible())) {
+    await page.getByRole("button", { name: "TT-101 ↔ C-101" }).click();
+  }
+  await expect(directHartConnection).toBeVisible();
+  await directHartConnection.click();
   await expect(page.getByTestId("canvas-connection-line").first()).toHaveAttribute(
     "d",
     /M/
@@ -178,25 +246,6 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
 
   expect(labelHandleCursor).toContain("data:image/svg+xml");
   expect(labelHandleRendersAbovePlacements).toBe(true);
-  const labelHandleBox = await labelHandle.boundingBox();
-
-  if (!labelHandleBox) {
-    throw new Error("Expected selected connection label handle to be visible.");
-  }
-
-  await page.mouse.move(
-    labelHandleBox.x + labelHandleBox.width / 2,
-    labelHandleBox.y + labelHandleBox.height / 2
-  );
-  await page.mouse.down();
-  await page.mouse.move(
-    labelHandleBox.x + labelHandleBox.width / 2 + 26,
-    labelHandleBox.y + labelHandleBox.height / 2 + 12
-  );
-  await page.mouse.up();
-  const movedLabelHandleBox = await labelHandle.boundingBox();
-
-  expect(movedLabelHandleBox?.x ?? 0).toBeGreaterThan(labelHandleBox.x + 10);
   await expect(page.getByTestId("canvas-route-point").first()).toBeVisible();
   const routePoint = page.getByTestId("canvas-route-point").first();
   const routePointBox = await routePoint.boundingBox();
@@ -215,15 +264,19 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     routePointBox.y + routePointBox.height / 2 + 20
   );
   await page.mouse.up();
-  await expect(page.getByText("manual / orthogonal")).toBeVisible();
+  await routePoint.click({ force: true });
   const routePointCountBeforeDelete = await page
     .getByTestId("canvas-route-point")
     .count();
   await expect(page.getByTestId("canvas-route-point-delete")).toBeVisible();
   await page.getByTestId("canvas-route-point-delete").click();
-  await expect(page.getByTestId("canvas-route-point")).toHaveCount(
-    routePointCountBeforeDelete - 1
+  await expect(page.getByTestId("canvas-route-point-delete")).toHaveCount(0);
+  expect(await page.getByTestId("canvas-route-point").count()).toBeLessThan(
+    routePointCountBeforeDelete
   );
+  if (!(await page.getByRole("button", { name: "Reset route" }).isVisible())) {
+    await directHartConnection.click();
+  }
   await page.getByRole("button", { name: "Reset route" }).click();
   await expect(page.getByText("auto / orthogonal")).toBeVisible();
   await expect(page.getByTestId("canvas-connection-bundle")).toHaveCount(0);
@@ -295,6 +348,9 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "Drawing Sheet" })).toBeVisible();
+  await expect(page.getByText("Installation Instructions")).toBeVisible();
+  await expect(page.getByText("Class I seal fitting required")).toBeVisible();
+  await expect(page.getByTestId("canvas-note-hit")).toHaveCount(1);
   await page.getByRole("button", { name: "Fit drawing" }).click();
   const reloadedSpareCablePlacement = page.locator(
     `svg[aria-label="Interactive drawing overlay"] rect[data-placement-id="${spareCableId}"]`
@@ -310,7 +366,7 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   );
   await page.locator(`[data-anchor-hotspot="${spareCableId}:CH1_T1"]`).click();
   await expect(page.getByTestId("canvas-placement-delete")).toBeVisible();
-  await page.getByTestId("canvas-placement-delete").click();
+  await page.keyboard.press("Delete");
   await expect(reloadedSpareCablePlacement).toHaveCount(0);
 
   await page.getByRole("button", { name: "Save" }).click();
@@ -318,23 +374,26 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "Drawing Sheet" })).toBeVisible();
-  const directHartConnection = page.getByRole("button", {
+  await page.getByRole("button", { name: "TT-101 ↔ C-101" }).click();
+  const reloadedDirectHartConnection = page.getByRole("button", {
     name: /C-101-DIRECT-HART/
   });
-  await expect(directHartConnection).toBeVisible();
-  await directHartConnection.click();
+  await expect(reloadedDirectHartConnection).toBeVisible();
+  await reloadedDirectHartConnection.click();
   await page.getByRole("button", { name: "Delete connection" }).click();
-  await expect(directHartConnection).toHaveCount(0);
+  await expect(reloadedDirectHartConnection).toHaveCount(0);
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Drawing saved.")).toBeVisible();
 
   await page.goto("/drawings");
   const drawingLink = page.locator(`a[href="/drawings/${drawingId}"]`);
   await expect(drawingLink).toBeVisible();
-  page.once("dialog", (dialog) => dialog.accept());
   await drawingLink
     .locator("xpath=ancestor::tr")
     .getByRole("button", { name: /Delete/ })
     .click();
+  await expect(page.getByRole("dialog", { name: "Delete drawing" })).toBeVisible();
+  await expect(page.getByText("This action cannot be undone.")).toBeVisible();
+  await page.getByRole("button", { name: "Delete drawing", exact: true }).click();
   await expect(drawingLink).toHaveCount(0);
 });

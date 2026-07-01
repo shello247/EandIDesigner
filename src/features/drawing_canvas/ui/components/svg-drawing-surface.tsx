@@ -10,7 +10,7 @@ import {
   type PointerEvent,
   type SetStateAction
 } from "react";
-import type { DrawingModel } from "../../data/schema";
+import type { DrawingAnnotation, DrawingModel } from "../../data/schema";
 import type {
   DrawingConnectionRoute,
   DrawingEndpoint
@@ -18,11 +18,23 @@ import type {
 import type { ApprovedDrawingSymbol } from "../../types";
 import { getAnchorWorldPoint } from "../../logic/services/drawing-geometry";
 import { renderDrawingToSvg } from "../../logic/services/drawing-svg-renderer";
-import { addRouteControlPoint } from "../../logic/services/connection-route-geometry";
+import {
+  addRouteControlPoint,
+  updateRoutePoint
+} from "../../logic/services/connection-route-geometry";
 import {
   getRenderableConnectionRoute,
   routeLabelBox
 } from "../../logic/services/connection-route-renderer";
+import {
+  clampAnnotationPosition,
+  clampPointToSheet,
+  NOTE_NUDGE_STEP
+} from "../../logic/services/drawing-annotations";
+import {
+  getPlacementTitlePoint,
+  shouldShowPlacementTitle
+} from "../../logic/services/placement-title-labels";
 import {
   calculateFitTransform,
   clampZoom,
@@ -30,18 +42,22 @@ import {
   zoomAtViewportCenter
 } from "../../logic/services/viewport-transform";
 import { AnchorOverlay, AnchorTooltip } from "../canvas/AnchorOverlay";
+import { NoteBlockOverlay } from "../canvas/NoteBlockOverlay";
 import { PlacementOverlay } from "../canvas/PlacementOverlay";
+import { PlacementTitleOverlay } from "../canvas/PlacementTitleOverlay";
 import { RouteHandlesOverlay } from "../canvas/RouteHandlesOverlay";
 import { RouteLabelOverlay } from "../canvas/RouteLabelOverlay";
 import { useCanvasKeyboardShortcuts } from "../canvas/hooks/useCanvasKeyboardShortcuts";
 import { usePlacementResize } from "../canvas/hooks/usePlacementResize";
+import { usePlacementTitleDrag } from "../canvas/hooks/usePlacementTitleDrag";
 import { useRouteLabelDrag } from "../canvas/hooks/useRouteLabelDrag";
 import { useRoutePointDrag } from "../canvas/hooks/useRoutePointDrag";
 import { useViewportPan } from "../canvas/hooks/useViewportPan";
 import type {
   ConnectionDraft,
   ConnectionSegment,
-  DragState
+  DragState,
+  PlacementTitleLabel
 } from "../canvas/types";
 import {
   getViewportSize,
@@ -63,6 +79,9 @@ export function SvgDrawingSurface({
   onSelectPlacement,
   onPlacementChange,
   onPlacementRemove,
+  selectedAnnotationId,
+  onAnnotationSelect,
+  onAnnotationChange,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -73,7 +92,8 @@ export function SvgDrawingSurface({
   onConnectionPointerMove,
   onConnectionSelect,
   onConnectionRouteChange,
-  onConnectionCancel
+  onConnectionCancel,
+  onViewportCenterChange
 }: {
   model: DrawingModel;
   symbols: ApprovedDrawingSymbol[];
@@ -87,6 +107,12 @@ export function SvgDrawingSurface({
     updates: Partial<DrawingModel["placements"][number]>
   ) => void;
   onPlacementRemove: (placementId: string) => void;
+  selectedAnnotationId?: string;
+  onAnnotationSelect: (annotationId: string | undefined) => void;
+  onAnnotationChange: (
+    annotationId: string,
+    updates: Partial<DrawingAnnotation>
+  ) => void;
   onDragStart: (state: DragState) => void;
   onDragMove: (placementId: string, x: number, y: number) => void;
   onDragEnd: () => void;
@@ -101,6 +127,7 @@ export function SvgDrawingSurface({
     route: DrawingConnectionRoute
   ) => void;
   onConnectionCancel: () => void;
+  onViewportCenterChange?: (point: { x: number; y: number }) => void;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const didInitialFitRef = useRef(false);
@@ -108,6 +135,9 @@ export function SvgDrawingSurface({
   const [selectedRoutePointId, setSelectedRoutePointId] = useState<string | null>(
     null
   );
+  const [selectedAnnotationLeaderId, setSelectedAnnotationLeaderId] = useState<
+    string | null
+  >(null);
   const sheetPixelSize = useMemo(
     () => ({
       width: model.sheet.width * SHEET_PIXEL_SCALE,
@@ -175,9 +205,34 @@ export function SvgDrawingSurface({
       }),
     [model, symbols]
   );
+  const placementTitleLabels: PlacementTitleLabel[] = useMemo(
+    () =>
+      model.placements.flatMap((placement) => {
+        const symbol = symbolsByKey.get(
+          packageKey(placement.symbolId, placement.versionId)
+        );
+
+        if (!symbol || !shouldShowPlacementTitle(symbol)) {
+          return [];
+        }
+
+        return [
+          {
+            placementId: placement.id,
+            label: symbol.displayName,
+            point: getPlacementTitlePoint(placement)
+          }
+        ];
+      }),
+    [model.placements, symbolsByKey]
+  );
   const selectedConnectionSegment =
     connectionSegments.find(
       (segment) => segment.connection.id === selectedConnectionId
+    ) ?? null;
+  const selectedPlacementTitle =
+    placementTitleLabels.find(
+      (label) => label.placementId === selectedPlacementId
     ) ?? null;
   const activeAnchorHotspot =
     anchorHotspots.find((hotspot) => hotspot.id === activeAnchorId) ?? null;
@@ -293,6 +348,24 @@ export function SvgDrawingSurface({
     return () => observer.disconnect();
   }, [setViewportTransform, sheetPixelSize]);
 
+  useEffect(() => {
+    const viewportElement = viewportRef.current;
+
+    if (!viewportElement || !onViewportCenterChange) {
+      return;
+    }
+
+    const viewportSize = getViewportSize(viewportElement);
+    const scale = SHEET_PIXEL_SCALE * viewportTransform.zoom;
+    const x = (viewportSize.width / 2 - viewportTransform.panX) / scale;
+    const y = (viewportSize.height / 2 - viewportTransform.panY) / scale;
+
+    onViewportCenterChange({
+      x: Number(Math.max(0, Math.min(model.sheet.width, x)).toFixed(2)),
+      y: Number(Math.max(0, Math.min(model.sheet.height, y)).toFixed(2))
+    });
+  }, [model.sheet.height, model.sheet.width, onViewportCenterChange, viewportTransform]);
+
   const {
     isPanning,
     handleWheel,
@@ -350,6 +423,20 @@ export function SvgDrawingSurface({
     setSelectedRoutePointId
   });
 
+  const {
+    updateDraggedPlacementTitle,
+    handlePlacementTitlePointerDown,
+    endPlacementTitleDrag
+  } = usePlacementTitleDrag({
+    model,
+    placementTitleLabels,
+    selectedPlacementTitle,
+    onFocusCanvas: focusCanvas,
+    onSelectPlacement,
+    onConnectionSelect,
+    onPlacementChange
+  });
+
   const selectHotspotPlacement = useCallback(
     (event: PointerEvent<SVGSVGElement>) => {
       if (event.button !== 0 || connectionMode === "connecting") {
@@ -371,8 +458,10 @@ export function SvgDrawingSurface({
       viewportRef.current?.focus();
       onSelectPlacement(placementId);
       onConnectionSelect(undefined);
+      onAnnotationSelect(undefined);
+      setSelectedAnnotationLeaderId(null);
     },
-    [connectionMode, onConnectionSelect, onSelectPlacement]
+    [connectionMode, onAnnotationSelect, onConnectionSelect, onSelectPlacement]
   );
 
   const {
@@ -388,7 +477,9 @@ export function SvgDrawingSurface({
   const clearCanvasSelection = useCallback(() => {
     onSelectPlacement(undefined);
     onConnectionSelect(undefined);
-  }, [onConnectionSelect, onSelectPlacement]);
+    onAnnotationSelect(undefined);
+    setSelectedAnnotationLeaderId(null);
+  }, [onAnnotationSelect, onConnectionSelect, onSelectPlacement]);
 
   const deleteSelectedRoutePoint = useCallback(() => {
     if (!selectedRoutePointId) {
@@ -397,6 +488,133 @@ export function SvgDrawingSurface({
 
     deleteRoutePoint(selectedRoutePointId);
   }, [deleteRoutePoint, selectedRoutePointId]);
+
+  const nudgeSelected = useCallback(
+    (direction: "up" | "down" | "left" | "right") => {
+      const delta = {
+        x:
+          direction === "left"
+            ? -NOTE_NUDGE_STEP
+            : direction === "right"
+              ? NOTE_NUDGE_STEP
+              : 0,
+        y:
+          direction === "up"
+            ? -NOTE_NUDGE_STEP
+            : direction === "down"
+              ? NOTE_NUDGE_STEP
+              : 0
+      };
+
+      if (selectedConnectionSegment && selectedRoutePointId) {
+        const routePoint = selectedConnectionSegment.route.points.find(
+          (point) => point.id === selectedRoutePointId
+        );
+
+        if (routePoint && routePoint.kind !== "endpoint") {
+          onConnectionRouteChange(
+            selectedConnectionSegment.connection.id,
+            updateRoutePoint({
+              route: selectedConnectionSegment.route,
+              pointId: selectedRoutePointId,
+              point: {
+                x: routePoint.x + delta.x,
+                y: routePoint.y + delta.y
+              },
+              sheet: model.sheet
+            })
+          );
+        }
+
+        return;
+      }
+
+      if (selectedAnnotationLeaderId) {
+        const annotation = model.annotations.find(
+          (candidate) => candidate.id === selectedAnnotationLeaderId
+        );
+
+        if (annotation?.leader?.enabled) {
+          const target = clampPointToSheet(
+            {
+              x: annotation.leader.targetX + delta.x,
+              y: annotation.leader.targetY + delta.y
+            },
+            model.sheet
+          );
+          onAnnotationChange(annotation.id, {
+            leader: {
+              ...annotation.leader,
+              targetX: target.x,
+              targetY: target.y
+            }
+          });
+        }
+
+        return;
+      }
+
+      if (selectedAnnotationId) {
+        const annotation = model.annotations.find(
+          (candidate) => candidate.id === selectedAnnotationId
+        );
+
+        if (annotation) {
+          onAnnotationChange(
+            annotation.id,
+            clampAnnotationPosition(
+              annotation,
+              { x: annotation.x + delta.x, y: annotation.y + delta.y },
+              model.sheet
+            )
+          );
+        }
+
+        return;
+      }
+
+      if (selectedPlacementId) {
+        const placement = model.placements.find(
+          (candidate) => candidate.id === selectedPlacementId
+        );
+
+        if (placement) {
+          onPlacementChange(placement.id, {
+            x: Number((placement.x + delta.x).toFixed(2)),
+            y: Number((placement.y + delta.y).toFixed(2))
+          });
+        }
+      }
+    },
+    [
+      model.annotations,
+      model.placements,
+      model.sheet,
+      onAnnotationChange,
+      onConnectionRouteChange,
+      onPlacementChange,
+      selectedAnnotationId,
+      selectedAnnotationLeaderId,
+      selectedConnectionSegment,
+      selectedPlacementId,
+      selectedRoutePointId
+    ]
+  );
+
+  const selectAnnotation = useCallback(
+    (annotationId: string | undefined) => {
+      onAnnotationSelect(annotationId);
+
+      if (annotationId) {
+        onSelectPlacement(undefined);
+        onConnectionSelect(undefined);
+        setSelectedRoutePointId(null);
+      } else {
+        setSelectedAnnotationLeaderId(null);
+      }
+    },
+    [onAnnotationSelect, onConnectionSelect, onSelectPlacement]
+  );
 
   const handleCanvasKeyDown = useCanvasKeyboardShortcuts({
     connectionMode,
@@ -407,7 +625,8 @@ export function SvgDrawingSurface({
     onConnectionCancel,
     onClearSelection: clearCanvasSelection,
     onDeleteSelectedRoutePoint: deleteSelectedRoutePoint,
-    onPlacementRemove
+    onPlacementRemove,
+    onNudgeSelected: nudgeSelected
   });
 
   return (
@@ -446,6 +665,8 @@ export function SvgDrawingSurface({
 
           viewportRef.current?.focus();
           onSelectPlacement(undefined);
+          onAnnotationSelect(undefined);
+          setSelectedAnnotationLeaderId(null);
         }}
         onKeyDown={handleCanvasKeyDown}
         tabIndex={0}
@@ -478,6 +699,8 @@ export function SvgDrawingSurface({
                 viewportRef.current?.focus();
                 onSelectPlacement(undefined);
                 onConnectionSelect(undefined);
+                onAnnotationSelect(undefined);
+                setSelectedAnnotationLeaderId(null);
                 setSelectedRoutePointId(null);
               }}
               onPointerMove={updateConnectionPointer}
@@ -541,10 +764,12 @@ export function SvgDrawingSurface({
                         }
 
                         event.stopPropagation();
-                        viewportRef.current?.focus();
-                        onConnectionSelect(segment.connection.id);
-                        onSelectPlacement(undefined);
-                        setSelectedRoutePointId(null);
+                      viewportRef.current?.focus();
+                      onConnectionSelect(segment.connection.id);
+                      onSelectPlacement(undefined);
+                      onAnnotationSelect(undefined);
+                      setSelectedAnnotationLeaderId(null);
+                      setSelectedRoutePointId(null);
                       }}
                       onDoubleClick={(event) => {
                         event.preventDefault();
@@ -597,6 +822,16 @@ export function SvgDrawingSurface({
                 onResizeMove={updatePlacementFromResize}
                 onResizeEnd={endPlacementResize}
               />
+              <NoteBlockOverlay
+                model={model}
+                selectedAnnotationId={selectedAnnotationId}
+                selectedAnnotationLeaderId={selectedAnnotationLeaderId}
+                viewportZoom={viewportTransform.zoom}
+                onFocusCanvas={focusCanvas}
+                onAnnotationSelect={selectAnnotation}
+                onAnnotationLeaderSelect={setSelectedAnnotationLeaderId}
+                onAnnotationChange={onAnnotationChange}
+              />
               <AnchorOverlay
                 anchorHotspots={anchorHotspots}
                 activeAnchorId={activeAnchorId}
@@ -628,6 +863,13 @@ export function SvgDrawingSurface({
                 onRouteLabelPointerDown={handleRouteLabelPointerDown}
                 onRouteLabelPointerMove={updateDraggedRouteLabel}
                 onRouteLabelPointerEnd={endRouteLabelDrag}
+              />
+              <PlacementTitleOverlay
+                selectedPlacementTitle={selectedPlacementTitle}
+                viewportZoom={viewportTransform.zoom}
+                onPlacementTitlePointerDown={handlePlacementTitlePointerDown}
+                onPlacementTitlePointerMove={updateDraggedPlacementTitle}
+                onPlacementTitlePointerEnd={endPlacementTitleDrag}
               />
             </svg>
             <AnchorTooltip hotspot={activeAnchorHotspot} sheet={model.sheet} />

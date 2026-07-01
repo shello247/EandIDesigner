@@ -2,35 +2,14 @@ import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import {
   drawingStatusSchema,
-  parseDrawingModelJson,
-  type DrawingValidationIssue
+  parseDrawingModelJson
 } from "./schema";
 import type { DrawingDetail, DrawingListItem } from "../types";
-
-function toValidationIssue(issue: {
-  severity: string;
-  code: string;
-  message: string;
-  path: string | null;
-}): DrawingValidationIssue {
-  return {
-    severity: issue.severity as DrawingValidationIssue["severity"],
-    code: issue.code,
-    message: issue.message,
-    path: issue.path ?? undefined
-  };
-}
 
 export const listDrawings = cache(async (): Promise<DrawingListItem[]> => {
   const rows = await prisma.drawing.findMany({
     where: {
       NOT: { status: "archived" }
-    },
-    include: {
-      validationIssues: {
-        where: { severity: "blocking" },
-        select: { id: true }
-      }
     },
     orderBy: { updatedAt: "desc" }
   });
@@ -45,7 +24,6 @@ export const listDrawings = cache(async (): Promise<DrawingListItem[]> => {
       status: drawingStatusSchema.parse(row.status),
       placementCount: model.placements.length,
       connectionCount: model.connections.length,
-      blockingIssueCount: row.validationIssues.length,
       updatedAt: row.updatedAt.toISOString()
     };
   });
@@ -54,12 +32,7 @@ export const listDrawings = cache(async (): Promise<DrawingListItem[]> => {
 export const getDrawingDetail = cache(
   async (id: string): Promise<DrawingDetail | null> => {
     const row = await prisma.drawing.findUnique({
-      where: { id },
-      include: {
-        validationIssues: {
-          orderBy: [{ severity: "asc" }, { createdAt: "desc" }]
-        }
-      }
+      where: { id }
     });
 
     if (!row) {
@@ -72,10 +45,8 @@ export const getDrawingDetail = cache(
       title: row.title,
       status: drawingStatusSchema.parse(row.status),
       model: parseDrawingModelJson(row.modelJson),
-      validationIssues: row.validationIssues.map(toValidationIssue),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString()
     };
   }
 );
-

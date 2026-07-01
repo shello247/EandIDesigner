@@ -3,15 +3,12 @@ import { listApprovedSymbolsForDrawing } from "@/features/symbol_registry/api/pu
 import {
   createDefaultDrawingModel,
   createDrawingInputSchema,
-  parseDrawingModelJson,
   saveDrawingInputSchema,
   stringifyDrawingModel,
   type CreateDrawingInput,
   type DrawingModel,
-  type DrawingValidationIssue,
   type SaveDrawingInput
 } from "./schema";
-import { validateDrawing } from "../logic/use_cases/validate-drawing";
 import { getDrawingDetail } from "./queries";
 
 function normalizeDrawingKey(value: string): string {
@@ -42,29 +39,6 @@ async function nextUniqueDrawingKey(baseValue: string): Promise<string> {
   return candidate;
 }
 
-async function replaceValidationIssues(params: {
-  drawingId: string;
-  issues: DrawingValidationIssue[];
-}) {
-  await prisma.drawingValidationIssue.deleteMany({
-    where: { drawingId: params.drawingId }
-  });
-
-  if (params.issues.length === 0) {
-    return;
-  }
-
-  await prisma.drawingValidationIssue.createMany({
-    data: params.issues.map((issue) => ({
-      drawingId: params.drawingId,
-      severity: issue.severity,
-      code: issue.code,
-      message: issue.message,
-      path: issue.path
-    }))
-  });
-}
-
 export async function createDrawing(input: CreateDrawingInput) {
   const parsed = createDrawingInputSchema.parse(input);
   const drawingKey = await nextUniqueDrawingKey(
@@ -86,60 +60,20 @@ export async function createDrawing(input: CreateDrawingInput) {
 
 export async function saveDrawing(input: SaveDrawingInput) {
   const parsed = saveDrawingInputSchema.parse(input);
-  const approvedSymbols = await listApprovedSymbolsForDrawing();
-  const validation = validateDrawing(parsed.model, approvedSymbols);
-  const status =
-    validation.blockingIssueCount > 0 ? "needs_review" : "needs_review";
 
   await prisma.drawing.update({
     where: { id: parsed.drawingId },
     data: {
       title: parsed.title,
-      status,
+      status: "needs_review",
       modelJson: stringifyDrawingModel(parsed.model)
     }
-  });
-
-  await replaceValidationIssues({
-    drawingId: parsed.drawingId,
-    issues: validation.issues
   });
 
   return getDrawingDetail(parsed.drawingId);
 }
 
-async function validateDrawingRecord(drawingId: string) {
-  const row = await prisma.drawing.findUnique({
-    where: { id: drawingId }
-  });
-
-  if (!row) {
-    throw new Error("Drawing was not found.");
-  }
-
-  const approvedSymbols = await listApprovedSymbolsForDrawing();
-  const model = parseDrawingModelJson(row.modelJson);
-  const validation = validateDrawing(model, approvedSymbols);
-
-  await replaceValidationIssues({
-    drawingId,
-    issues: validation.issues
-  });
-
-  return {
-    drawingId,
-    blockingIssueCount: validation.blockingIssueCount,
-    issues: validation.issues
-  };
-}
-
 export async function approveDrawing(drawingId: string) {
-  const validation = await validateDrawingRecord(drawingId);
-
-  if (validation.blockingIssueCount > 0) {
-    throw new Error("Blocking validation issues must be resolved before approval.");
-  }
-
   await prisma.drawing.update({
     where: { id: drawingId },
     data: { status: "approved" }
@@ -280,12 +214,6 @@ export async function createNmt81ToNrf81SampleDrawing() {
       status: "needs_review",
       modelJson: stringifyDrawingModel(model)
     }
-  });
-
-  const validation = validateDrawing(model, approvedSymbols);
-  await replaceValidationIssues({
-    drawingId: row.id,
-    issues: validation.issues
   });
 
   return getDrawingDetail(row.id);

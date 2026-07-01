@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultDrawingModel, type DrawingModel } from "../data/schema";
 import {
+  addAnnotation,
+  deleteAnnotation,
   deletePlacement,
+  moveAnnotation,
   movePlacement,
+  updateAnnotation,
   updateConnectionLabel,
   updateConnectionRoute
 } from "../logic/commands/drawing-model-commands";
@@ -102,5 +106,42 @@ describe("drawing model commands", () => {
       label: "White",
       route
     });
+  });
+
+  it("adds, moves, updates, and deletes annotations", () => {
+    const model = modelWithPlacementsAndConnections();
+    const withAnnotation = addAnnotation(model, {
+      id: "note_1",
+      text: "Install seal fitting",
+      x: 20,
+      y: 30,
+      width: 70,
+      height: 24,
+      kind: "note",
+      leader: {
+        enabled: true,
+        targetX: 110,
+        targetY: 55
+      }
+    });
+
+    expect(withAnnotation.annotations).toHaveLength(1);
+
+    const moved = moveAnnotation(withAnnotation, "note_1", { x: 25, y: 36 });
+    expect(moved.annotations[0]).toMatchObject({
+      x: 25,
+      y: 36,
+      leader: {
+        enabled: true,
+        targetX: 110,
+        targetY: 55
+      }
+    });
+
+    const updated = updateAnnotation(moved, "note_1", { text: "Updated note" });
+    expect(updated.annotations[0].text).toBe("Updated note");
+
+    const removed = deleteAnnotation(updated, "note_1");
+    expect(removed.annotations).toHaveLength(0);
   });
 });

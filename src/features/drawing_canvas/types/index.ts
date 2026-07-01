@@ -1,9 +1,5 @@
 import type { SymbolCategory, SymbolMetadata } from "@/features/symbol_registry/data/schema";
-import type {
-  DrawingModel,
-  DrawingStatus,
-  DrawingValidationIssue
-} from "../data/schema";
+import type { DrawingModel, DrawingStatus } from "../data/schema";
 
 export type ApprovedDrawingSymbol = {
   symbolId: string;
@@ -25,7 +21,6 @@ export type DrawingListItem = {
   status: DrawingStatus;
   placementCount: number;
   connectionCount: number;
-  blockingIssueCount: number;
   updatedAt: string;
 };
 
@@ -35,7 +30,6 @@ export type DrawingDetail = {
   title: string;
   status: DrawingStatus;
   model: DrawingModel;
-  validationIssues: DrawingValidationIssue[];
   createdAt: string;
   updatedAt: string;
 };
@@ -43,4 +37,3 @@ export type DrawingDetail = {
 export type ActionResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string };
-

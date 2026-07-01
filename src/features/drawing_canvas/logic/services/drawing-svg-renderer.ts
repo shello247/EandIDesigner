@@ -1,7 +1,15 @@
-import type { DrawingModel } from "../../data/schema";
+import type { DrawingAnnotation, DrawingModel } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import { getAnchorWorldPoint, getPlacementTransform } from "./drawing-geometry";
 import { renderConnectionRouteSvg } from "./connection-route-renderer";
+import {
+  getAnnotationSize,
+  getLeaderStartPoint
+} from "./drawing-annotations";
+import {
+  getPlacementLabelPoints,
+  shouldShowPlacementTitle
+} from "./placement-title-labels";
 
 function escapeXml(value: string): string {
   return value
@@ -242,6 +250,69 @@ function symbolKey(symbolId: string, versionId: string): string {
   return `${symbolId}:${versionId}`;
 }
 
+function wrapText(value: string, maxCharacters: number): string[] {
+  return value
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      const words = line.trim().split(/\s+/).filter(Boolean);
+      const output: string[] = [];
+      let current = "";
+
+      for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word;
+
+        if (candidate.length > maxCharacters && current) {
+          output.push(current);
+          current = word;
+          continue;
+        }
+
+        current = candidate;
+      }
+
+      return [...output, current || " "];
+    });
+}
+
+function renderAnnotation(annotation: DrawingAnnotation): string {
+  if (annotation.kind === "title") {
+    return `<text x="${annotation.x}" y="${annotation.y}" font-family="Arial" font-size="5" font-weight="700" fill="#111827">${escapeXml(annotation.text)}</text>`;
+  }
+
+  const size = getAnnotationSize(annotation);
+  const title = annotation.title?.trim() || "Note";
+  const maxCharacters = Math.max(12, Math.floor((size.width - 8) / 2));
+  const lines = annotation.text.trim()
+    ? wrapText(annotation.text, maxCharacters).slice(
+        0,
+        Math.max(1, Math.floor((size.height - 13) / 4.1))
+      )
+    : [];
+  const leader = annotation.leader?.enabled
+    ? (() => {
+        const start = getLeaderStartPoint(annotation);
+
+        return `<line data-annotation-leader="${escapeXml(annotation.id)}" x1="${start.x}" y1="${start.y}" x2="${annotation.leader.targetX}" y2="${annotation.leader.targetY}" stroke="#64748b" stroke-width="0.34" marker-end="url(#ei-note-arrow)"/>`;
+      })()
+    : "";
+
+  return `
+    <g data-annotation-id="${escapeXml(annotation.id)}" data-annotation-kind="${escapeXml(annotation.kind)}">
+      ${leader}
+      <rect x="${annotation.x}" y="${annotation.y}" width="${size.width}" height="${size.height}" rx="1" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.26"/>
+      <text x="${annotation.x + 4}" y="${annotation.y + 6.2}" font-family="Arial, Helvetica, sans-serif" font-size="2.75" font-weight="700" fill="#0f172a">${escapeXml(title)}</text>
+      <text x="${annotation.x + 4}" y="${annotation.y + 11.2}" font-family="Arial, Helvetica, sans-serif" font-size="2.7" font-weight="500" fill="#475569">
+        ${lines
+          .map(
+            (line, index) =>
+              `<tspan x="${annotation.x + 4}" dy="${index === 0 ? 0 : 4.1}">${escapeXml(line)}</tspan>`
+          )
+          .join("")}
+      </text>
+    </g>
+  `;
+}
+
 function approvedSymbolMap(approvedSymbols: ApprovedDrawingSymbol[]) {
   return new Map(
     approvedSymbols.map((symbol) => [
@@ -271,6 +342,9 @@ export function renderDrawingToSvg(params: {
       <pattern id="ei-grid" width="${gridSize}" height="${gridSize}" patternUnits="userSpaceOnUse">
         <path d="M ${gridSize} 0 L 0 0 0 ${gridSize}" fill="none" stroke="#e7edf5" stroke-width="0.25"/>
       </pattern>
+      <marker id="ei-note-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+        <path d="M 0 0 L 8 4 L 0 8 z" fill="#64748b"/>
+      </marker>
     </defs>
     <rect x="0" y="0" width="${model.sheet.width}" height="${model.sheet.height}" fill="white"/>
     <rect x="0" y="0" width="${model.sheet.width}" height="${model.sheet.height}" fill="url(#ei-grid)"/>
@@ -315,26 +389,52 @@ export function renderDrawingToSvg(params: {
           <g transform="${transform}" ${extractInheritedRootAttributes(symbol.svg)}>
             ${stripSvgRoot(symbol.svg)}
           </g>
-          <text x="${placement.x}" y="${placement.y - 3}" font-family="Arial" font-size="4" font-weight="700" fill="#111827">${escapeXml(placement.tag)}</text>
           ${anchors}
         </g>
       `;
     })
     .join("");
+  const placementLabels = model.placements
+    .map((placement) => {
+      const symbol = approvedSymbolsByKey.get(
+        symbolKey(placement.symbolId, placement.versionId)
+      );
 
-  const annotations = model.annotations
-    .map(
-      (annotation) =>
-        `<text x="${annotation.x}" y="${annotation.y}" font-family="Arial" font-size="${annotation.kind === "title" ? 5 : 3.5}" font-weight="${annotation.kind === "title" ? 700 : 400}" fill="#111827">${escapeXml(annotation.text)}</text>`
-    )
+      if (!symbol) {
+        return "";
+      }
+
+      const showPlacementTitle = shouldShowPlacementTitle(symbol);
+      const placementLabelPoints = showPlacementTitle
+        ? getPlacementLabelPoints(placement)
+        : undefined;
+      const tagPoint = placementLabelPoints?.tagPoint ?? {
+        x: placement.x,
+        y: placement.y - 3
+      };
+      const placementTitle =
+        showPlacementTitle && placementLabelPoints
+          ? `<text data-placement-title="${escapeXml(placement.id)}" x="${placementLabelPoints.titlePoint.x}" y="${placementLabelPoints.titlePoint.y}" font-family="Arial, Helvetica, sans-serif" font-size="3.1" font-weight="600" fill="#64748b">${escapeXml(symbol.displayName)}</text>`
+          : "";
+
+      return `
+        <g data-placement-label-id="${escapeXml(placement.id)}">
+          <text data-placement-tag="${escapeXml(placement.id)}" x="${tagPoint.x}" y="${tagPoint.y}" font-family="Arial, Helvetica, sans-serif" font-size="4" font-weight="700" fill="#111827">${escapeXml(placement.tag)}</text>
+          ${placementTitle}
+        </g>
+      `;
+    })
     .join("");
+
+  const annotations = model.annotations.map(renderAnnotation).join("");
 
   const titleBlock = renderTitleBlock(model);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${model.sheet.width}mm" height="${model.sheet.height}mm" viewBox="0 0 ${model.sheet.width} ${model.sheet.height}">
     ${grid}
-    ${connections}
     ${placements}
+    ${connections}
+    ${placementLabels}
     ${annotations}
     ${titleBlock}
   </svg>`;

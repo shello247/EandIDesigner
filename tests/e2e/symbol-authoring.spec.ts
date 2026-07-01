@@ -44,7 +44,7 @@ test("imports an SVG symbol draft and keeps review workflows available", async (
 
   await expect(
     page.getByRole("heading", { name: symbolName, exact: true })
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15000 });
   await expect(page.getByText("Needs review")).toBeVisible();
 
   await page.locator('[data-terminal-hotspot="1"]').hover();

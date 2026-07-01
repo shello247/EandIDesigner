@@ -1,4 +1,5 @@
 import type {
+  DrawingAnnotation,
   DrawingConnection,
   DrawingConnectionRoute,
   DrawingModel,
@@ -107,6 +108,49 @@ export function deleteConnection(
     ...model,
     connections: model.connections.filter(
       (connection) => connection.id !== connectionId
+    )
+  };
+}
+
+export function addAnnotation(
+  model: DrawingModel,
+  annotation: DrawingAnnotation
+): DrawingModel {
+  return {
+    ...model,
+    annotations: [...model.annotations, annotation]
+  };
+}
+
+export function updateAnnotation(
+  model: DrawingModel,
+  annotationId: string,
+  updates: Partial<DrawingAnnotation>
+): DrawingModel {
+  return {
+    ...model,
+    annotations: model.annotations.map((annotation) =>
+      annotation.id === annotationId ? { ...annotation, ...updates } : annotation
+    )
+  };
+}
+
+export function moveAnnotation(
+  model: DrawingModel,
+  annotationId: string,
+  point: { x: number; y: number }
+): DrawingModel {
+  return updateAnnotation(model, annotationId, point);
+}
+
+export function deleteAnnotation(
+  model: DrawingModel,
+  annotationId: string
+): DrawingModel {
+  return {
+    ...model,
+    annotations: model.annotations.filter(
+      (annotation) => annotation.id !== annotationId
     )
   };
 }

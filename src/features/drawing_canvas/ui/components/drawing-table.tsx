@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { AlertTriangle } from "lucide-react";
 import type { DrawingListItem } from "../../types";
 import { DrawingDeleteButton } from "./drawing-delete-button";
 
@@ -34,7 +33,6 @@ export function DrawingTable({ drawings }: { drawings: DrawingListItem[] }) {
             <th>Status</th>
             <th>Placements</th>
             <th>Connections</th>
-            <th>Issues</th>
             <th>Updated</th>
             <th>Actions</th>
           </tr>
@@ -56,16 +54,6 @@ export function DrawingTable({ drawings }: { drawings: DrawingListItem[] }) {
               <td>{statusLabels[drawing.status]}</td>
               <td>{drawing.placementCount}</td>
               <td>{drawing.connectionCount}</td>
-              <td>
-                {drawing.blockingIssueCount > 0 ? (
-                  <span className="inline-flex items-center gap-1 font-bold text-red-700">
-                    <AlertTriangle aria-hidden="true" size={15} />
-                    {drawing.blockingIssueCount}
-                  </span>
-                ) : (
-                  <span className="text-slate-500">0</span>
-                )}
-              </td>
               <td>{new Date(drawing.updatedAt).toLocaleString()}</td>
               <td>
                 <DrawingDeleteButton

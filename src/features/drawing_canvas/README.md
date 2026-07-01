@@ -1,18 +1,188 @@
 # Drawing Canvas
 
-Model-driven engineering drawing workspace.
+`drawing_canvas` is the model-driven engineering drawing workspace. It is the
+current primary application module.
 
-The canvas stores structured drawing JSON and renders deterministic SVG sheets
-from approved registry symbols. V1 supports a single A3 landscape sheet,
-approved symbol placements, semantic anchor-to-anchor connections, manual
-orthogonal route editing, save, and approval.
+The canvas renders an A3 landscape wiring sheet from approved registry symbols
+and a structured `DrawingModel`. It is intentionally not a freeform SVG/vector
+editor.
 
-Validation remains part of save and approval, but it is not exposed as a
-standalone drawing action. Drawing export and archive are not exposed in the
-current drawing workflow.
+## Current Status
 
-## Test
+The current sheet milestone is complete enough to pause and move to the next
+application stage.
+
+Supported now:
+
+- Drawing list, creation, deletion, save, and manual approval.
+- NMT81-to-NRF81 sample drawing creation.
+- Approved symbol library panel.
+- Symbol placement, drag, resize, delete, scale, rotation, and plant/cable ID
+  editing.
+- Placement tag/title labels for every draggable symbol type.
+- Purple placement label handle that moves the tag/title pair together.
+- Figma-style viewport controls: Fit, 100 percent, zoom in/out, Ctrl+wheel
+  zoom, and middle-button pan.
+- Anchor hover data.
+- Click-click connection authoring between anchors.
+- Grouped connection panel by transition, for example `TT-101 <-> C-101`.
+- Wire IDs, conductor keys, cable placement references, and connection labels.
+- Manual orthogonal route editing with route points, route-point deletion, route
+  label yellow handles, and route reset.
+- Note blocks with editable title/body in the right panel.
+- Optional note leader arrows and draggable note leader target.
+- Arrow-key nudge by 1 mm for selected movable canvas items.
+- Collapsible title block editor.
+- Floating green toast notifications.
+- Single-page PDF preview via `/drawings/[id]/pdf`.
+- Browser print preview via `/drawings/[id]/print`.
+
+Intentionally not supported in the current drawing workflow:
+
+- Public drawing validation action/UI.
+- Drawing archive action/UI.
+- SVG export action/UI.
+- Global auto-route all.
+- Bundle view or generated cable bundle geometry.
+- Full cable/termination schedule pages.
+- Multi-sheet drawing packages.
+
+## Route Surface
+
+- `/drawings` - list drawings.
+- `/drawings/new` - create blank drawings or the sample drawing.
+- `/drawings/[id]` - interactive drawing workspace.
+- `/drawings/[id]/pdf` - server-generated PDF using Playwright.
+- `/drawings/[id]/print` - print-focused HTML preview.
+
+## Data Model
+
+Prisma stores drawings in:
+
+- `Drawing`
+  - `id`
+  - `drawingKey`
+  - `title`
+  - `status`
+  - `modelJson`
+  - timestamps
+- `DrawingValidationIssue`
+  - still present for compatibility, but drawing validation is not exposed in
+    the current canvas workflow.
+
+`Drawing.modelJson` is parsed by `data/schema.ts` as:
+
+- `version: 1`
+- `sheet`
+  - A3 landscape dimensions in millimetres.
+  - grid size.
+  - title block fields.
+- `placements`
+  - approved symbol/version reference.
+  - role: `device`, `cable_assembly`, `terminal_block`, or `other`.
+  - tag as the visible engineering identifier.
+  - position, rotation, scale.
+  - optional label/title positions.
+- `connections`
+  - `from` and `to` endpoint anchors.
+  - optional `wireId`.
+  - optional `cablePlacementId`.
+  - optional `conductorKey`.
+  - optional orthogonal route and label position.
+- `annotations`
+  - note/callout/title records.
+  - note title and body text.
+  - optional size and leader target.
+
+## Module Structure
+
+- `api/actions.ts`
+  - server actions for create, save, approve, delete, and sample creation.
+- `data/schema.ts`
+  - Zod schemas and core drawing model types.
+- `data/queries.ts`
+  - list/get drawing reads.
+- `data/mutations.ts`
+  - create, save, approve, delete, and sample drawing writes.
+- `logic/commands/drawing-model-commands.ts`
+  - pure model mutation helpers used by UI state.
+- `logic/services/connection-route-geometry.ts`
+  - route generation and route point manipulation.
+- `logic/services/connection-route-renderer.ts`
+  - route SVG path, labels, route handles, and route label helpers.
+- `logic/services/drawing-annotations.ts`
+  - note sizing, leader geometry, clamping, and default note creation.
+- `logic/services/drawing-connections.ts`
+  - endpoint labels, cable defaults, duplicate prevention, connection creation.
+- `logic/services/drawing-connection-groups.ts`
+  - grouped connection sections for the right panel.
+- `logic/services/drawing-identification.ts`
+  - plant tag, cable ID, wire ID, and schedule-ready helpers.
+- `logic/services/drawing-svg-renderer.ts`
+  - deterministic sheet SVG renderer used by canvas, print, and PDF.
+- `logic/services/drawing-pdf-export.ts`
+  - print/PDF HTML shell.
+- `logic/services/placement-title-labels.ts`
+  - placement tag/title label positions.
+- `logic/services/viewport-transform.ts`
+  - fit, zoom, pan, and zoom formatting math.
+- `ui/components/drawing-canvas-shell.tsx`
+  - top-level client state and composition.
+- `ui/components/svg-drawing-surface.tsx`
+  - viewport, sheet rendering, overlay orchestration, anchor/route/placement
+    interactions.
+- `ui/canvas/*`
+  - focused overlay components and canvas hooks.
+
+## Interaction Notes
+
+- The rendered drawing SVG is generated by `renderDrawingToSvg`.
+- Interactive overlays sit above the rendered sheet and update the model.
+- Placement label movement uses a purple handle.
+- Route label movement uses a yellow handle.
+- Note leader target movement uses a purple target handle.
+- Note text is edited only in the right-side selected note panel.
+- The canvas no longer renders inline `foreignObject` note text editors.
+- Saved drawings move to `needs_review`.
+- `Approve` is a manual state change and does not run application-level drawing
+  checks.
+
+## Boundaries
+
+- The drawing canvas reads approved symbols through the symbol registry public
+  interface.
+- The UI does not call Prisma directly.
+- Route and identification logic should remain testable without React.
+- Do not reintroduce bundle routing unless the product direction changes. Cable
+  assemblies are symbols.
+- Do not reintroduce drawing validation UI unless the product direction changes.
+  Engineering checks happen outside the application for now.
+
+## Tests
+
+Focused tests:
 
 ```powershell
-npm run test -- drawing_canvas
+npm run test -- src/features/drawing_canvas/tests/drawing_canvas.test.ts src/features/drawing_canvas/tests/drawing-model-commands.test.ts
+npm run test:e2e -- tests/e2e/drawing-canvas.spec.ts --reporter=line
 ```
+
+Full verification:
+
+```powershell
+npm run lint
+npm run test
+$env:DATABASE_URL='file:./dev.db'; npm run build
+npm run test:e2e -- --reporter=line
+```
+
+## Next Stage Notes
+
+Recommended next work should build on the completed sheet model instead of
+changing the canvas foundation:
+
+- Cable schedule page from `buildCableScheduleRows`.
+- Termination schedule page from `buildConnectionScheduleRows`.
+- Standard templates that capture specialist engineering knowledge.
+- Additional symbol imports for terminal blocks, glands, panels, and standard
+  accessories.

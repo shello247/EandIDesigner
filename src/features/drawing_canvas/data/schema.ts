@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { validationIssueSeveritySchema } from "@/features/symbol_registry/data/schema";
 
 export const drawingStatusSchema = z.enum([
   "draft",
@@ -49,7 +48,19 @@ export const drawingPlacementSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
   rotation: z.number().finite(),
-  scale: z.number().positive()
+  scale: z.number().positive(),
+  labelPosition: z
+    .object({
+      x: z.number().finite(),
+      y: z.number().finite()
+    })
+    .optional(),
+  deviceTitlePosition: z
+    .object({
+      x: z.number().finite(),
+      y: z.number().finite()
+    })
+    .optional()
 });
 
 export const drawingConnectionSchema = z.object({
@@ -65,9 +76,19 @@ export const drawingConnectionSchema = z.object({
 
 export const drawingAnnotationSchema = z.object({
   id: z.string().trim().min(1),
-  text: z.string().trim().min(1).max(400),
+  title: z.string().trim().max(120).optional(),
+  text: z.string().max(400),
   x: z.number().finite(),
   y: z.number().finite(),
+  width: z.number().positive().optional(),
+  height: z.number().positive().optional(),
+  leader: z
+    .object({
+      enabled: z.boolean(),
+      targetX: z.number().finite(),
+      targetY: z.number().finite()
+    })
+    .optional(),
   kind: z.enum(["note", "callout", "title"])
 });
 
@@ -95,13 +116,6 @@ export const drawingModelSchema = z.object({
   annotations: z.array(drawingAnnotationSchema)
 });
 
-export const drawingValidationIssueSchema = z.object({
-  severity: validationIssueSeveritySchema,
-  code: z.string().trim().min(1).max(80),
-  message: z.string().trim().min(1).max(500),
-  path: z.string().trim().max(240).optional()
-});
-
 export const createDrawingInputSchema = z.object({
   title: z.string().trim().min(1).max(200),
   drawingKey: z.string().trim().min(1).max(120).optional()
@@ -124,9 +138,6 @@ export type DrawingPlacement = z.infer<typeof drawingPlacementSchema>;
 export type DrawingConnection = z.infer<typeof drawingConnectionSchema>;
 export type DrawingAnnotation = z.infer<typeof drawingAnnotationSchema>;
 export type DrawingModel = z.infer<typeof drawingModelSchema>;
-export type DrawingValidationIssue = z.infer<
-  typeof drawingValidationIssueSchema
->;
 export type CreateDrawingInput = z.infer<typeof createDrawingInputSchema>;
 export type SaveDrawingInput = z.infer<typeof saveDrawingInputSchema>;
 

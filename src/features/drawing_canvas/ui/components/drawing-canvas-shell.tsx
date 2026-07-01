@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Link2, Save } from "lucide-react";
+import { CheckCircle2, FileDown, Link2, Save, StickyNote } from "lucide-react";
 import type {
+  DrawingAnnotation,
   DrawingConnection,
   DrawingConnectionRoute,
   DrawingEndpoint,
@@ -18,17 +19,20 @@ import {
 } from "../../api/actions";
 import {
   addConnection as addConnectionCommand,
+  addAnnotation as addAnnotationCommand,
   addPlacement as addPlacementCommand,
+  deleteAnnotation as deleteAnnotationCommand,
   deleteConnection as deleteConnectionCommand,
   deletePlacement as deletePlacementCommand,
+  updateAnnotation as updateAnnotationCommand,
   updateConnection as updateConnectionCommand,
   updateConnectionRoute as updateConnectionRouteCommand,
   updatePlacementProperties
 } from "../../logic/commands/drawing-model-commands";
 import { generateDefaultOrthogonalRoute } from "../../logic/services/connection-route-geometry";
+import { createDefaultNoteAnnotation } from "../../logic/services/drawing-annotations";
 import { createConnectionFromEndpoints } from "../../logic/services/drawing-connections";
 import type { ViewportTransform } from "../../logic/services/viewport-transform";
-import { DrawingValidationPanel } from "./drawing-validation-panel";
 import { PlacementPropertiesPanel } from "./placement-properties-panel";
 import { SvgDrawingSurface } from "./svg-drawing-surface";
 import { SymbolLibraryPanel } from "./symbol-library-panel";
@@ -151,11 +155,13 @@ export function DrawingCanvasShell({
   const [isPending, startTransition] = useTransition();
   const [title, setTitle] = useState(drawing.title);
   const [model, setModel] = useState<DrawingModel>(drawing.model);
-  const [issues, setIssues] = useState(drawing.validationIssues);
   const [selectedPlacementId, setSelectedPlacementId] = useState<string | undefined>(
     drawing.model.placements[0]?.id
   );
   const [selectedConnectionId, setSelectedConnectionId] = useState<
+    string | undefined
+  >(undefined);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<
     string | undefined
   >(undefined);
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>("idle");
@@ -166,11 +172,20 @@ export function DrawingCanvasShell({
     panX: 0,
     panY: 0
   });
+  const [viewportCenter, setViewportCenter] = useState({
+    x: drawing.model.sheet.width / 2,
+    y: drawing.model.sheet.height / 2
+  });
   const [message, setMessage] = useState<string | null>(null);
-  const blockingIssueCount = useMemo(
-    () => issues.filter((issue) => issue.severity === "blocking").length,
-    [issues]
-  );
+
+  const selectPlacement = (placementId: string | undefined) => {
+    setSelectedPlacementId(placementId);
+
+    if (placementId) {
+      setSelectedConnectionId(undefined);
+      setSelectedAnnotationId(undefined);
+    }
+  };
 
   const addSymbol = (symbol: ApprovedDrawingSymbol) => {
     const tag = nextEngineeringTag(symbol, model.placements);
@@ -187,7 +202,7 @@ export function DrawingCanvasShell({
     };
 
     setModel((current) => addPlacementCommand(current, placement));
-    setSelectedPlacementId(placement.id);
+    selectPlacement(placement.id);
     setSelectedConnectionId(undefined);
   };
 
@@ -200,11 +215,61 @@ export function DrawingCanvasShell({
     );
   };
 
+  const updateTitleBlock = (
+    updates: Partial<DrawingModel["sheet"]["titleBlock"]>
+  ) => {
+    setModel((current) => ({
+      ...current,
+      sheet: {
+        ...current.sheet,
+        titleBlock: {
+          ...current.sheet.titleBlock,
+          ...updates
+        }
+      }
+    }));
+  };
+
   const removePlacement = (placementId: string) => {
     setModel((current) => deletePlacementCommand(current, placementId));
     setSelectedPlacementId(undefined);
     setSelectedConnectionId(undefined);
+    setSelectedAnnotationId(undefined);
     setConnectionDraft({});
+  };
+
+  const addNote = () => {
+    const annotation = createDefaultNoteAnnotation({
+      id: `note_${Date.now()}`,
+      point: {
+        x: viewportCenter.x - 35,
+        y: viewportCenter.y - 12
+      },
+      sheet: model.sheet
+    });
+
+    setModel((current) => addAnnotationCommand(current, annotation));
+    setSelectedAnnotationId(annotation.id);
+    setSelectedPlacementId(undefined);
+    setSelectedConnectionId(undefined);
+    setConnectionDraft({});
+    setMessage("Note added.");
+  };
+
+  const updateAnnotation = (
+    annotationId: string,
+    updates: Partial<DrawingAnnotation>
+  ) => {
+    setModel((current) =>
+      updateAnnotationCommand(current, annotationId, updates)
+    );
+  };
+
+  const removeAnnotation = (annotationId: string) => {
+    setModel((current) => deleteAnnotationCommand(current, annotationId));
+    setSelectedAnnotationId((current) =>
+      current === annotationId ? undefined : current
+    );
   };
 
   const updateConnection = (
@@ -260,6 +325,17 @@ export function DrawingCanvasShell({
 
     if (connectionId) {
       setSelectedPlacementId(undefined);
+      setSelectedAnnotationId(undefined);
+    }
+  };
+
+  const selectAnnotation = (annotationId: string | undefined) => {
+    setSelectedAnnotationId(annotationId);
+
+    if (annotationId) {
+      setSelectedPlacementId(undefined);
+      setSelectedConnectionId(undefined);
+      setConnectionDraft({});
     }
   };
 
@@ -343,7 +419,6 @@ export function DrawingCanvasShell({
         return;
       }
 
-      setIssues(result.data.validationIssues);
       setMessage("Drawing saved.");
       router.refresh();
     });
@@ -369,10 +444,15 @@ export function DrawingCanvasShell({
         return;
       }
 
-      setIssues(result.data.validationIssues);
       setMessage("Drawing approved.");
       router.refresh();
     });
+  };
+
+  const exportPdf = () => {
+    window.location.assign(
+      new URL(`/drawings/${drawing.id}/pdf`, window.location.origin).toString()
+    );
   };
 
   return (
@@ -391,8 +471,21 @@ export function DrawingCanvasShell({
           </button>
           <button
             type="button"
+            className="icon-button"
+            disabled={isPending}
+            onClick={exportPdf}
+          >
+            <FileDown aria-hidden="true" size={14} />
+            Preview PDF
+          </button>
+          <button type="button" className="icon-button" disabled={isPending} onClick={addNote}>
+            <StickyNote aria-hidden="true" size={14} />
+            Add note
+          </button>
+          <button
+            type="button"
             className="icon-button icon-button-primary"
-            disabled={isPending || blockingIssueCount > 0}
+            disabled={isPending}
             onClick={approve}
           >
             <CheckCircle2 aria-hidden="true" size={14} />
@@ -415,7 +508,14 @@ export function DrawingCanvasShell({
       </div>
 
       {message ? (
-        <div className="tool-panel p-3 text-sm text-slate-700">{message}</div>
+        <div
+          className="fixed right-6 top-24 z-50 flex max-w-sm items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-lg shadow-emerald-950/10"
+          role="status"
+          data-testid="drawing-toast"
+        >
+          <CheckCircle2 aria-hidden="true" size={16} className="shrink-0" />
+          <span>{message}</span>
+        </div>
       ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)_340px]">
@@ -427,9 +527,12 @@ export function DrawingCanvasShell({
           viewportTransform={viewportTransform}
           setViewportTransform={setViewportTransform}
           dragState={dragState}
-          onSelectPlacement={setSelectedPlacementId}
+          onSelectPlacement={selectPlacement}
           onPlacementChange={updatePlacement}
           onPlacementRemove={removePlacement}
+          selectedAnnotationId={selectedAnnotationId}
+          onAnnotationSelect={selectAnnotation}
+          onAnnotationChange={updateAnnotation}
           onDragStart={setDragState}
           onDragMove={(placementId, x, y) => updatePlacement(placementId, { x, y })}
           onDragEnd={() => setDragState(null)}
@@ -441,6 +544,7 @@ export function DrawingCanvasShell({
           onConnectionSelect={selectConnection}
           onConnectionRouteChange={updateConnectionRoute}
           onConnectionCancel={cancelConnectionAuthoring}
+          onViewportCenterChange={setViewportCenter}
         />
         <div className="space-y-5">
           <PlacementPropertiesPanel
@@ -448,13 +552,16 @@ export function DrawingCanvasShell({
             model={model}
             symbols={symbols}
             onTitleChange={setTitle}
+            onTitleBlockChange={updateTitleBlock}
             selectedConnectionId={selectedConnectionId}
+            selectedAnnotationId={selectedAnnotationId}
             onConnectionSelect={selectConnection}
             onConnectionChange={updateConnection}
             onConnectionRemove={removeConnection}
             onConnectionRouteReset={resetConnectionRoute}
+            onAnnotationChange={updateAnnotation}
+            onAnnotationRemove={removeAnnotation}
           />
-          <DrawingValidationPanel issues={issues} />
         </div>
       </div>
     </div>

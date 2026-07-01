@@ -41,6 +41,24 @@ export type RouteLabelDragState = {
   labelOffset: { x: number; y: number };
 };
 
+export type PlacementTitleDragState = {
+  placementId: string;
+  pointerId: number;
+  labelOffset: { x: number; y: number };
+};
+
+export type AnnotationDragState = {
+  annotationId: string;
+  pointerId: number;
+  startPointer: { x: number; y: number };
+  startAnnotation: { x: number; y: number };
+};
+
+export type AnnotationLeaderDragState = {
+  annotationId: string;
+  pointerId: number;
+};
+
 export type AnchorHotspot = {
   id: string;
   placementId: string;
@@ -63,4 +81,10 @@ export type ConnectionSegment = {
   pathData: string;
   label: string | null;
   labelPoint: { x: number; y: number; anchor: "start" | "middle" };
+};
+
+export type PlacementTitleLabel = {
+  placementId: string;
+  label: string;
+  point: { x: number; y: number };
 };
