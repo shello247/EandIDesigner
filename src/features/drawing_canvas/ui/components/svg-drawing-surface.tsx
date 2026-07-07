@@ -7,15 +7,32 @@ import {
   useRef,
   useState,
   type Dispatch,
+  type KeyboardEvent,
   type PointerEvent,
-  type SetStateAction
+  type SetStateAction,
+  type WheelEvent
 } from "react";
-import type { DrawingAnnotation, DrawingModel } from "../../data/schema";
+import {
+  BookOpen,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  ChevronsDown,
+  Copy,
+  Save,
+  Trash2
+} from "lucide-react";
+import type {
+  DrawingAnnotation,
+  DrawingModel as DrawingPackageModel,
+  DrawingSheetCanvasModel
+} from "../../data/schema";
 import type {
   DrawingConnectionRoute,
   DrawingEndpoint
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
+import { toSheetCanvasModel } from "../../logic/commands/drawing-sheet-commands";
 import { getAnchorWorldPoint } from "../../logic/services/drawing-geometry";
 import { renderDrawingToSvg } from "../../logic/services/drawing-svg-renderer";
 import {
@@ -27,20 +44,26 @@ import {
   routeLabelBox
 } from "../../logic/services/connection-route-renderer";
 import {
-  clampAnnotationPosition,
   clampPointToSheet,
   NOTE_NUDGE_STEP
 } from "../../logic/services/drawing-annotations";
 import {
+  EMPTY_CANVAS_SELECTION,
+  getMarqueeSelection,
+  type DrawingCanvasSelection
+} from "../../logic/services/drawing-selection";
+import {
+  getPlacementDisplayTitle,
   getPlacementTitlePoint,
   shouldShowPlacementTitle
 } from "../../logic/services/placement-title-labels";
 import {
+  calculateScrollForZoomAnchor,
   calculateFitTransform,
   clampZoom,
-  type ViewportTransform,
-  zoomAtViewportCenter
+  type ViewportTransform
 } from "../../logic/services/viewport-transform";
+import { getRenderableSymbolForPlacement } from "../../logic/services/drawing-generated-symbols";
 import { AnchorOverlay, AnchorTooltip } from "../canvas/AnchorOverlay";
 import { NoteBlockOverlay } from "../canvas/NoteBlockOverlay";
 import { PlacementOverlay } from "../canvas/PlacementOverlay";
@@ -48,11 +71,12 @@ import { PlacementTitleOverlay } from "../canvas/PlacementTitleOverlay";
 import { RouteHandlesOverlay } from "../canvas/RouteHandlesOverlay";
 import { RouteLabelOverlay } from "../canvas/RouteLabelOverlay";
 import { useCanvasKeyboardShortcuts } from "../canvas/hooks/useCanvasKeyboardShortcuts";
+import { usePlacementRotation } from "../canvas/hooks/usePlacementRotation";
 import { usePlacementResize } from "../canvas/hooks/usePlacementResize";
 import { usePlacementTitleDrag } from "../canvas/hooks/usePlacementTitleDrag";
 import { useRouteLabelDrag } from "../canvas/hooks/useRouteLabelDrag";
 import { useRoutePointDrag } from "../canvas/hooks/useRoutePointDrag";
-import { useViewportPan } from "../canvas/hooks/useViewportPan";
+import { useSheetScrollPan } from "../canvas/hooks/useSheetScrollPan";
 import type {
   ConnectionDraft,
   ConnectionSegment,
@@ -61,30 +85,127 @@ import type {
 } from "../canvas/types";
 import {
   getViewportSize,
-  packageKey,
   toSvgPoint
 } from "../canvas/utils/canvasGeometry";
+import { DrawingCanvasAddMenu } from "./drawing-canvas-add-menu";
 import { DrawingViewportToolbar } from "./drawing-viewport-toolbar";
 
 const SHEET_PIXEL_SCALE = 2;
 const ZOOM_STEP = 1.2;
 
+type SheetFrame = {
+  sheet: DrawingPackageModel["sheets"][number];
+  sheetNumber: number;
+  canvasModel: DrawingSheetCanvasModel;
+  renderedSvg: string;
+};
+
+type ZoomAnchor = {
+  sheetId: string;
+  sheetX: number;
+  sheetY: number;
+  clientX: number;
+  clientY: number;
+  nextZoom: number;
+};
+
+function pointIsInsideRect(
+  point: { x: number; y: number },
+  rect: DOMRect
+): boolean {
+  return (
+    point.x >= rect.left &&
+    point.x <= rect.right &&
+    point.y >= rect.top &&
+    point.y <= rect.bottom
+  );
+}
+
+function sheetFrameAtPoint(
+  clientX: number,
+  clientY: number
+): HTMLDivElement | null {
+  for (const element of document.elementsFromPoint(clientX, clientY)) {
+    const frame = element.closest<HTMLDivElement>("[data-sheet-id]");
+
+    if (frame) {
+      return frame;
+    }
+  }
+
+  return null;
+}
+
+function zoomAnchorFromPointer(input: {
+  clientX: number;
+  clientY: number;
+  zoom: number;
+}): Omit<ZoomAnchor, "nextZoom"> | null {
+  const frame = sheetFrameAtPoint(input.clientX, input.clientY);
+  const sheetId = frame?.dataset.sheetId;
+  const paper = frame?.querySelector<HTMLElement>("[data-sheet-paper]");
+
+  if (!frame || !sheetId || !paper) {
+    return null;
+  }
+
+  const paperRect = paper.getBoundingClientRect();
+
+  if (!pointIsInsideRect({ x: input.clientX, y: input.clientY }, paperRect)) {
+    return null;
+  }
+
+  const scale = SHEET_PIXEL_SCALE * input.zoom;
+
+  return {
+    sheetId,
+    sheetX: (input.clientX - paperRect.left) / scale,
+    sheetY: (input.clientY - paperRect.top) / scale,
+    clientX: input.clientX,
+    clientY: input.clientY
+  };
+}
+
 export function SvgDrawingSurface({
-  model,
+  model: drawingModel,
+  drawingTitle,
+  activeSheetId,
+  focusSheetRequestKey,
   symbols,
+  selection,
   selectedPlacementId,
   viewportTransform,
   setViewportTransform,
   dragState,
+  onActiveSheetChange,
+  onAddSheet,
+  onAddPanel,
+  onAddTerminalBlock,
+  onAddSheetFromTemplate,
+  onSaveSheetTemplate,
+  onDuplicateSheet,
+  onMoveSheet,
+  onMoveSheetToEnd,
+  onDeleteSheet,
   onSelectPlacement,
+  onSelectionChange,
   onPlacementChange,
+  onSelectionMove,
   onPlacementRemove,
+  onSelectionRemove,
   selectedAnnotationId,
   onAnnotationSelect,
   onAnnotationChange,
+  onAnnotationGroupChange,
   onDragStart,
   onDragMove,
   onDragEnd,
+  onGestureStart,
+  onGestureEnd,
+  onCopySelection,
+  onPasteSelection,
+  onUndo,
+  onRedo,
   connectionMode,
   connectionDraft,
   selectedConnectionId,
@@ -93,29 +214,73 @@ export function SvgDrawingSurface({
   onConnectionSelect,
   onConnectionRouteChange,
   onConnectionCancel,
-  onViewportCenterChange
+  onViewportCenterChange,
+  statusMessage
 }: {
-  model: DrawingModel;
+  model: DrawingPackageModel;
+  drawingTitle: string;
+  activeSheetId: string;
+  focusSheetRequestKey?: number;
   symbols: ApprovedDrawingSymbol[];
+  selection: DrawingCanvasSelection;
   selectedPlacementId?: string;
   viewportTransform: ViewportTransform;
   setViewportTransform: Dispatch<SetStateAction<ViewportTransform>>;
   dragState: DragState | null;
-  onSelectPlacement: (placementId: string | undefined) => void;
+  onActiveSheetChange: (sheetId: string) => void;
+  onAddSheet: () => void;
+  onAddPanel: () => void;
+  onAddTerminalBlock: () => void;
+  onAddSheetFromTemplate: () => void;
+  onSaveSheetTemplate: () => void;
+  onDuplicateSheet: (sheetId: string) => void;
+  onMoveSheet: (sheetId: string, direction: -1 | 1) => void;
+  onMoveSheetToEnd: (sheetId: string) => void;
+  onDeleteSheet: (sheetId: string) => void;
+  onSelectPlacement: (
+    placementId: string | undefined,
+    options?: { additive?: boolean }
+  ) => void;
+  onSelectionChange: (selection: DrawingCanvasSelection) => void;
   onPlacementChange: (
     placementId: string,
-    updates: Partial<DrawingModel["placements"][number]>
+    updates: Partial<DrawingSheetCanvasModel["placements"][number]>
   ) => void;
+  onSelectionMove: (input: {
+    selection: DrawingCanvasSelection;
+    delta: { x: number; y: number };
+    baseModel?: DrawingSheetCanvasModel;
+  }) => void;
   onPlacementRemove: (placementId: string) => void;
+  onSelectionRemove: () => void;
   selectedAnnotationId?: string;
-  onAnnotationSelect: (annotationId: string | undefined) => void;
+  onAnnotationSelect: (
+    annotationId: string | undefined,
+    options?: { additive?: boolean }
+  ) => void;
   onAnnotationChange: (
     annotationId: string,
     updates: Partial<DrawingAnnotation>
   ) => void;
+  onAnnotationGroupChange: (
+    updates: Array<{
+      annotationId: string;
+      updates: Partial<DrawingAnnotation>;
+    }>
+  ) => void;
   onDragStart: (state: DragState) => void;
-  onDragMove: (placementId: string, x: number, y: number) => void;
+  onDragMove: (input: {
+    selection: DrawingCanvasSelection;
+    delta: { x: number; y: number };
+    baseModel?: DrawingSheetCanvasModel;
+  }) => void;
   onDragEnd: () => void;
+  onGestureStart: () => void;
+  onGestureEnd: () => void;
+  onCopySelection: () => void;
+  onPasteSelection: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
   connectionMode: "idle" | "connecting";
   connectionDraft: ConnectionDraft;
   selectedConnectionId?: string;
@@ -128,9 +293,20 @@ export function SvgDrawingSurface({
   ) => void;
   onConnectionCancel: () => void;
   onViewportCenterChange?: (point: { x: number; y: number }) => void;
+  statusMessage?: string | null;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const didInitialFitRef = useRef(false);
+  const lastFocusSheetRequestKeyRef = useRef(focusSheetRequestKey);
+  const sheetFrameRefs = useRef(new Map<string, HTMLDivElement>());
+  const scrollAnimationFrameRef = useRef<number | null>(null);
+  const zoomAnchorAnimationFrameRef = useRef<number | null>(null);
+  const zoomSyncReleaseTimeoutRef = useRef<number | null>(null);
+  const suppressViewportSheetSyncRef = useRef(false);
+  const latestZoomRef = useRef(viewportTransform.zoom);
+  const pendingActiveSheetScrollRef = useRef(false);
+  const pendingActiveSheetScrollBehaviorRef = useRef<ScrollBehavior>("smooth");
+  const lastViewportCenterRef = useRef<{ x: number; y: number } | null>(null);
   const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null);
   const [selectedRoutePointId, setSelectedRoutePointId] = useState<string | null>(
     null
@@ -138,6 +314,66 @@ export function SvgDrawingSurface({
   const [selectedAnnotationLeaderId, setSelectedAnnotationLeaderId] = useState<
     string | null
   >(null);
+  const sheetCount = drawingModel.sheets.length;
+  const sheetFrames = useMemo<SheetFrame[]>(
+    () =>
+      drawingModel.sheets.map((sheet, index) => {
+        const canvasModel = toSheetCanvasModel(drawingModel, sheet.id);
+        const sheetNumber = index + 1;
+        const sectionTitle = sheet.sectionTitlePage?.title?.trim();
+
+        return {
+          sheet,
+          sheetNumber,
+          canvasModel,
+          renderedSvg: renderDrawingToSvg({
+            model: canvasModel,
+            approvedSymbols: symbols,
+            showAnchors: false,
+            showConnections: sheet.id !== activeSheetId,
+            sheetNumber,
+            sheetCount,
+            drawingTitle,
+            sheetTitle:
+              sheet.kind === "section_title" && sectionTitle
+                ? sectionTitle
+                : sheet.name,
+            sheetKind: sheet.kind,
+            sectionTitlePage: sheet.sectionTitlePage
+          })
+        };
+      }),
+    [activeSheetId, drawingModel, drawingTitle, sheetCount, symbols]
+  );
+  const activeFrame =
+    sheetFrames.find((frame) => frame.sheet.id === activeSheetId) ??
+    sheetFrames[0];
+  const model =
+    activeFrame?.canvasModel ?? toSheetCanvasModel(drawingModel, activeSheetId);
+  const activeSheetNumber = activeFrame?.sheetNumber ?? 1;
+  const effectiveActiveSheetId = activeFrame?.sheet.id ?? activeSheetId;
+  const canMoveActiveSheetUp = activeSheetNumber > 1;
+  const canMoveActiveSheetDown = activeSheetNumber < sheetCount;
+  const canMoveActiveSheetToEnd = activeSheetNumber < sheetCount;
+  const canDeleteActiveSheet = sheetCount > 1;
+  const selectedPlacementIds = useMemo(
+    () => new Set(selection.placementIds),
+    [selection.placementIds]
+  );
+  const selectedAnnotationIds = useMemo(
+    () => new Set(selection.annotationIds),
+    [selection.annotationIds]
+  );
+  const [marquee, setMarquee] = useState<{
+    pointerId: number;
+    start: { x: number; y: number };
+    current: { x: number; y: number };
+  } | null>(null);
+
+  useEffect(() => {
+    latestZoomRef.current = viewportTransform.zoom;
+  }, [viewportTransform.zoom]);
+
   const sheetPixelSize = useMemo(
     () => ({
       width: model.sheet.width * SHEET_PIXEL_SCALE,
@@ -145,29 +381,10 @@ export function SvgDrawingSurface({
     }),
     [model.sheet.height, model.sheet.width]
   );
-  const zoomedSheetPixelSize = useMemo(
-    () => ({
-      width: Number((sheetPixelSize.width * viewportTransform.zoom).toFixed(3)),
-      height: Number((sheetPixelSize.height * viewportTransform.zoom).toFixed(3))
-    }),
-    [sheetPixelSize, viewportTransform.zoom]
-  );
-  const symbolsByKey = useMemo(
-    () =>
-      new Map(
-        symbols.map((symbol) => [
-          packageKey(symbol.symbolId, symbol.versionId),
-          symbol
-        ])
-      ),
-    [symbols]
-  );
   const anchorHotspots = useMemo(
     () =>
       model.placements.flatMap((placement) => {
-        const symbol = symbolsByKey.get(
-          packageKey(placement.symbolId, placement.versionId)
-        );
+        const symbol = getRenderableSymbolForPlacement(placement, symbols);
 
         if (!symbol) {
           return [];
@@ -186,7 +403,7 @@ export function SvgDrawingSurface({
           point: getAnchorWorldPoint(placement, symbol.metadata, anchor)
         }));
       }),
-    [model.placements, symbolsByKey]
+    [model.placements, symbols]
   );
   const connectionSegments: ConnectionSegment[] = useMemo(
     () =>
@@ -208,23 +425,21 @@ export function SvgDrawingSurface({
   const placementTitleLabels: PlacementTitleLabel[] = useMemo(
     () =>
       model.placements.flatMap((placement) => {
-        const symbol = symbolsByKey.get(
-          packageKey(placement.symbolId, placement.versionId)
-        );
+        const symbol = getRenderableSymbolForPlacement(placement, symbols);
 
-        if (!symbol || !shouldShowPlacementTitle(symbol)) {
+        if (!symbol || !shouldShowPlacementTitle(placement, symbol)) {
           return [];
         }
 
         return [
           {
             placementId: placement.id,
-            label: symbol.displayName,
+            label: getPlacementDisplayTitle(placement, symbol),
             point: getPlacementTitlePoint(placement)
           }
         ];
       }),
-    [model.placements, symbolsByKey]
+    [model.placements, symbols]
   );
   const selectedConnectionSegment =
     connectionSegments.find(
@@ -249,15 +464,264 @@ export function SvgDrawingSurface({
   const anchorHitRadius = 4 / anchorScreenScale;
   const anchorGlowRadius = 6.5 / anchorScreenScale;
   const anchorStrokeWidth = 0.55 / anchorScreenScale;
-  const renderedSvg = useMemo(
-    () =>
-      renderDrawingToSvg({
-        model,
-        approvedSymbols: symbols,
-        showAnchors: false,
-        showConnections: false
-      }),
-    [model, symbols]
+
+  const setSheetFrameRef = useCallback(
+    (sheetId: string, element: HTMLDivElement | null) => {
+      if (element) {
+        sheetFrameRefs.current.set(sheetId, element);
+        return;
+      }
+
+      sheetFrameRefs.current.delete(sheetId);
+    },
+    []
+  );
+
+  const scrollActiveSheetIntoView = useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      const activeSheetFrame = sheetFrameRefs.current.get(effectiveActiveSheetId);
+
+      activeSheetFrame?.scrollIntoView({
+        block: "center",
+        inline: "center",
+        behavior
+      });
+    },
+    [effectiveActiveSheetId]
+  );
+
+  const requestActiveSheetScroll = useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      pendingActiveSheetScrollRef.current = true;
+      pendingActiveSheetScrollBehaviorRef.current = behavior;
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (
+      focusSheetRequestKey === undefined ||
+      focusSheetRequestKey === lastFocusSheetRequestKeyRef.current
+    ) {
+      return;
+    }
+
+    lastFocusSheetRequestKeyRef.current = focusSheetRequestKey;
+    requestActiveSheetScroll();
+  }, [focusSheetRequestKey, requestActiveSheetScroll]);
+
+  const releaseZoomSheetSyncAfterGesture = useCallback(() => {
+    if (zoomSyncReleaseTimeoutRef.current !== null) {
+      window.clearTimeout(zoomSyncReleaseTimeoutRef.current);
+    }
+
+    zoomSyncReleaseTimeoutRef.current = window.setTimeout(() => {
+      suppressViewportSheetSyncRef.current = false;
+      zoomSyncReleaseTimeoutRef.current = null;
+    }, 180);
+  }, []);
+
+  const resumeViewportSheetSync = useCallback(() => {
+    suppressViewportSheetSyncRef.current = false;
+
+    if (zoomSyncReleaseTimeoutRef.current !== null) {
+      window.clearTimeout(zoomSyncReleaseTimeoutRef.current);
+      zoomSyncReleaseTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleZoomAnchorCorrection = useCallback(
+    (anchor: ZoomAnchor) => {
+      if (zoomAnchorAnimationFrameRef.current !== null) {
+        window.cancelAnimationFrame(zoomAnchorAnimationFrameRef.current);
+      }
+
+      const applyAnchorCorrection = () => {
+        const viewportElement = viewportRef.current;
+        const frame = sheetFrameRefs.current.get(anchor.sheetId);
+        const paper = frame?.querySelector<HTMLElement>("[data-sheet-paper]");
+
+        if (!viewportElement || !paper) {
+          return;
+        }
+
+        const paperRect = paper.getBoundingClientRect();
+        const nextScroll = calculateScrollForZoomAnchor({
+          scrollLeft: viewportElement.scrollLeft,
+          scrollTop: viewportElement.scrollTop,
+          paperLeft: paperRect.left,
+          paperTop: paperRect.top,
+          pointerClientX: anchor.clientX,
+          pointerClientY: anchor.clientY,
+          sheetX: anchor.sheetX,
+          sheetY: anchor.sheetY,
+          nextScale: SHEET_PIXEL_SCALE * anchor.nextZoom
+        });
+        const previousScrollBehavior = viewportElement.style.scrollBehavior;
+
+        viewportElement.style.scrollBehavior = "auto";
+        viewportElement.scrollLeft = nextScroll.left;
+        viewportElement.scrollTop = nextScroll.top;
+        window.requestAnimationFrame(() => {
+          viewportElement.style.scrollBehavior = previousScrollBehavior;
+        });
+      };
+
+      zoomAnchorAnimationFrameRef.current = window.requestAnimationFrame(() => {
+        applyAnchorCorrection();
+        zoomAnchorAnimationFrameRef.current = window.requestAnimationFrame(() => {
+          zoomAnchorAnimationFrameRef.current = null;
+          applyAnchorCorrection();
+        });
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!pendingActiveSheetScrollRef.current) {
+      return;
+    }
+
+    const behavior = pendingActiveSheetScrollBehaviorRef.current;
+    const animationFrameId = window.requestAnimationFrame(() => {
+      scrollActiveSheetIntoView(behavior);
+      pendingActiveSheetScrollRef.current = false;
+    });
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+      pendingActiveSheetScrollRef.current = false;
+    };
+  }, [
+    activeSheetId,
+    drawingModel.sheets,
+    scrollActiveSheetIntoView,
+    viewportTransform.zoom
+  ]);
+
+  const syncViewportSheetState = useCallback(() => {
+    if (
+      suppressViewportSheetSyncRef.current ||
+      pendingActiveSheetScrollRef.current
+    ) {
+      return;
+    }
+
+    const viewportElement = viewportRef.current;
+
+    if (!viewportElement) {
+      return;
+    }
+
+    const viewportRect = viewportElement.getBoundingClientRect();
+    const viewportCenterX = viewportRect.left + viewportRect.width / 2;
+    const viewportCenterY = viewportRect.top + viewportRect.height / 2;
+    let closestSheetId: string | undefined;
+    let closestDistance = Number.POSITIVE_INFINITY;
+
+    for (const frame of sheetFrames) {
+      const frameElement = sheetFrameRefs.current.get(frame.sheet.id);
+
+      if (!frameElement) {
+        continue;
+      }
+
+      const frameRect = frameElement.getBoundingClientRect();
+      const frameCenterY = frameRect.top + frameRect.height / 2;
+      const distance = Math.abs(frameCenterY - viewportCenterY);
+
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestSheetId = frame.sheet.id;
+      }
+    }
+
+    if (closestSheetId && closestSheetId !== activeSheetId) {
+      onActiveSheetChange(closestSheetId);
+    }
+
+    const centerSheetId = closestSheetId ?? activeSheetId;
+    const centerFrame = sheetFrames.find(
+      (frame) => frame.sheet.id === centerSheetId
+    );
+    const centerFrameElement = centerSheetId
+      ? sheetFrameRefs.current.get(centerSheetId)
+      : undefined;
+    const paperElement = centerFrameElement?.querySelector<HTMLElement>(
+      "[data-sheet-paper]"
+    );
+
+    if (!paperElement || !centerFrame || !onViewportCenterChange) {
+      return;
+    }
+
+    const paperRect = paperElement.getBoundingClientRect();
+    const scale = SHEET_PIXEL_SCALE * viewportTransform.zoom;
+    const x = (viewportCenterX - paperRect.left) / scale;
+    const y = (viewportCenterY - paperRect.top) / scale;
+
+    const nextViewportCenter = {
+      x: Number(
+        Math.max(0, Math.min(centerFrame.canvasModel.sheet.width, x)).toFixed(2)
+      ),
+      y: Number(
+        Math.max(0, Math.min(centerFrame.canvasModel.sheet.height, y)).toFixed(2)
+      )
+    };
+    const lastViewportCenter = lastViewportCenterRef.current;
+
+    if (
+      lastViewportCenter?.x === nextViewportCenter.x &&
+      lastViewportCenter.y === nextViewportCenter.y
+    ) {
+      return;
+    }
+
+    lastViewportCenterRef.current = nextViewportCenter;
+    onViewportCenterChange(nextViewportCenter);
+  }, [
+    activeSheetId,
+    onActiveSheetChange,
+    onViewportCenterChange,
+    sheetFrames,
+    viewportTransform.zoom
+  ]);
+
+  const handleViewportScroll = useCallback(() => {
+    if (suppressViewportSheetSyncRef.current) {
+      return;
+    }
+
+    if (scrollAnimationFrameRef.current !== null) {
+      return;
+    }
+
+    scrollAnimationFrameRef.current = window.requestAnimationFrame(() => {
+      scrollAnimationFrameRef.current = null;
+      syncViewportSheetState();
+    });
+  }, [syncViewportSheetState]);
+
+  useEffect(() => {
+    syncViewportSheetState();
+  }, [syncViewportSheetState]);
+
+  useEffect(
+    () => () => {
+      if (scrollAnimationFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollAnimationFrameRef.current);
+      }
+
+      if (zoomAnchorAnimationFrameRef.current !== null) {
+        window.cancelAnimationFrame(zoomAnchorAnimationFrameRef.current);
+      }
+
+      if (zoomSyncReleaseTimeoutRef.current !== null) {
+        window.clearTimeout(zoomSyncReleaseTimeoutRef.current);
+      }
+    },
+    []
   );
 
   const fitToViewport = useCallback(() => {
@@ -268,48 +732,83 @@ export function SvgDrawingSurface({
     }
 
     const viewportSize = getViewportSize(viewportElement);
-    setViewportTransform(
-      calculateFitTransform(viewportSize, sheetPixelSize)
-    );
-  }, [setViewportTransform, sheetPixelSize]);
+    const fitTransform = calculateFitTransform(viewportSize, sheetPixelSize);
+    setViewportTransform({
+      zoom: fitTransform.zoom,
+      panX: 0,
+      panY: 0
+    });
+    requestActiveSheetScroll();
+  }, [requestActiveSheetScroll, setViewportTransform, sheetPixelSize]);
 
   const setActualSize = useCallback(() => {
-    const viewportElement = viewportRef.current;
-
-    if (!viewportElement) {
-      setViewportTransform((current) => ({ ...current, zoom: 1 }));
-      return;
-    }
-
-    setViewportTransform((current) =>
-      zoomAtViewportCenter({
-        current,
-        nextZoom: 1,
-        viewport: getViewportSize(viewportElement)
-      })
-    );
-  }, [setViewportTransform]);
+    setViewportTransform((current) => ({ ...current, zoom: 1, panX: 0, panY: 0 }));
+    requestActiveSheetScroll();
+  }, [requestActiveSheetScroll, setViewportTransform]);
 
   const zoomByStep = useCallback(
     (direction: "in" | "out") => {
-      const viewportElement = viewportRef.current;
+      setViewportTransform((current) => ({
+        ...current,
+        zoom:
+          direction === "in"
+            ? clampZoom(current.zoom * ZOOM_STEP)
+            : clampZoom(current.zoom / ZOOM_STEP),
+        panX: 0,
+        panY: 0
+      }));
+      requestActiveSheetScroll();
+    },
+    [requestActiveSheetScroll, setViewportTransform]
+  );
 
-      if (!viewportElement) {
+  const handleWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      if (!event.ctrlKey) {
+        resumeViewportSheetSync();
         return;
       }
 
-      setViewportTransform((current) =>
-        zoomAtViewportCenter({
-          current,
-          nextZoom:
-            direction === "in"
-              ? clampZoom(current.zoom * ZOOM_STEP)
-              : clampZoom(current.zoom / ZOOM_STEP),
-          viewport: getViewportSize(viewportElement)
-        })
-      );
+      event.preventDefault();
+      const currentZoom = latestZoomRef.current;
+      const anchor = zoomAnchorFromPointer({
+        clientX: event.clientX,
+        clientY: event.clientY,
+        zoom: currentZoom
+      });
+      const nextZoom = clampZoom(currentZoom * Math.exp(-event.deltaY * 0.0015));
+
+      latestZoomRef.current = nextZoom;
+      pendingActiveSheetScrollRef.current = false;
+      suppressViewportSheetSyncRef.current = true;
+      releaseZoomSheetSyncAfterGesture();
+
+      if (anchor && anchor.sheetId !== effectiveActiveSheetId) {
+        onActiveSheetChange(anchor.sheetId);
+      }
+
+      setViewportTransform((current) => ({
+        ...current,
+        zoom: nextZoom,
+        panX: 0,
+        panY: 0
+      }));
+
+      if (anchor) {
+        scheduleZoomAnchorCorrection({
+          ...anchor,
+          nextZoom
+        });
+      }
     },
-    [setViewportTransform]
+    [
+      effectiveActiveSheetId,
+      onActiveSheetChange,
+      releaseZoomSheetSyncAfterGesture,
+      resumeViewportSheetSync,
+      scheduleZoomAnchorCorrection,
+      setViewportTransform
+    ]
   );
 
   useEffect(() => {
@@ -331,9 +830,13 @@ export function SvgDrawingSurface({
       }
 
       didInitialFitRef.current = true;
-      setViewportTransform(
-        calculateFitTransform(viewportSize, sheetPixelSize)
-      );
+      const fitTransform = calculateFitTransform(viewportSize, sheetPixelSize);
+      setViewportTransform({
+        zoom: fitTransform.zoom,
+        panX: 0,
+        panY: 0
+      });
+      requestActiveSheetScroll("auto");
     };
 
     runInitialFit();
@@ -346,38 +849,11 @@ export function SvgDrawingSurface({
     observer.observe(viewportElement);
 
     return () => observer.disconnect();
-  }, [setViewportTransform, sheetPixelSize]);
-
-  useEffect(() => {
-    const viewportElement = viewportRef.current;
-
-    if (!viewportElement || !onViewportCenterChange) {
-      return;
-    }
-
-    const viewportSize = getViewportSize(viewportElement);
-    const scale = SHEET_PIXEL_SCALE * viewportTransform.zoom;
-    const x = (viewportSize.width / 2 - viewportTransform.panX) / scale;
-    const y = (viewportSize.height / 2 - viewportTransform.panY) / scale;
-
-    onViewportCenterChange({
-      x: Number(Math.max(0, Math.min(model.sheet.width, x)).toFixed(2)),
-      y: Number(Math.max(0, Math.min(model.sheet.height, y)).toFixed(2))
-    });
-  }, [model.sheet.height, model.sheet.width, onViewportCenterChange, viewportTransform]);
-
-  const {
-    isPanning,
-    handleWheel,
-    startMiddleButtonPan,
-    updateMiddleButtonPan,
-    endMiddleButtonPan
-  } = useViewportPan({
-    viewportRef,
-    viewportTransform,
+  }, [
+    requestActiveSheetScroll,
     setViewportTransform,
-    onActiveAnchorChange: setActiveAnchorId
-  });
+    sheetPixelSize
+  ]);
 
   const updateConnectionPointer = useCallback(
     (event: PointerEvent<SVGElement>) => {
@@ -393,6 +869,16 @@ export function SvgDrawingSurface({
   const focusCanvas = useCallback(() => {
     viewportRef.current?.focus();
   }, []);
+  const {
+    isPanning: isScrollPanning,
+    startMiddleButtonPan,
+    updateMiddleButtonPan,
+    endMiddleButtonPan,
+    preventMiddleButtonAutoscroll
+  } = useSheetScrollPan({
+    viewportRef,
+    onPanStart: () => setActiveAnchorId(null)
+  });
 
   const {
     updateDraggedRoutePoint,
@@ -406,7 +892,9 @@ export function SvgDrawingSurface({
     onFocusCanvas: focusCanvas,
     onConnectionSelect,
     onConnectionRouteChange,
-    setSelectedRoutePointId
+    setSelectedRoutePointId,
+    onGestureStart,
+    onGestureEnd
   });
 
   const {
@@ -420,7 +908,9 @@ export function SvgDrawingSurface({
     onFocusCanvas: focusCanvas,
     onConnectionSelect,
     onConnectionRouteChange,
-    setSelectedRoutePointId
+    setSelectedRoutePointId,
+    onGestureStart,
+    onGestureEnd
   });
 
   const {
@@ -434,7 +924,9 @@ export function SvgDrawingSurface({
     onFocusCanvas: focusCanvas,
     onSelectPlacement,
     onConnectionSelect,
-    onPlacementChange
+    onPlacementChange,
+    onGestureStart,
+    onGestureEnd
   });
 
   const selectHotspotPlacement = useCallback(
@@ -458,21 +950,54 @@ export function SvgDrawingSurface({
       viewportRef.current?.focus();
       onSelectPlacement(placementId);
       onConnectionSelect(undefined);
-      onAnnotationSelect(undefined);
       setSelectedAnnotationLeaderId(null);
     },
-    [connectionMode, onAnnotationSelect, onConnectionSelect, onSelectPlacement]
+    [connectionMode, onConnectionSelect, onSelectPlacement]
   );
 
   const {
-    handlePlacementResizeStart,
+    handlePlacementResizeStart: startPlacementResize,
     updatePlacementFromResize,
-    endPlacementResize
+    endPlacementResize: finishPlacementResize
   } = usePlacementResize({
     model,
-    symbolsByKey,
+    symbols,
     onPlacementChange
   });
+  const {
+    handlePlacementRotationStart: startPlacementRotation,
+    updatePlacementFromRotation,
+    endPlacementRotation: finishPlacementRotation
+  } = usePlacementRotation({
+    model,
+    onPlacementChange
+  });
+
+  const handlePlacementResizeStart = useCallback(
+    (state: Parameters<typeof startPlacementResize>[0]) => {
+      onGestureStart();
+      startPlacementResize(state);
+    },
+    [onGestureStart, startPlacementResize]
+  );
+
+  const endPlacementResize = useCallback(() => {
+    finishPlacementResize();
+    onGestureEnd();
+  }, [finishPlacementResize, onGestureEnd]);
+
+  const handlePlacementRotationStart = useCallback(
+    (state: Parameters<typeof startPlacementRotation>[0]) => {
+      onGestureStart();
+      startPlacementRotation(state);
+    },
+    [onGestureStart, startPlacementRotation]
+  );
+
+  const endPlacementRotation = useCallback(() => {
+    finishPlacementRotation();
+    onGestureEnd();
+  }, [finishPlacementRotation, onGestureEnd]);
 
   const clearCanvasSelection = useCallback(() => {
     onSelectPlacement(undefined);
@@ -480,6 +1005,19 @@ export function SvgDrawingSurface({
     onAnnotationSelect(undefined);
     setSelectedAnnotationLeaderId(null);
   }, [onAnnotationSelect, onConnectionSelect, onSelectPlacement]);
+
+  const handlePlacementDragStart = useCallback(
+    (state: DragState) => {
+      onGestureStart();
+      onDragStart(state);
+    },
+    [onDragStart, onGestureStart]
+  );
+
+  const handlePlacementDragEnd = useCallback(() => {
+    onDragEnd();
+    onGestureEnd();
+  }, [onDragEnd, onGestureEnd]);
 
   const deleteSelectedRoutePoint = useCallback(() => {
     if (!selectedRoutePointId) {
@@ -554,326 +1092,613 @@ export function SvgDrawingSurface({
         return;
       }
 
-      if (selectedAnnotationId) {
-        const annotation = model.annotations.find(
-          (candidate) => candidate.id === selectedAnnotationId
-        );
-
-        if (annotation) {
-          onAnnotationChange(
-            annotation.id,
-            clampAnnotationPosition(
-              annotation,
-              { x: annotation.x + delta.x, y: annotation.y + delta.y },
-              model.sheet
-            )
-          );
-        }
-
-        return;
-      }
-
-      if (selectedPlacementId) {
-        const placement = model.placements.find(
-          (candidate) => candidate.id === selectedPlacementId
-        );
-
-        if (placement) {
-          onPlacementChange(placement.id, {
-            x: Number((placement.x + delta.x).toFixed(2)),
-            y: Number((placement.y + delta.y).toFixed(2))
-          });
-        }
-      }
+      onSelectionMove({ selection, delta });
     },
     [
       model.annotations,
-      model.placements,
       model.sheet,
       onAnnotationChange,
       onConnectionRouteChange,
-      onPlacementChange,
-      selectedAnnotationId,
+      onSelectionMove,
+      selection,
       selectedAnnotationLeaderId,
       selectedConnectionSegment,
-      selectedPlacementId,
       selectedRoutePointId
     ]
   );
 
   const selectAnnotation = useCallback(
-    (annotationId: string | undefined) => {
-      onAnnotationSelect(annotationId);
+    (
+      annotationId: string | undefined,
+      options?: { additive?: boolean }
+    ) => {
+      onAnnotationSelect(annotationId, options);
 
       if (annotationId) {
-        onSelectPlacement(undefined);
         onConnectionSelect(undefined);
         setSelectedRoutePointId(null);
       } else {
         setSelectedAnnotationLeaderId(null);
       }
     },
-    [onAnnotationSelect, onConnectionSelect, onSelectPlacement]
+    [onAnnotationSelect, onConnectionSelect]
   );
 
   const handleCanvasKeyDown = useCanvasKeyboardShortcuts({
     connectionMode,
-    selectedPlacementId,
+    selection,
     canDeleteSelectedRoutePoint: Boolean(
       selectedConnectionSegment && selectedRoutePointId
     ),
     onConnectionCancel,
     onClearSelection: clearCanvasSelection,
+    onCopySelection,
     onDeleteSelectedRoutePoint: deleteSelectedRoutePoint,
-    onPlacementRemove,
-    onNudgeSelected: nudgeSelected
+    onDeleteSelection: onSelectionRemove,
+    onNudgeSelected: nudgeSelected,
+    onPasteSelection,
+    onRedo,
+    onUndo
   });
+
+  const handleSheetPointerDown = useCallback(
+    (event: PointerEvent<SVGSVGElement>) => {
+      if (event.target !== event.currentTarget || event.button !== 0) {
+        return;
+      }
+
+      viewportRef.current?.focus();
+      onConnectionSelect(undefined);
+      setSelectedAnnotationLeaderId(null);
+      setSelectedRoutePointId(null);
+
+      if (connectionMode === "connecting") {
+        return;
+      }
+
+      const point = toSvgPoint(event, model.sheet);
+
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setMarquee({
+        pointerId: event.pointerId,
+        start: point,
+        current: point
+      });
+    },
+    [
+      connectionMode,
+      model.sheet,
+      onConnectionSelect
+    ]
+  );
+
+  const handleSheetPointerMove = useCallback(
+    (event: PointerEvent<SVGSVGElement>) => {
+      updateConnectionPointer(event);
+      const point = toSvgPoint(event, model.sheet);
+
+      setMarquee((current) =>
+        current?.pointerId === event.pointerId
+          ? {
+              ...current,
+              current: point
+            }
+          : current
+      );
+    },
+    [
+      model.sheet,
+      updateConnectionPointer
+    ]
+  );
+
+  const finishMarquee = useCallback(
+    (event: PointerEvent<SVGSVGElement>) => {
+      if (!marquee || marquee.pointerId !== event.pointerId) {
+        return;
+      }
+
+      const end = toSvgPoint(event, model.sheet);
+      const deltaX = Math.abs(end.x - marquee.start.x);
+      const deltaY = Math.abs(end.y - marquee.start.y);
+
+      setMarquee(null);
+
+      if (deltaX < 1 && deltaY < 1) {
+        onSelectionChange({ ...EMPTY_CANVAS_SELECTION });
+        return;
+      }
+
+      onSelectionChange(
+        getMarqueeSelection({
+          model,
+          symbols,
+          start: marquee.start,
+          end
+        })
+      );
+    },
+    [marquee, model, onSelectionChange, symbols]
+  );
+
+  const activateSheet = useCallback(
+    (sheetId: string) => {
+      if (sheetId === effectiveActiveSheetId) {
+        return;
+      }
+
+      requestActiveSheetScroll();
+      onActiveSheetChange(sheetId);
+    },
+    [effectiveActiveSheetId, onActiveSheetChange, requestActiveSheetScroll]
+  );
+
+  const handleInactiveSheetKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>, sheetId: string) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+
+      event.preventDefault();
+      activateSheet(sheetId);
+    },
+    [activateSheet]
+  );
+
+  const runSheetAction = useCallback(
+    (action: () => void) => {
+      requestActiveSheetScroll();
+      action();
+    },
+    [requestActiveSheetScroll]
+  );
 
   return (
     <section className="tool-panel drawing-canvas-panel overflow-hidden">
-      <div className="drawing-canvas-header">
-        <h2 className="text-sm font-bold">Drawing Sheet</h2>
-        <DrawingViewportToolbar
-          zoom={viewportTransform.zoom}
-          onFit={fitToViewport}
-          onActualSize={setActualSize}
-          onZoomIn={() => zoomByStep("in")}
-          onZoomOut={() => zoomByStep("out")}
-        />
-      </div>
-      <div
-        ref={viewportRef}
-        className={[
-          "drawing-canvas-viewport",
-          isPanning ? "is-panning" : ""
-        ].join(" ")}
-        data-testid="drawing-canvas-viewport"
-        onWheel={handleWheel}
-        onPointerDownCapture={startMiddleButtonPan}
-        onPointerMove={updateMiddleButtonPan}
-        onPointerUp={endMiddleButtonPan}
-        onPointerCancel={endMiddleButtonPan}
-        onAuxClick={(event) => {
-          if (event.button === 1) {
-            event.preventDefault();
-          }
-        }}
-        onPointerDown={(event) => {
-          if (event.target !== event.currentTarget) {
-            return;
-          }
-
-          viewportRef.current?.focus();
-          onSelectPlacement(undefined);
-          onAnnotationSelect(undefined);
-          setSelectedAnnotationLeaderId(null);
-        }}
-        onKeyDown={handleCanvasKeyDown}
-        tabIndex={0}
-      >
+      {statusMessage ? (
         <div
-          className="drawing-sheet-stage"
-          data-testid="drawing-sheet-stage"
-          style={{
-            width: `${zoomedSheetPixelSize.width}px`,
-            height: `${zoomedSheetPixelSize.height}px`,
-            transform: `translate(${viewportTransform.panX}px, ${viewportTransform.panY}px)`
-          }}
+          className="drawing-canvas-toast"
+          role="status"
+          data-testid="drawing-toast"
         >
-          <div className="drawing-sheet-paper">
-            <div
-              className="drawing-sheet-rendered"
-              dangerouslySetInnerHTML={{ __html: renderedSvg }}
-            />
-            <svg
-              className="absolute inset-0 h-full w-full"
-              viewBox={`0 0 ${model.sheet.width} ${model.sheet.height}`}
-              aria-label="Interactive drawing overlay"
-              pointerEvents="all"
-              onPointerDownCapture={selectHotspotPlacement}
-              onPointerDown={(event) => {
-                if (event.target !== event.currentTarget) {
-                  return;
-                }
-
-                viewportRef.current?.focus();
-                onSelectPlacement(undefined);
-                onConnectionSelect(undefined);
-                onAnnotationSelect(undefined);
-                setSelectedAnnotationLeaderId(null);
-                setSelectedRoutePointId(null);
-              }}
-              onPointerMove={updateConnectionPointer}
+          <CheckCircle2 aria-hidden="true" size={16} className="shrink-0" />
+          <span>{statusMessage}</span>
+        </div>
+      ) : null}
+      <div className="drawing-canvas-header">
+        <div className="min-w-0">
+          <h2 className="text-sm font-bold">
+            {activeFrame?.sheet.kind === "section_title"
+              ? "Section Title Page"
+              : "Drawing Sheet"}
+          </h2>
+          <p
+            className="mt-0.5 truncate text-xs font-medium text-slate-500"
+            data-testid="active-sheet-readout"
+          >
+            Sheet {activeSheetNumber} of {sheetCount}
+            {activeFrame?.sheet.name ? ` / ${activeFrame.sheet.name}` : ""}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="icon-button h-8 w-8 p-0"
+              aria-label="Move active sheet up"
+              title="Move active sheet up"
+              disabled={!canMoveActiveSheetUp}
+              onClick={() =>
+                runSheetAction(() => onMoveSheet(effectiveActiveSheetId, -1))
+              }
             >
-              {connectionSegments.map((segment) => {
-                const isSelected = selectedConnectionId === segment.connection.id;
-
-                return (
-                  <g key={segment.connection.id}>
-                    <path
-                      data-testid="canvas-connection-line"
-                      data-connection-id={segment.connection.id}
-                      d={segment.pathData}
-                      className={
-                        isSelected
-                          ? "stroke-sky-600"
-                          : "stroke-teal-700 opacity-75"
-                      }
-                      fill="none"
-                      strokeWidth={isSelected ? 1.05 : 0.58}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    {segment.label ? (
-                      <g className="pointer-events-none">
-                        {(() => {
-                          const box = routeLabelBox(segment.label, segment.labelPoint);
-
-                          return (
-                            <rect
-                              x={box.x}
-                              y={box.y}
-                              width={box.width}
-                              height={box.height}
-                              rx={1.2}
-                              className="fill-white opacity-85"
-                            />
-                          );
-                        })()}
-                        <text
-                          x={segment.labelPoint.x}
-                          y={segment.labelPoint.y}
-                          textAnchor={segment.labelPoint.anchor}
-                          className="fill-slate-500 text-[2.7px] font-semibold"
-                        >
-                          {segment.label}
-                        </text>
-                      </g>
-                    ) : null}
-                    <path
-                      data-testid="canvas-connection-hit"
-                      d={segment.pathData}
-                      className="cursor-pointer stroke-transparent"
-                      fill="none"
-                      strokeWidth={6 / anchorScreenScale}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      onPointerDown={(event) => {
-                        if (event.button !== 0) {
-                          return;
-                        }
-
-                        event.stopPropagation();
-                      viewportRef.current?.focus();
-                      onConnectionSelect(segment.connection.id);
-                      onSelectPlacement(undefined);
-                      onAnnotationSelect(undefined);
-                      setSelectedAnnotationLeaderId(null);
-                      setSelectedRoutePointId(null);
-                      }}
-                      onDoubleClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onConnectionSelect(segment.connection.id);
-                        onConnectionRouteChange(
-                          segment.connection.id,
-                          addRouteControlPoint({
-                            route: segment.route,
-                            connectionId: segment.connection.id,
-                            point: toSvgPoint(event, model.sheet),
-                            sheet: model.sheet
-                          })
-                        );
-                      }}
-                    >
-                      <title>{segment.connection.label || segment.connection.id}</title>
-                    </path>
-                  </g>
-                );
-              })}
-              {sourceAnchorHotspot && connectionDraft.pointer ? (
-                <line
-                  data-testid="canvas-connection-preview"
-                  x1={sourceAnchorHotspot.point.x}
-                  y1={sourceAnchorHotspot.point.y}
-                  x2={connectionDraft.pointer.x}
-                  y2={connectionDraft.pointer.y}
-                  className="pointer-events-none stroke-sky-500"
-                  strokeWidth={0.9}
-                  strokeDasharray="4 2"
-                  strokeLinecap="round"
-                />
-              ) : null}
-              <PlacementOverlay
-                model={model}
-                symbolsByKey={symbolsByKey}
-                selectedPlacementId={selectedPlacementId}
-                connectionMode={connectionMode}
-                viewportZoom={viewportTransform.zoom}
-                dragState={dragState}
-                onFocusCanvas={focusCanvas}
-                onSelectPlacement={onSelectPlacement}
-                onConnectionSelect={onConnectionSelect}
-                onDragStart={onDragStart}
-                onDragMove={onDragMove}
-                onDragEnd={onDragEnd}
-                onPlacementRemove={onPlacementRemove}
-                onResizeStart={handlePlacementResizeStart}
-                onResizeMove={updatePlacementFromResize}
-                onResizeEnd={endPlacementResize}
-              />
-              <NoteBlockOverlay
-                model={model}
-                selectedAnnotationId={selectedAnnotationId}
-                selectedAnnotationLeaderId={selectedAnnotationLeaderId}
-                viewportZoom={viewportTransform.zoom}
-                onFocusCanvas={focusCanvas}
-                onAnnotationSelect={selectAnnotation}
-                onAnnotationLeaderSelect={setSelectedAnnotationLeaderId}
-                onAnnotationChange={onAnnotationChange}
-              />
-              <AnchorOverlay
-                anchorHotspots={anchorHotspots}
-                activeAnchorId={activeAnchorId}
-                sourceAnchorHotspot={sourceAnchorHotspot}
-                connectionMode={connectionMode}
-                connectionDraftFrom={connectionDraft.from}
-                anchorMarkerRadius={anchorMarkerRadius}
-                anchorHitRadius={anchorHitRadius}
-                anchorGlowRadius={anchorGlowRadius}
-                anchorStrokeWidth={anchorStrokeWidth}
-                onActiveAnchorChange={setActiveAnchorId}
-                onFocusCanvas={focusCanvas}
-                onSelectPlacement={onSelectPlacement}
-                onConnectionSelect={onConnectionSelect}
-                onConnectionAnchorClick={onConnectionAnchorClick}
-              />
-              <RouteHandlesOverlay
-                selectedConnectionSegment={selectedConnectionSegment}
-                selectedRoutePointId={selectedRoutePointId}
-                viewportZoom={viewportTransform.zoom}
-                onRoutePointPointerDown={handleRoutePointPointerDown}
-                onRoutePointPointerMove={updateDraggedRoutePoint}
-                onRoutePointPointerEnd={endRoutePointDrag}
-                onRoutePointDelete={deleteRoutePoint}
-              />
-              <RouteLabelOverlay
-                selectedConnectionSegment={selectedConnectionSegment}
-                viewportZoom={viewportTransform.zoom}
-                onRouteLabelPointerDown={handleRouteLabelPointerDown}
-                onRouteLabelPointerMove={updateDraggedRouteLabel}
-                onRouteLabelPointerEnd={endRouteLabelDrag}
-              />
-              <PlacementTitleOverlay
-                selectedPlacementTitle={selectedPlacementTitle}
-                viewportZoom={viewportTransform.zoom}
-                onPlacementTitlePointerDown={handlePlacementTitlePointerDown}
-                onPlacementTitlePointerMove={updateDraggedPlacementTitle}
-                onPlacementTitlePointerEnd={endPlacementTitleDrag}
-              />
-            </svg>
-            <AnchorTooltip hotspot={activeAnchorHotspot} sheet={model.sheet} />
+              <ChevronUp aria-hidden="true" size={14} />
+            </button>
+            <button
+              type="button"
+              className="icon-button h-8 w-8 p-0"
+              aria-label="Move active sheet down"
+              title="Move active sheet down"
+              disabled={!canMoveActiveSheetDown}
+              onClick={() =>
+                runSheetAction(() => onMoveSheet(effectiveActiveSheetId, 1))
+              }
+            >
+              <ChevronDown aria-hidden="true" size={14} />
+            </button>
+            <button
+              type="button"
+              className="icon-button h-8 w-8 p-0"
+              aria-label="Move active sheet to end"
+              title="Move active sheet to end"
+              disabled={!canMoveActiveSheetToEnd}
+              onClick={() =>
+                runSheetAction(() => onMoveSheetToEnd(effectiveActiveSheetId))
+              }
+            >
+              <ChevronsDown aria-hidden="true" size={14} />
+            </button>
+            <button
+              type="button"
+              className="icon-button h-8 w-8 p-0"
+              aria-label="Save active sheet as template"
+              title="Save active sheet as template"
+              onClick={onSaveSheetTemplate}
+            >
+              <Save aria-hidden="true" size={14} />
+            </button>
+            <button
+              type="button"
+              className="icon-button h-8 w-8 p-0"
+              aria-label="Add sheet from template"
+              title="Add sheet from template"
+              onClick={onAddSheetFromTemplate}
+            >
+              <BookOpen aria-hidden="true" size={14} />
+            </button>
+            <button
+              type="button"
+              className="icon-button h-8 w-8 p-0"
+              aria-label="Duplicate active sheet"
+              title="Duplicate active sheet"
+              onClick={() =>
+                runSheetAction(() => onDuplicateSheet(effectiveActiveSheetId))
+              }
+            >
+              <Copy aria-hidden="true" size={14} />
+            </button>
+            <button
+              type="button"
+              className="icon-button h-8 w-8 p-0"
+              aria-label="Delete active sheet"
+              title="Delete active sheet"
+              disabled={!canDeleteActiveSheet}
+              onClick={() =>
+                runSheetAction(() => onDeleteSheet(effectiveActiveSheetId))
+              }
+            >
+              <Trash2 aria-hidden="true" size={14} />
+            </button>
           </div>
+          <DrawingViewportToolbar
+            zoom={viewportTransform.zoom}
+            onFit={fitToViewport}
+            onActualSize={setActualSize}
+            onZoomIn={() => zoomByStep("in")}
+            onZoomOut={() => zoomByStep("out")}
+          />
+        </div>
+      </div>
+      <div className="drawing-canvas-viewport-shell">
+        <DrawingCanvasAddMenu
+          onAddPanel={onAddPanel}
+          onAddTerminalBlock={onAddTerminalBlock}
+          onAddSheet={() => runSheetAction(onAddSheet)}
+        />
+        <div
+          ref={viewportRef}
+          className={[
+            "drawing-canvas-viewport",
+            isScrollPanning ? "drawing-canvas-viewport-middle-panning" : ""
+          ].join(" ")}
+          data-testid="drawing-canvas-viewport"
+          onWheel={handleWheel}
+          onScroll={handleViewportScroll}
+          onAuxClick={preventMiddleButtonAutoscroll}
+          onMouseDown={preventMiddleButtonAutoscroll}
+          onPointerDownCapture={startMiddleButtonPan}
+          onPointerMove={updateMiddleButtonPan}
+          onPointerUp={endMiddleButtonPan}
+          onPointerCancel={endMiddleButtonPan}
+          onPointerDown={(event) => {
+            if (event.target !== event.currentTarget) {
+              return;
+            }
+
+            viewportRef.current?.focus();
+            onSelectPlacement(undefined);
+            onAnnotationSelect(undefined);
+            setSelectedAnnotationLeaderId(null);
+          }}
+          onKeyDown={handleCanvasKeyDown}
+          tabIndex={0}
+        >
+        <div className="drawing-sheet-stack" data-testid="drawing-sheet-stack">
+          {sheetFrames.map((frame) => {
+            const isActive = frame.sheet.id === effectiveActiveSheetId;
+            const framePixelSize = {
+              width: Number(
+                (
+                  frame.canvasModel.sheet.width *
+                  SHEET_PIXEL_SCALE *
+                  viewportTransform.zoom
+                ).toFixed(3)
+              ),
+              height: Number(
+                (
+                  frame.canvasModel.sheet.height *
+                  SHEET_PIXEL_SCALE *
+                  viewportTransform.zoom
+                ).toFixed(3)
+              )
+            };
+
+            return (
+              <div
+                key={frame.sheet.id}
+                ref={(element) => setSheetFrameRef(frame.sheet.id, element)}
+                className={[
+                  "drawing-sheet-frame",
+                  isActive ? "drawing-sheet-frame-active" : ""
+                ].join(" ")}
+                data-testid="drawing-sheet-frame"
+                data-sheet-id={frame.sheet.id}
+                data-active-sheet={isActive ? "true" : "false"}
+                role={isActive ? undefined : "button"}
+                tabIndex={isActive ? undefined : 0}
+                aria-label={
+                  isActive
+                    ? undefined
+                    : `Activate sheet ${frame.sheetNumber}: ${frame.sheet.name}`
+                }
+                onPointerDown={(event) => {
+                  if (isActive || event.button !== 0) {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  activateSheet(frame.sheet.id);
+                }}
+                onKeyDown={(event) =>
+                  handleInactiveSheetKeyDown(event, frame.sheet.id)
+                }
+              >
+                <div className="drawing-sheet-caption">
+                  <span className="drawing-sheet-caption-index">
+                    Sheet {frame.sheetNumber} of {sheetCount}
+                  </span>
+                  <span className="drawing-sheet-caption-name">
+                    {frame.sheet.name}
+                  </span>
+                </div>
+                <div
+                  className="drawing-sheet-stage"
+                  data-testid={
+                    isActive ? "drawing-sheet-stage" : "drawing-sheet-preview"
+                  }
+                  style={{
+                    width: `${framePixelSize.width}px`,
+                    height: `${framePixelSize.height}px`
+                  }}
+                >
+                  <div className="drawing-sheet-paper" data-sheet-paper="true">
+                    <div
+                      className="drawing-sheet-rendered"
+                      dangerouslySetInnerHTML={{ __html: frame.renderedSvg }}
+                    />
+                    {isActive ? (
+                      <>
+                        <svg
+                          className="absolute inset-0 h-full w-full"
+                          viewBox={`0 0 ${model.sheet.width} ${model.sheet.height}`}
+                          aria-label="Interactive drawing overlay"
+                          pointerEvents="all"
+                          onPointerDownCapture={selectHotspotPlacement}
+                          onPointerDown={handleSheetPointerDown}
+                          onPointerMove={handleSheetPointerMove}
+                          onPointerUp={finishMarquee}
+                          onPointerCancel={finishMarquee}
+                        >
+                          {connectionSegments.map((segment) => {
+                            const isSelected =
+                              selectedConnectionId === segment.connection.id;
+
+                            return (
+                              <g key={segment.connection.id}>
+                                <path
+                                  data-testid="canvas-connection-line"
+                                  data-connection-id={segment.connection.id}
+                                  d={segment.pathData}
+                                  className={
+                                    isSelected
+                                      ? "stroke-sky-600"
+                                      : "stroke-teal-700 opacity-75"
+                                  }
+                                  fill="none"
+                                  strokeWidth={isSelected ? 1.05 : 0.58}
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                                {segment.label ? (
+                                  <g className="pointer-events-none">
+                                    {(() => {
+                                      const box = routeLabelBox(
+                                        segment.label,
+                                        segment.labelPoint
+                                      );
+
+                                      return (
+                                        <rect
+                                          x={box.x}
+                                          y={box.y}
+                                          width={box.width}
+                                          height={box.height}
+                                          rx={1.2}
+                                          className="fill-white opacity-85"
+                                        />
+                                      );
+                                    })()}
+                                    <text
+                                      x={segment.labelPoint.x}
+                                      y={segment.labelPoint.y}
+                                      textAnchor={segment.labelPoint.anchor}
+                                      className="fill-slate-500 text-[2.7px] font-semibold"
+                                    >
+                                      {segment.label}
+                                    </text>
+                                  </g>
+                                ) : null}
+                                <path
+                                  data-testid="canvas-connection-hit"
+                                  d={segment.pathData}
+                                  className="cursor-pointer stroke-transparent"
+                                  fill="none"
+                                  strokeWidth={6 / anchorScreenScale}
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  onPointerDown={(event) => {
+                                    if (event.button !== 0) {
+                                      return;
+                                    }
+
+                                    event.stopPropagation();
+                                    viewportRef.current?.focus();
+                                    onConnectionSelect(segment.connection.id);
+                                    onSelectPlacement(undefined);
+                                    onAnnotationSelect(undefined);
+                                    setSelectedAnnotationLeaderId(null);
+                                    setSelectedRoutePointId(null);
+                                  }}
+                                  onDoubleClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onConnectionSelect(segment.connection.id);
+                                    onConnectionRouteChange(
+                                      segment.connection.id,
+                                      addRouteControlPoint({
+                                        route: segment.route,
+                                        connectionId: segment.connection.id,
+                                        point: toSvgPoint(event, model.sheet),
+                                        sheet: model.sheet
+                                      })
+                                    );
+                                  }}
+                                >
+                                  <title>
+                                    {segment.connection.label ||
+                                      segment.connection.id}
+                                  </title>
+                                </path>
+                              </g>
+                            );
+                          })}
+                          {sourceAnchorHotspot &&
+                          connectionDraft.pointer ? (
+                            <line
+                              data-testid="canvas-connection-preview"
+                              x1={sourceAnchorHotspot.point.x}
+                              y1={sourceAnchorHotspot.point.y}
+                              x2={connectionDraft.pointer.x}
+                              y2={connectionDraft.pointer.y}
+                              className="pointer-events-none stroke-sky-500"
+                              strokeWidth={0.9}
+                              strokeDasharray="4 2"
+                              strokeLinecap="round"
+                            />
+                          ) : null}
+                          {marquee ? (
+                            <rect
+                              data-testid="canvas-marquee-selection"
+                              x={Math.min(marquee.start.x, marquee.current.x)}
+                              y={Math.min(marquee.start.y, marquee.current.y)}
+                              width={Math.abs(marquee.current.x - marquee.start.x)}
+                              height={Math.abs(marquee.current.y - marquee.start.y)}
+                              className="pointer-events-none fill-sky-300/15 stroke-sky-500"
+                              strokeWidth={0.65 / anchorScreenScale}
+                              strokeDasharray="2 1.5"
+                            />
+                          ) : null}
+                          <PlacementOverlay
+                            model={model}
+                            symbols={symbols}
+                            selectedPlacementId={selectedPlacementId}
+                            selectedPlacementIds={selectedPlacementIds}
+                            connectionMode={connectionMode}
+                            viewportZoom={viewportTransform.zoom}
+                            dragState={dragState}
+                            onFocusCanvas={focusCanvas}
+                            onSelectPlacement={onSelectPlacement}
+                            onConnectionSelect={onConnectionSelect}
+                            onDragStart={handlePlacementDragStart}
+                            onDragMove={onDragMove}
+                            onDragEnd={handlePlacementDragEnd}
+                            onPlacementRemove={onPlacementRemove}
+                            onResizeStart={handlePlacementResizeStart}
+                            onResizeMove={updatePlacementFromResize}
+                            onResizeEnd={endPlacementResize}
+                            onRotationStart={handlePlacementRotationStart}
+                            onRotationMove={updatePlacementFromRotation}
+                            onRotationEnd={endPlacementRotation}
+                          />
+                          <NoteBlockOverlay
+                            model={model}
+                            selectedAnnotationId={selectedAnnotationId}
+                            selectedAnnotationIds={selectedAnnotationIds}
+                            selectedAnnotationLeaderId={selectedAnnotationLeaderId}
+                            viewportZoom={viewportTransform.zoom}
+                            onFocusCanvas={focusCanvas}
+                            onAnnotationSelect={selectAnnotation}
+                            onAnnotationLeaderSelect={setSelectedAnnotationLeaderId}
+                            onAnnotationChange={onAnnotationChange}
+                            onAnnotationGroupChange={onAnnotationGroupChange}
+                            onGestureStart={onGestureStart}
+                            onGestureEnd={onGestureEnd}
+                          />
+                          <AnchorOverlay
+                            anchorHotspots={anchorHotspots}
+                            activeAnchorId={activeAnchorId}
+                            sourceAnchorHotspot={sourceAnchorHotspot}
+                            connectionMode={connectionMode}
+                            connectionDraftFrom={connectionDraft.from}
+                            anchorMarkerRadius={anchorMarkerRadius}
+                            anchorHitRadius={anchorHitRadius}
+                            anchorGlowRadius={anchorGlowRadius}
+                            anchorStrokeWidth={anchorStrokeWidth}
+                            onActiveAnchorChange={setActiveAnchorId}
+                            onFocusCanvas={focusCanvas}
+                            onSelectPlacement={onSelectPlacement}
+                            onConnectionSelect={onConnectionSelect}
+                            onConnectionPointerMove={onConnectionPointerMove}
+                            onConnectionAnchorClick={onConnectionAnchorClick}
+                          />
+                          <RouteHandlesOverlay
+                            selectedConnectionSegment={selectedConnectionSegment}
+                            selectedRoutePointId={selectedRoutePointId}
+                            viewportZoom={viewportTransform.zoom}
+                            onRoutePointPointerDown={handleRoutePointPointerDown}
+                            onRoutePointPointerMove={updateDraggedRoutePoint}
+                            onRoutePointPointerEnd={endRoutePointDrag}
+                            onRoutePointDelete={deleteRoutePoint}
+                          />
+                          <RouteLabelOverlay
+                            selectedConnectionSegment={selectedConnectionSegment}
+                            viewportZoom={viewportTransform.zoom}
+                            onRouteLabelPointerDown={handleRouteLabelPointerDown}
+                            onRouteLabelPointerMove={updateDraggedRouteLabel}
+                            onRouteLabelPointerEnd={endRouteLabelDrag}
+                          />
+                          <PlacementTitleOverlay
+                            selectedPlacementTitle={selectedPlacementTitle}
+                            viewportZoom={viewportTransform.zoom}
+                            onPlacementTitlePointerDown={
+                              handlePlacementTitlePointerDown
+                            }
+                            onPlacementTitlePointerMove={updateDraggedPlacementTitle}
+                            onPlacementTitlePointerEnd={endPlacementTitleDrag}
+                          />
+                        </svg>
+                        <AnchorTooltip
+                          hotspot={activeAnchorHotspot}
+                          sheet={model.sheet}
+                        />
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
         </div>
       </div>
     </section>

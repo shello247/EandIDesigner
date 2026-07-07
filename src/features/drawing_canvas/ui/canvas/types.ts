@@ -1,7 +1,8 @@
 import type {
   DrawingConnection,
   DrawingConnectionRoute,
-  DrawingEndpoint
+  DrawingEndpoint,
+  DrawingSheetCanvasModel
 } from "../../data/schema";
 import type {
   SymbolAnchor,
@@ -10,8 +11,10 @@ import type {
 
 export type DragState = {
   placementId: string;
+  placementIds: string[];
   startPointer: { x: number; y: number };
   startPlacement: { x: number; y: number };
+  startModel: DrawingSheetCanvasModel;
 };
 
 export type ResizeHandle = "nw" | "ne" | "sw" | "se";
@@ -21,12 +24,27 @@ export type PlacementResizeState = {
   handle: ResizeHandle;
   fixedPoint: { x: number; y: number };
   baseSize: { width: number; height: number };
+  center?: { x: number; y: number };
+  rotation?: number;
+};
+
+export type PlacementRotationState = {
+  placementId: string;
+  center: { x: number; y: number };
+  startPointerAngle: number;
+  startRotation: number;
 };
 
 export type PanState = {
   pointerId: number;
   startPointer: { x: number; y: number };
   startPan: { panX: number; panY: number };
+};
+
+export type ScrollPanState = {
+  pointerId: number;
+  startPointer: { x: number; y: number };
+  startScroll: { left: number; top: number };
 };
 
 export type RouteDragState = {
@@ -49,9 +67,11 @@ export type PlacementTitleDragState = {
 
 export type AnnotationDragState = {
   annotationId: string;
+  annotationIds: string[];
   pointerId: number;
   startPointer: { x: number; y: number };
   startAnnotation: { x: number; y: number };
+  startAnnotations: Record<string, { x: number; y: number }>;
 };
 
 export type AnnotationLeaderDragState = {

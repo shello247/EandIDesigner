@@ -1,5 +1,8 @@
 import type { PointerEvent } from "react";
-import type { DrawingEndpoint, DrawingModel } from "../../data/schema";
+import type {
+  DrawingEndpoint,
+  DrawingSheetCanvasModel as DrawingModel
+} from "../../data/schema";
 import type { AnchorHotspot } from "./types";
 import { getAnchorLabel, getTooltipPosition } from "./utils/canvasGeometry";
 
@@ -17,6 +20,7 @@ export function AnchorOverlay({
   onFocusCanvas,
   onSelectPlacement,
   onConnectionSelect,
+  onConnectionPointerMove,
   onConnectionAnchorClick
 }: {
   anchorHotspots: AnchorHotspot[];
@@ -32,6 +36,7 @@ export function AnchorOverlay({
   onFocusCanvas: () => void;
   onSelectPlacement: (placementId: string | undefined) => void;
   onConnectionSelect: (connectionId: string | undefined) => void;
+  onConnectionPointerMove: (pointer: { x: number; y: number }) => void;
   onConnectionAnchorClick: (endpoint: DrawingEndpoint) => void;
 }) {
   return (
@@ -99,7 +104,18 @@ export function AnchorOverlay({
                   ? "cursor-crosshair"
                   : "cursor-help"
               ].join(" ")}
-              onPointerEnter={() => onActiveAnchorChange(hotspot.id)}
+              onPointerEnter={() => {
+                onActiveAnchorChange(hotspot.id);
+
+                if (connectionMode === "connecting" && connectionDraftFrom) {
+                  onConnectionPointerMove(hotspot.point);
+                }
+              }}
+              onPointerMove={() => {
+                if (connectionMode === "connecting" && connectionDraftFrom) {
+                  onConnectionPointerMove(hotspot.point);
+                }
+              }}
               onPointerLeave={() => onActiveAnchorChange(null)}
               onPointerDown={(event: PointerEvent<SVGCircleElement>) => {
                 if (event.button !== 0) {

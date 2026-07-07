@@ -1,20 +1,30 @@
 import { useCallback, useRef, type PointerEvent } from "react";
-import type { DrawingModel } from "../../../data/schema";
+import type { DrawingSheetCanvasModel as DrawingModel } from "../../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../../types";
 import type { PlacementResizeState } from "../types";
 import {
+  calculatePanelEnclosureResizeUpdate,
+  calculatePlacementDimensionResizeUpdate,
   calculatePlacementResizeUpdate,
-  packageKey,
   toSvgPoint
 } from "../utils/canvasGeometry";
+import {
+  isGeneratedPanelEnclosurePlacement,
+  resizePanelEnclosure
+} from "../../../logic/services/drawing-asset-containment";
+import {
+  isBackplanePlacement,
+  resizeBackplane
+} from "../../../logic/services/drawing-backplane-layouts";
+import { getRenderableSymbolForPlacement } from "../../../logic/services/drawing-generated-symbols";
 
 export function usePlacementResize({
   model,
-  symbolsByKey,
+  symbols,
   onPlacementChange
 }: {
   model: DrawingModel;
-  symbolsByKey: ReadonlyMap<string, ApprovedDrawingSymbol>;
+  symbols: ApprovedDrawingSymbol[];
   onPlacementChange: (
     placementId: string,
     updates: Partial<DrawingModel["placements"][number]>
@@ -40,11 +50,44 @@ export function usePlacementResize({
       const placement = model.placements.find(
         (candidate) => candidate.id === resizeState.placementId
       );
-      const symbol = placement
-        ? symbolsByKey.get(packageKey(placement.symbolId, placement.versionId))
-        : undefined;
+
+      if (isGeneratedPanelEnclosurePlacement(placement)) {
+        onPlacementChange(
+          resizeState.placementId,
+          resizePanelEnclosure(
+            placement,
+            calculatePanelEnclosureResizeUpdate(
+              resizeState,
+              toSvgPoint(event, model.sheet)
+            )
+          )
+        );
+        return;
+      }
+
+      const symbol = getRenderableSymbolForPlacement(placement, symbols);
 
       if (!placement || !symbol) {
+        return;
+      }
+
+      if (placement.layoutDimensions) {
+        const dimensionUpdate = calculatePlacementDimensionResizeUpdate(
+          resizeState,
+          toSvgPoint(event, model.sheet)
+        );
+
+        onPlacementChange(
+          resizeState.placementId,
+          isBackplanePlacement(placement)
+            ? resizeBackplane(model, placement, {
+                x: dimensionUpdate.x,
+                y: dimensionUpdate.y,
+                width: dimensionUpdate.layoutDimensions.lengthMm,
+                height: dimensionUpdate.layoutDimensions.widthMm
+              })
+            : dimensionUpdate
+        );
         return;
       }
 
@@ -56,7 +99,7 @@ export function usePlacementResize({
         )
       );
     },
-    [model.placements, model.sheet, onPlacementChange, symbolsByKey]
+    [model, onPlacementChange, symbols]
   );
 
   const endPlacementResize = useCallback(() => {

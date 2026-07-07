@@ -3,10 +3,18 @@ import type { ApprovedDrawingSymbol } from "../../types";
 
 const PLACEMENT_LABEL_LINE_GAP = 5.2;
 
+export function getPlacementDisplayTitle(
+  placement: DrawingPlacement,
+  symbol: ApprovedDrawingSymbol
+): string {
+  return placement.title?.trim() || symbol.displayName.trim();
+}
+
 export function shouldShowPlacementTitle(
+  placement: DrawingPlacement,
   symbol: ApprovedDrawingSymbol
 ): boolean {
-  return Boolean(symbol.displayName.trim());
+  return Boolean(getPlacementDisplayTitle(placement, symbol));
 }
 
 export function getPlacementTitlePoint(

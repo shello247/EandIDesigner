@@ -13,14 +13,17 @@ here, reviewed, then approved in the symbol registry.
 2. Export one clean SVG per symbol.
 3. Import the SVG through `/symbols/new`.
 4. Review parsed metadata, terminals, anchors, and preview.
-5. Save as `needs_review`.
-6. Approve the symbol after manual review.
-7. Use the approved symbol in the drawing canvas.
+5. For panel layout symbols, enter layout usage, physical width/height in mm,
+   mounting type, panel category, and whether the symbol is resizable.
+6. Save as `needs_review`.
+7. Approve the symbol after manual review.
+8. Use the approved symbol in the drawing canvas.
 
 ## Figma SVG Standard
 
 - Use one symbol per frame.
 - Export the frame as SVG with a valid `viewBox`.
+- Use a tight viewBox around the physical component outline.
 - Keep geometry clean and inspectable.
 - Avoid embedded raster images unless absolutely necessary.
 - Avoid scripts, external references, unsafe URLs, and effects that do not
@@ -32,6 +35,8 @@ here, reviewed, then approved in the symbol registry.
   - `terminal_1`
   - `anchor:GND`
   - `anchor_SHIELD`
+- Real panel layout dimensions are entered in EI Designer during import/review;
+  do not rely on SVG pixels as millimetres.
 
 ## Anchor And Terminal Notes
 

@@ -6,6 +6,7 @@ import type { SymbolDetail, SymbolVersionSummary } from "../../types";
 import { EngineerNotesPanel } from "./engineer-notes-panel";
 import { SvgPreviewPanel } from "./svg-preview-panel";
 import { SymbolDocumentsPanel } from "./symbol-documents-panel";
+import { SymbolLayoutMetadataPanel } from "./symbol-layout-metadata-panel";
 import { TerminalMapTable } from "./terminal-map-table";
 import { ValidationPanel } from "./validation-panel";
 
@@ -66,6 +67,10 @@ export function SymbolWorkspaceTabs({
             metadata={latest.metadata}
           />
           <div className="space-y-5">
+            <SymbolLayoutMetadataPanel
+              versionId={latest.id}
+              metadata={latest.metadata}
+            />
             <TerminalMapTable versionId={latest.id} metadata={latest.metadata} />
             <ValidationPanel issues={symbol.validationIssues} />
           </div>

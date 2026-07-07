@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultDrawingModel, type DrawingModel } from "../data/schema";
+import {
+  createDefaultDrawingModel,
+  type DrawingSheetCanvasModel
+} from "../data/schema";
+import { toSheetCanvasModel } from "../logic/commands/drawing-sheet-commands";
 import {
   addAnnotation,
   deleteAnnotation,
@@ -11,9 +15,9 @@ import {
   updateConnectionRoute
 } from "../logic/commands/drawing-model-commands";
 
-function modelWithPlacementsAndConnections(): DrawingModel {
+function modelWithPlacementsAndConnections(): DrawingSheetCanvasModel {
   return {
-    ...createDefaultDrawingModel(),
+    ...toSheetCanvasModel(createDefaultDrawingModel(), "sheet_1"),
     placements: [
       {
         id: "device_1",

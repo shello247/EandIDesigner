@@ -73,7 +73,38 @@ describe("SVG symbol import", () => {
     const validation = validateSymbol(preview.svg, metadata);
 
     expect(metadata.symbolKey).toBe("imported_device");
+    expect(metadata.layoutUsage).toBe("wiring");
     expect(validation.blockingIssueCount).toBe(0);
+  });
+
+  it("builds panel layout metadata for approved-symbol placement", () => {
+    const preview = parseImportedSvg({
+      rawSvg: validSvg,
+      sourceAsset
+    });
+    const metadata = buildImportedSymbolMetadata({
+      symbolKey: "MCB 3 Pole",
+      displayName: "MCB 3 Pole",
+      category: "terminal_block",
+      layoutUsage: "panel_layout",
+      physicalWidthMm: "54",
+      physicalHeightMm: "90",
+      mountingType: "din_rail",
+      panelCategory: "protection",
+      resizable: false,
+      viewBox: preview.viewBox,
+      anchors: preview.anchors,
+      terminals: preview.terminals
+    });
+
+    expect(metadata).toMatchObject({
+      layoutUsage: "panel_layout",
+      physicalWidthMm: 54,
+      physicalHeightMm: 90,
+      mountingType: "din_rail",
+      panelCategory: "protection",
+      resizable: false
+    });
   });
 
   it("lets registry validation catch duplicate terminal keys", () => {
@@ -99,4 +130,3 @@ describe("SVG symbol import", () => {
     );
   });
 });
-

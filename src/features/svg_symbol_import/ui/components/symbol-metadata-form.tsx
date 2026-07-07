@@ -1,6 +1,11 @@
 "use client";
 
-import type { SymbolCategory } from "@/features/symbol_registry/data/schema";
+import type {
+  SymbolCategory,
+  SymbolLayoutUsage,
+  SymbolPanelCategory,
+  SymbolPanelMountingType
+} from "@/features/symbol_registry/data/schema";
 
 export type SymbolMetadataFormState = {
   symbolKey: string;
@@ -8,6 +13,12 @@ export type SymbolMetadataFormState = {
   manufacturer: string;
   model: string;
   category: SymbolCategory;
+  layoutUsage: SymbolLayoutUsage;
+  physicalWidthMm: string;
+  physicalHeightMm: string;
+  mountingType: SymbolPanelMountingType | "";
+  panelCategory: SymbolPanelCategory | "";
+  resizable: boolean;
 };
 
 const categoryOptions: Array<{ value: SymbolCategory; label: string }> = [
@@ -16,6 +27,37 @@ const categoryOptions: Array<{ value: SymbolCategory; label: string }> = [
   { value: "terminal_block", label: "Terminal block" },
   { value: "cable_assembly", label: "Cable assembly" },
   { value: "gland", label: "Gland" },
+  { value: "other", label: "Other" }
+];
+
+const layoutUsageOptions: Array<{ value: SymbolLayoutUsage; label: string }> = [
+  { value: "wiring", label: "Wiring drawings" },
+  { value: "panel_layout", label: "Panel layouts" },
+  { value: "both", label: "Wiring and panel layouts" }
+];
+
+const mountingTypeOptions: Array<{
+  value: SymbolPanelMountingType;
+  label: string;
+}> = [
+  { value: "din_rail", label: "DIN rail" },
+  { value: "backplate", label: "Backplate" },
+  { value: "wire_duct", label: "Wire duct" },
+  { value: "door", label: "Door" },
+  { value: "free", label: "Free placement" }
+];
+
+const panelCategoryOptions: Array<{
+  value: SymbolPanelCategory;
+  label: string;
+}> = [
+  { value: "protection", label: "Protection" },
+  { value: "termination", label: "Termination" },
+  { value: "controller", label: "Controller" },
+  { value: "power", label: "Power" },
+  { value: "ducting", label: "Ducting" },
+  { value: "rail", label: "Rail" },
+  { value: "label", label: "Label" },
   { value: "other", label: "Other" }
 ];
 
@@ -102,6 +144,123 @@ export function SymbolMetadataForm({
             onChange={(event) => onChange({ model: event.currentTarget.value })}
           />
         </div>
+        <div className="border-t border-slate-200 pt-4 sm:col-span-2">
+          <h3 className="text-xs font-bold uppercase text-slate-500">
+            Panel layout metadata
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Use this only for approved symbols that should be placed on panel
+            layout sheets at real millimetre size.
+          </p>
+        </div>
+        <div>
+          <label className="field-label" htmlFor="layout-usage">
+            Layout usage
+          </label>
+          <select
+            id="layout-usage"
+            className="field-input"
+            value={form.layoutUsage}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange({
+                layoutUsage: event.currentTarget.value as SymbolLayoutUsage
+              })
+            }
+          >
+            {layoutUsageOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="field-label" htmlFor="mounting-type">
+            Mounting type
+          </label>
+          <select
+            id="mounting-type"
+            className="field-input"
+            value={form.mountingType}
+            disabled={disabled || form.layoutUsage === "wiring"}
+            onChange={(event) =>
+              onChange({
+                mountingType: event.currentTarget
+                  .value as SymbolPanelMountingType
+              })
+            }
+          >
+            <option value="">Select mounting</option>
+            {mountingTypeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="field-label" htmlFor="physical-width-mm">
+            Width mm
+          </label>
+          <input
+            id="physical-width-mm"
+            className="field-input"
+            inputMode="decimal"
+            value={form.physicalWidthMm}
+            disabled={disabled || form.layoutUsage === "wiring"}
+            onChange={(event) =>
+              onChange({ physicalWidthMm: event.currentTarget.value })
+            }
+          />
+        </div>
+        <div>
+          <label className="field-label" htmlFor="physical-height-mm">
+            Height mm
+          </label>
+          <input
+            id="physical-height-mm"
+            className="field-input"
+            inputMode="decimal"
+            value={form.physicalHeightMm}
+            disabled={disabled || form.layoutUsage === "wiring"}
+            onChange={(event) =>
+              onChange({ physicalHeightMm: event.currentTarget.value })
+            }
+          />
+        </div>
+        <div>
+          <label className="field-label" htmlFor="panel-category">
+            Panel category
+          </label>
+          <select
+            id="panel-category"
+            className="field-input"
+            value={form.panelCategory}
+            disabled={disabled || form.layoutUsage === "wiring"}
+            onChange={(event) =>
+              onChange({
+                panelCategory: event.currentTarget.value as SymbolPanelCategory
+              })
+            }
+          >
+            <option value="">Select category</option>
+            {panelCategoryOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <label className="flex items-center gap-2 self-end rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+          <input
+            type="checkbox"
+            checked={form.resizable}
+            disabled={disabled || form.layoutUsage === "wiring"}
+            onChange={(event) => onChange({ resizable: event.currentTarget.checked })}
+          />
+          Resizable in panel layouts
+        </label>
       </div>
     </section>
   );

@@ -2,11 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { FilePlus2, Workflow } from "lucide-react";
-import {
-  createDrawingAction,
-  createSampleDrawingAction
-} from "../../api/actions";
+import { FilePlus2 } from "lucide-react";
+import { createDrawingAction } from "../../api/actions";
 
 export function NewDrawingPanel() {
   const router = useRouter();
@@ -32,22 +29,8 @@ export function NewDrawingPanel() {
     });
   };
 
-  const createSample = () => {
-    startTransition(async () => {
-      const result = await createSampleDrawingAction();
-
-      if (!result.ok) {
-        setMessage(result.error);
-        return;
-      }
-
-      router.push(`/drawings/${result.data.id}`);
-      router.refresh();
-    });
-  };
-
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
+    <div className="grid max-w-xl gap-5">
       <section className="tool-panel overflow-hidden">
         <div className="border-b border-slate-200 px-4 py-3">
           <h2 className="text-sm font-bold">Blank Drawing</h2>
@@ -88,33 +71,9 @@ export function NewDrawingPanel() {
         </div>
       </section>
 
-      <section className="tool-panel overflow-hidden">
-        <div className="border-b border-slate-200 px-4 py-3">
-          <h2 className="text-sm font-bold">NMT81 to NRF81 Sample</h2>
-        </div>
-        <div className="space-y-4 p-4">
-          <p className="text-sm text-slate-600">
-            Creates the first proof drawing using approved NMT81, NRF81, and CLX
-            Cable 1 Pair symbols.
-          </p>
-          <button
-            type="button"
-            className="icon-button icon-button-primary"
-            disabled={isPending}
-            onClick={createSample}
-          >
-            <Workflow aria-hidden="true" size={15} />
-            Create NMT81 to NRF81 sample
-          </button>
-        </div>
-      </section>
-
       {message ? (
-        <div className="tool-panel p-4 text-sm text-red-700 lg:col-span-2">
-          {message}
-        </div>
+        <div className="tool-panel p-4 text-sm text-red-700">{message}</div>
       ) : null}
     </div>
   );
 }
-

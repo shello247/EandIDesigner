@@ -31,6 +31,31 @@ export const validationIssueSeveritySchema = z.enum([
   "info"
 ]);
 
+export const symbolLayoutUsageSchema = z.enum([
+  "wiring",
+  "panel_layout",
+  "both"
+]);
+
+export const symbolPanelMountingTypeSchema = z.enum([
+  "din_rail",
+  "backplate",
+  "wire_duct",
+  "door",
+  "free"
+]);
+
+export const symbolPanelCategorySchema = z.enum([
+  "protection",
+  "termination",
+  "controller",
+  "power",
+  "ducting",
+  "rail",
+  "label",
+  "other"
+]);
+
 export const viewBoxSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
@@ -53,12 +78,27 @@ export const symbolTerminalSchema = z.object({
   requiredForWiring: z.boolean()
 });
 
+export const symbolLayoutMetadataSchema = z.object({
+  layoutUsage: symbolLayoutUsageSchema.default("wiring"),
+  physicalWidthMm: z.number().positive().optional(),
+  physicalHeightMm: z.number().positive().optional(),
+  mountingType: symbolPanelMountingTypeSchema.optional(),
+  panelCategory: symbolPanelCategorySchema.optional(),
+  resizable: z.boolean().default(false)
+});
+
 export const symbolMetadataSchema = z.object({
   symbolKey: z.string().trim().min(1).max(120),
   displayName: z.string().trim().min(1).max(200),
   manufacturer: z.string().trim().max(160).optional(),
   model: z.string().trim().max(160).optional(),
   category: symbolCategorySchema,
+  layoutUsage: symbolLayoutUsageSchema.optional(),
+  physicalWidthMm: z.number().positive().optional(),
+  physicalHeightMm: z.number().positive().optional(),
+  mountingType: symbolPanelMountingTypeSchema.optional(),
+  panelCategory: symbolPanelCategorySchema.optional(),
+  resizable: z.boolean().optional(),
   viewBox: viewBoxSchema,
   terminals: z.array(symbolTerminalSchema),
   anchors: z.array(symbolAnchorSchema)
@@ -90,6 +130,11 @@ export const terminalMapUpdateInputSchema = z.object({
   versionId: z.string().trim().min(1),
   terminals: z.array(symbolTerminalSchema)
 });
+
+export const symbolLayoutMetadataUpdateInputSchema =
+  symbolLayoutMetadataSchema.extend({
+    versionId: z.string().trim().min(1)
+  });
 
 export const terminalMapVerificationIssueSchema = z.object({
   severity: validationIssueSeveritySchema,
@@ -190,6 +235,12 @@ export const terminalMapVerificationJsonSchema = {
 export type SymbolStatus = z.infer<typeof symbolStatusSchema>;
 export type SymbolCategory = z.infer<typeof symbolCategorySchema>;
 export type AnchorKind = z.infer<typeof anchorKindSchema>;
+export type SymbolLayoutUsage = z.infer<typeof symbolLayoutUsageSchema>;
+export type SymbolPanelMountingType = z.infer<
+  typeof symbolPanelMountingTypeSchema
+>;
+export type SymbolPanelCategory = z.infer<typeof symbolPanelCategorySchema>;
+export type SymbolLayoutMetadata = z.infer<typeof symbolLayoutMetadataSchema>;
 export type SymbolMetadata = z.infer<typeof symbolMetadataSchema>;
 export type SymbolAnchor = z.infer<typeof symbolAnchorSchema>;
 export type SymbolTerminal = z.infer<typeof symbolTerminalSchema>;
@@ -197,6 +248,9 @@ export type ValidationIssue = z.infer<typeof validationIssueSchema>;
 export type SaveSymbolDraftInput = z.infer<typeof saveSymbolDraftInputSchema>;
 export type TerminalMapUpdateInput = z.infer<
   typeof terminalMapUpdateInputSchema
+>;
+export type SymbolLayoutMetadataUpdateInput = z.infer<
+  typeof symbolLayoutMetadataUpdateInputSchema
 >;
 export type TerminalMapVerificationIssue = z.infer<
   typeof terminalMapVerificationIssueSchema

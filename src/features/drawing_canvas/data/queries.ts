@@ -16,14 +16,23 @@ export const listDrawings = cache(async (): Promise<DrawingListItem[]> => {
 
   return rows.map((row) => {
     const model = parseDrawingModelJson(row.modelJson);
+    const placementCount = model.sheets.reduce(
+      (total, sheet) => total + sheet.placements.length,
+      0
+    );
+    const connectionCount = model.sheets.reduce(
+      (total, sheet) => total + sheet.connections.length,
+      0
+    );
 
     return {
       id: row.id,
       drawingKey: row.drawingKey,
       title: row.title,
       status: drawingStatusSchema.parse(row.status),
-      placementCount: model.placements.length,
-      connectionCount: model.connections.length,
+      sheetCount: model.sheets.length,
+      placementCount,
+      connectionCount,
       updatedAt: row.updatedAt.toISOString()
     };
   });

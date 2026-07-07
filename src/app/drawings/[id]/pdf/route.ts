@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { chromium } from "playwright";
-import { listApprovedSymbolsForDrawing } from "@/features/symbol_registry/api/public";
+import { listSymbolsForDrawing } from "@/features/symbol_registry/api/public";
 import { getDrawingDetail } from "@/features/drawing_canvas/data/queries";
 import { buildDrawingPdfPrintHtml } from "@/features/drawing_canvas/logic/services/drawing-pdf-export";
+import { toSheetCanvasModel } from "@/features/drawing_canvas/logic/commands/drawing-sheet-commands";
 import { renderDrawingToSvg } from "@/features/drawing_canvas/logic/services/drawing-svg-renderer";
 
 export const dynamic = "force-dynamic";
@@ -30,23 +31,47 @@ export async function GET(
   const { id } = await params;
   const [drawing, symbols] = await Promise.all([
     getDrawingDetail(id),
-    listApprovedSymbolsForDrawing()
+    listSymbolsForDrawing()
   ]);
 
   if (!drawing) {
     notFound();
   }
 
-  const svg = renderDrawingToSvg({
-    model: drawing.model,
-    approvedSymbols: symbols,
-    showAnchors: false,
-    showConnections: true
+  const sheetCount = drawing.model.sheets.length;
+  const pages = drawing.model.sheets.map((sheet, index) => {
+    const sheetModel = toSheetCanvasModel(drawing.model, sheet.id);
+    const sectionTitle = sheet.sectionTitlePage?.title?.trim();
+
+    return {
+      sheet: sheetModel.sheet,
+      svg: renderDrawingToSvg({
+        model: sheetModel,
+        approvedSymbols: symbols,
+        showAnchors: false,
+        showConnections: true,
+        sheetNumber: index + 1,
+        sheetCount,
+        drawingTitle: drawing.title,
+        sheetTitle:
+          sheet.kind === "section_title" && sectionTitle
+            ? sectionTitle
+            : sheet.name,
+        sheetKind: sheet.kind,
+        sectionTitlePage: sheet.sectionTitlePage
+      })
+    };
   });
+  const firstPage = pages[0];
+
+  if (!firstPage) {
+    throw new Error("Drawing does not contain any sheets.");
+  }
+
+  const firstSheet = firstPage.sheet;
   const html = buildDrawingPdfPrintHtml({
     title: drawing.title,
-    sheet: drawing.model.sheet,
-    svg
+    pages
   });
   const browser = await chromium.launch({ headless: true });
 
@@ -54,8 +79,8 @@ export async function GET(
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle" });
     const pdf = await page.pdf({
-      width: `${drawing.model.sheet.width}mm`,
-      height: `${drawing.model.sheet.height}mm`,
+      width: `${firstSheet.width}mm`,
+      height: `${firstSheet.height}mm`,
       margin: {
         top: "0mm",
         right: "0mm",

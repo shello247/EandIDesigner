@@ -1,5 +1,5 @@
 import { useCallback, useRef, type PointerEvent } from "react";
-import type { DrawingModel } from "../../../data/schema";
+import type { DrawingSheetCanvasModel as DrawingModel } from "../../../data/schema";
 import { updateRouteLabelPosition } from "../../../logic/services/connection-route-geometry";
 import type { ConnectionSegment, RouteLabelDragState } from "../types";
 import { toSvgPoint } from "../utils/canvasGeometry";
@@ -11,7 +11,9 @@ export function useRouteLabelDrag({
   onFocusCanvas,
   onConnectionSelect,
   onConnectionRouteChange,
-  setSelectedRoutePointId
+  setSelectedRoutePointId,
+  onGestureStart,
+  onGestureEnd
 }: {
   model: DrawingModel;
   connectionSegments: ConnectionSegment[];
@@ -23,6 +25,8 @@ export function useRouteLabelDrag({
     route: NonNullable<ConnectionSegment["connection"]["route"]>
   ) => void;
   setSelectedRoutePointId: (pointId: string | null) => void;
+  onGestureStart: () => void;
+  onGestureEnd: () => void;
 }) {
   const routeLabelDragStateRef = useRef<RouteLabelDragState | null>(null);
 
@@ -78,6 +82,7 @@ export function useRouteLabelDrag({
       onFocusCanvas();
       onConnectionSelect(selectedConnectionSegment.connection.id);
       setSelectedRoutePointId(null);
+      onGestureStart();
       routeLabelDragStateRef.current = {
         connectionId: selectedConnectionSegment.connection.id,
         pointerId: event.pointerId,
@@ -87,12 +92,19 @@ export function useRouteLabelDrag({
         }
       };
     },
-    [onConnectionSelect, onFocusCanvas, selectedConnectionSegment, setSelectedRoutePointId]
+    [
+      onConnectionSelect,
+      onFocusCanvas,
+      onGestureStart,
+      selectedConnectionSegment,
+      setSelectedRoutePointId
+    ]
   );
 
   const endRouteLabelDrag = useCallback(() => {
     routeLabelDragStateRef.current = null;
-  }, []);
+    onGestureEnd();
+  }, [onGestureEnd]);
 
   return {
     updateDraggedRouteLabel,

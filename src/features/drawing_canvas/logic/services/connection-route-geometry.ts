@@ -2,7 +2,7 @@ import type {
   DrawingConnection,
   DrawingConnectionRoute,
   DrawingEndpoint,
-  DrawingModel,
+  DrawingSheetCanvasModel as DrawingModel,
   DrawingRoutePoint
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";

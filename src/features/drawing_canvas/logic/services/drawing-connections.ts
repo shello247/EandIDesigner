@@ -1,14 +1,18 @@
 import type {
   DrawingConnection,
   DrawingEndpoint,
-  DrawingModel,
+  DrawingSheetCanvasModel as DrawingModel,
   DrawingPlacement
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
+import {
+  getRenderableSymbolForPlacement,
+  packageSymbolKey
+} from "./drawing-generated-symbols";
 import { deriveWireId } from "./drawing-identification";
 
 function packageKey(symbolId: string, versionId: string): string {
-  return `${symbolId}:${versionId}`;
+  return packageSymbolKey(symbolId, versionId);
 }
 
 export function endpointKey(endpoint: DrawingEndpoint): string {
@@ -57,15 +61,7 @@ export function getSymbolForPlacement(
   placement: DrawingPlacement | undefined,
   symbols: ApprovedDrawingSymbol[]
 ): ApprovedDrawingSymbol | undefined {
-  if (!placement) {
-    return undefined;
-  }
-
-  return symbols.find(
-    (symbol) =>
-      symbol.symbolId === placement.symbolId &&
-      symbol.versionId === placement.versionId
-  );
+  return getRenderableSymbolForPlacement(placement, symbols);
 }
 
 export function getAnchorForEndpoint(

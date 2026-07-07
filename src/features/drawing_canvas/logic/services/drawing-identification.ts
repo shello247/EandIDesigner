@@ -1,6 +1,6 @@
 import type {
   DrawingConnection,
-  DrawingModel,
+  DrawingSheetCanvasModel as DrawingModel,
   DrawingPlacement
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { SymbolMetadata } from "@/features/symbol_registry/data/schema";
 import {
   createDefaultDrawingModel,
-  drawingModelSchema,
-  type DrawingModel
+  drawingSheetCanvasModelSchema,
+  type DrawingSheetCanvasModel
 } from "../data/schema";
 import type { ApprovedDrawingSymbol } from "../types";
 import { renderDrawingToSvg } from "../logic/services/drawing-svg-renderer";
@@ -18,6 +18,7 @@ import {
   getConnectionRouteLabel,
   getRenderableConnectionRoute
 } from "../logic/services/connection-route-renderer";
+import { createDefaultNoteAnnotation } from "../logic/services/drawing-annotations";
 import {
   createConnectionFromEndpoints,
   isDuplicateConnection
@@ -28,6 +29,7 @@ import {
   deriveWireId,
   normalizeCableConductorKey
 } from "../logic/services/drawing-identification";
+import { toSheetCanvasModel } from "../logic/commands/drawing-sheet-commands";
 
 const metadata: SymbolMetadata = {
   symbolKey: "test_symbol",
@@ -62,9 +64,9 @@ const approvedSymbol: ApprovedDrawingSymbol = {
   metadata
 };
 
-function validModel(): DrawingModel {
+function validModel(): DrawingSheetCanvasModel {
   return {
-    ...createDefaultDrawingModel(),
+    ...toSheetCanvasModel(createDefaultDrawingModel(), "sheet_1"),
     placements: [
       {
         id: "p1",
@@ -169,9 +171,20 @@ describe("drawing canvas domain", () => {
   });
 
   it("renders a deterministic SVG with embedded placements", () => {
+    const model = validModel();
+    model.sheet.titleBlock = {
+      ...model.sheet.titleBlock,
+      date: "2026-06-30",
+      preparedBy: "Sheldon Bowman",
+      checkedBy: "Suresh Singh"
+    };
     const svg = renderDrawingToSvg({
-      model: validModel(),
-      approvedSymbols: [approvedSymbol]
+      model,
+      approvedSymbols: [approvedSymbol],
+      drawingTitle: "TT-123 Loop Diagram",
+      sheetTitle: "Sheet Loop Wiring Detail",
+      sheetNumber: 1,
+      sheetCount: 2
     });
 
     expect(svg).toContain("<svg");
@@ -183,8 +196,20 @@ describe("drawing canvas domain", () => {
     expect(svg).not.toContain("canvas-connection-preview");
     expect(svg).toContain("Signal");
     expect(svg).toContain("Test Symbol");
-    expect(svg).toContain('data-title-block="professional"');
-    expect(svg).toContain("DRAWING NUMBER");
+    expect(svg).toContain('data-title-block="technical-full-width"');
+    expect(svg).toContain('data-title-block-section="revisions"');
+    expect(svg).toContain('data-title-block-section="approval"');
+    expect(svg).toContain('data-title-block-section="drawing-title"');
+    expect(svg).toContain('data-title-block-section="metadata"');
+    expect(svg).toContain("Sheet Loop Wiring Detail");
+    expect(svg).not.toContain("TT-123 Loop Diagram");
+    expect(svg).toContain("S.B.");
+    expect(svg).toContain("S.S.");
+    expect(svg).toContain("Sheldon Bowman (S.B.)");
+    expect(svg).toContain("Suresh Singh (S.S.)");
+    expect(svg).toContain("DRAWING NO.");
+    expect(svg).toContain("SHEET NO.");
+    expect(svg).toContain("1 OF 2");
     expect(svg.indexOf('data-placement-id="p1"')).toBeLessThan(
       svg.indexOf('data-connection-id="c1"')
     );
@@ -230,6 +255,100 @@ describe("drawing canvas domain", () => {
     );
   });
 
+  it("renders custom symbol titles per placement", () => {
+    const model = validModel();
+    model.placements[0] = {
+      ...model.placements[0],
+      title: "Temperature Transmitter"
+    };
+
+    const parsed = drawingSheetCanvasModelSchema.parse({
+      ...model,
+      placements: [
+        {
+          ...model.placements[0],
+          title: "  Temperature Transmitter  "
+        },
+        model.placements[1]
+      ]
+    });
+    const svg = renderDrawingToSvg({
+      model,
+      approvedSymbols: [approvedSymbol]
+    });
+
+    expect(parsed.placements[0].title).toBe("Temperature Transmitter");
+    expect(svg).toContain("Temperature Transmitter");
+    expect(svg).not.toContain(
+      'data-placement-title="p1" x="20" y="32.2" font-family="Arial, Helvetica, sans-serif" font-size="3.1" font-weight="600" fill="#64748b">Test Symbol</text>'
+    );
+  });
+
+  it("renders section title pages from sheet metadata", () => {
+    const model = {
+      ...validModel(),
+      placements: [],
+      connections: [],
+      annotations: []
+    };
+    const svg = renderDrawingToSvg({
+      model,
+      approvedSymbols: [approvedSymbol],
+      sheetKind: "section_title",
+      sectionTitlePage: {
+        title: "Power Distribution",
+        subtitle: "Panel and breaker drawings",
+        sectionNumber: "Section 2"
+      },
+      sheetTitle: "Power Section"
+    });
+
+    expect(svg).toContain('data-section-title-page="true"');
+    expect(svg).toContain("POWER DISTRIBUTION");
+    expect(svg).toContain("Panel and breaker drawings");
+    expect(svg).toContain("SECTION 2");
+    expect(svg).not.toContain('fill="url(#ei-grid)"');
+  });
+
+  it("wraps long technical title block sheet titles", () => {
+    const model = validModel();
+    const svg = renderDrawingToSvg({
+      model,
+      approvedSymbols: [approvedSymbol],
+      sheetTitle: "Tank1 Prothermo to Tank Side Monitor Wiring Details"
+    });
+
+    expect(svg).toContain('data-title-block-section="drawing-title"');
+    expect(svg).toContain("Tank1 Prothermo to Tank Side");
+    expect(svg).toContain("Monitor Wiring Details");
+    expect(svg).not.toContain("...");
+  });
+
+  it("does not create or render fallback note titles", () => {
+    const model = validModel();
+    const note = createDefaultNoteAnnotation({
+      id: "note_blank_title",
+      point: { x: 60, y: 70 },
+      sheet: model.sheet
+    });
+
+    model.annotations = [
+      {
+        ...note,
+        text: "Plain note text"
+      }
+    ];
+
+    const svg = renderDrawingToSvg({
+      model,
+      approvedSymbols: [approvedSymbol]
+    });
+
+    expect(note.title).toBeUndefined();
+    expect(svg).toContain("Plain note text");
+    expect(svg).not.toContain(">Note<");
+  });
+
   it("builds print-ready HTML for single page PDF export", () => {
     const model = validModel();
     const svg = renderDrawingToSvg({
@@ -240,8 +359,7 @@ describe("drawing canvas domain", () => {
     });
     const html = buildDrawingPdfPrintHtml({
       title: "Test Drawing",
-      sheet: model.sheet,
-      svg
+      pages: [{ sheet: model.sheet, svg }]
     });
 
     expect(html).toContain("<!doctype html>");
@@ -253,8 +371,7 @@ describe("drawing canvas domain", () => {
 
     const printHtml = buildDrawingPdfPrintHtml({
       title: "Test Drawing",
-      sheet: model.sheet,
-      svg,
+      pages: [{ sheet: model.sheet, svg }],
       drawingUrl: "/drawings/example"
     });
 
@@ -263,16 +380,53 @@ describe("drawing canvas domain", () => {
     expect(printHtml).toContain("Back to drawing");
   });
 
+  it("builds print-ready HTML for multi-page drawing packages", () => {
+    const model = validModel();
+    const firstSvg = renderDrawingToSvg({
+      model,
+      approvedSymbols: [approvedSymbol],
+      showAnchors: false,
+      showConnections: true,
+      sheetNumber: 1,
+      sheetCount: 2
+    });
+    const secondSvg = renderDrawingToSvg({
+      model: { ...model, placements: [], connections: [], annotations: [] },
+      approvedSymbols: [approvedSymbol],
+      showAnchors: false,
+      showConnections: true,
+      sheetNumber: 2,
+      sheetCount: 2
+    });
+    const html = buildDrawingPdfPrintHtml({
+      title: "Package Drawing",
+      pages: [
+        { sheet: model.sheet, svg: firstSvg },
+        { sheet: model.sheet, svg: secondSvg }
+      ],
+      drawingUrl: "/drawings/example"
+    });
+
+    expect(html.match(/class="drawing-page"/g)).toHaveLength(2);
+    expect(html).toContain("1 OF 2");
+    expect(html).toContain("2 OF 2");
+    expect(html).toContain("page-break-after: always");
+  });
+
   it("keeps old drawing models without routes compatible", () => {
     const model = validModel();
 
-    expect(drawingModelSchema.parse(model).connections[0].route).toBeUndefined();
-    expect(drawingModelSchema.parse(model).connections[0].wireId).toBeUndefined();
     expect(
-      drawingModelSchema.parse(model).placements[0].labelPosition
+      drawingSheetCanvasModelSchema.parse(model).connections[0].route
     ).toBeUndefined();
     expect(
-      drawingModelSchema.parse(model).placements[0].deviceTitlePosition
+      drawingSheetCanvasModelSchema.parse(model).connections[0].wireId
+    ).toBeUndefined();
+    expect(
+      drawingSheetCanvasModelSchema.parse(model).placements[0].labelPosition
+    ).toBeUndefined();
+    expect(
+      drawingSheetCanvasModelSchema.parse(model).placements[0].deviceTitlePosition
     ).toBeUndefined();
   });
 
@@ -303,7 +457,7 @@ describe("drawing canvas domain", () => {
       }
     ];
 
-    const parsed = drawingModelSchema.parse(model);
+    const parsed = drawingSheetCanvasModelSchema.parse(model);
     expect(parsed.annotations[0].width).toBeUndefined();
     expect(parsed.annotations[0].title).toBeUndefined();
     expect(parsed.annotations[1].title).toBe("Installation Instructions");
@@ -338,7 +492,7 @@ describe("drawing canvas domain", () => {
     expect(svg).toContain('data-annotation-id="note_1"');
     expect(svg).toContain('data-annotation-leader="note_1"');
     expect(svg).toContain("Installation Instructions");
-    expect(svg).toContain('stroke="#cbd5e1"');
+    expect(svg).not.toContain('stroke="#cbd5e1"');
     expect(svg).toContain('marker-end="url(#ei-note-arrow)"');
     expect(svg).toContain("<tspan");
     expect(svg).not.toContain("<foreignObject");
@@ -444,7 +598,7 @@ describe("drawing canvas domain", () => {
       ...validModel(),
       bundles: []
     };
-    const parsed = drawingModelSchema.parse(legacyModel);
+    const parsed = drawingSheetCanvasModelSchema.parse(legacyModel);
 
     expect("bundles" in parsed).toBe(false);
   });

@@ -1,5 +1,5 @@
 import { useCallback, useRef, type PointerEvent } from "react";
-import type { DrawingModel } from "../../../data/schema";
+import type { DrawingSheetCanvasModel as DrawingModel } from "../../../data/schema";
 import type {
   PlacementTitleDragState,
   PlacementTitleLabel
@@ -13,7 +13,9 @@ export function usePlacementTitleDrag({
   onFocusCanvas,
   onSelectPlacement,
   onConnectionSelect,
-  onPlacementChange
+  onPlacementChange,
+  onGestureStart,
+  onGestureEnd
 }: {
   model: DrawingModel;
   placementTitleLabels: PlacementTitleLabel[];
@@ -25,6 +27,8 @@ export function usePlacementTitleDrag({
     placementId: string,
     updates: Partial<DrawingModel["placements"][number]>
   ) => void;
+  onGestureStart: () => void;
+  onGestureEnd: () => void;
 }) {
   const placementTitleDragStateRef = useRef<PlacementTitleDragState | null>(null);
 
@@ -71,6 +75,7 @@ export function usePlacementTitleDrag({
       onFocusCanvas();
       onSelectPlacement(selectedPlacementTitle.placementId);
       onConnectionSelect(undefined);
+      onGestureStart();
       placementTitleDragStateRef.current = {
         placementId: selectedPlacementTitle.placementId,
         pointerId: event.pointerId,
@@ -83,6 +88,7 @@ export function usePlacementTitleDrag({
     [
       onConnectionSelect,
       onFocusCanvas,
+      onGestureStart,
       onSelectPlacement,
       selectedPlacementTitle
     ]
@@ -90,7 +96,8 @@ export function usePlacementTitleDrag({
 
   const endPlacementTitleDrag = useCallback(() => {
     placementTitleDragStateRef.current = null;
-  }, []);
+    onGestureEnd();
+  }, [onGestureEnd]);
 
   return {
     updateDraggedPlacementTitle,

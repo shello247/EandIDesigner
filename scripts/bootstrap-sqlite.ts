@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { prisma } from "../src/lib/prisma";
 
 async function execute(sql: string) {
@@ -287,6 +288,43 @@ async function main() {
   `);
 
   await execute(`
+    CREATE TABLE IF NOT EXISTS "DrawingSheetTemplate" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "templateKey" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "description" TEXT,
+      "category" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'active',
+      "modelJson" TEXT NOT NULL,
+      "metadataJson" TEXT NOT NULL,
+      "sourceDrawingId" TEXT,
+      "sourceSheetId" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL
+    );
+  `);
+
+  await execute(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "DrawingSheetTemplate_templateKey_key"
+    ON "DrawingSheetTemplate"("templateKey");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "DrawingSheetTemplate_status_idx"
+    ON "DrawingSheetTemplate"("status");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "DrawingSheetTemplate_updatedAt_idx"
+    ON "DrawingSheetTemplate"("updatedAt");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "DrawingSheetTemplate_category_idx"
+    ON "DrawingSheetTemplate"("category");
+  `);
+
+  await execute(`
     CREATE TABLE IF NOT EXISTS "DrawingValidationIssue" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "drawingId" TEXT NOT NULL,
@@ -316,6 +354,14 @@ async function main() {
     SET "category" = 'cable_assembly'
     WHERE "symbolKey" IN ('clx_cable_1_pair', 'clx_cable_2_pair');
   `);
+
+  const miniatureCircuitBreaker3PoleSvg = await readFile(
+    new URL(
+      "../src/features/symbol_registry/assets/miniature-circuit-breaker-3-pole.svg",
+      import.meta.url
+    ),
+    "utf8"
+  );
 
   await seedApprovedSymbol({
     symbolKey: "nmt81_average_temperature_probe",
@@ -438,6 +484,73 @@ async function main() {
         { key: "CH1_T2", x: 32, y: 20, kind: "terminal" },
         { key: "CH2_T1", x: 188, y: 20, kind: "terminal" },
         { key: "CH2_T2", x: 202, y: 20, kind: "terminal" }
+      ]
+    }
+  });
+
+  await seedApprovedSymbol({
+    symbolKey: "miniature_circuit_breaker_3_pole",
+    displayName: "Miniature Circuit Breaker 3 Pole",
+    model: "3 Pole",
+    category: "terminal_block",
+    svg: miniatureCircuitBreaker3PoleSvg,
+    metadata: {
+      symbolKey: "miniature_circuit_breaker_3_pole",
+      displayName: "Miniature Circuit Breaker 3 Pole",
+      model: "3 Pole",
+      category: "terminal_block",
+      viewBox: { x: 0, y: 0, width: 109, height: 147 },
+      terminals: [
+        {
+          key: "L1",
+          label: "Line 1",
+          function: "Incoming line phase 1",
+          anchorKey: "L1",
+          requiredForWiring: true
+        },
+        {
+          key: "L2",
+          label: "Line 2",
+          function: "Incoming line phase 2",
+          anchorKey: "L2",
+          requiredForWiring: true
+        },
+        {
+          key: "L3",
+          label: "Line 3",
+          function: "Incoming line phase 3",
+          anchorKey: "L3",
+          requiredForWiring: true
+        },
+        {
+          key: "T1",
+          label: "Load 1",
+          function: "Outgoing protected phase 1",
+          anchorKey: "T1",
+          requiredForWiring: true
+        },
+        {
+          key: "T2",
+          label: "Load 2",
+          function: "Outgoing protected phase 2",
+          anchorKey: "T2",
+          requiredForWiring: true
+        },
+        {
+          key: "T3",
+          label: "Load 3",
+          function: "Outgoing protected phase 3",
+          anchorKey: "T3",
+          requiredForWiring: true
+        }
+      ],
+      anchors: [
+        { key: "L1", x: 18, y: 23, kind: "terminal" },
+        { key: "L2", x: 54, y: 23, kind: "terminal" },
+        { key: "L3", x: 90, y: 23, kind: "terminal" },
+        { key: "T1", x: 18, y: 121, kind: "terminal" },
+        { key: "T2", x: 54, y: 121, kind: "terminal" },
+        { key: "T3", x: 90, y: 121, kind: "terminal" }
       ]
     }
   });

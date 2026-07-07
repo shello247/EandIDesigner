@@ -19,6 +19,7 @@ export type DrawingListItem = {
   drawingKey: string;
   title: string;
   status: DrawingStatus;
+  sheetCount: number;
   placementCount: number;
   connectionCount: number;
   updatedAt: string;

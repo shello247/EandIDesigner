@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { parseDrawingModelJson } from "@/features/drawing_canvas/data/schema";
 import {
   createEngineerNoteInputSchema,
   parseMetadataJson,
@@ -6,6 +7,8 @@ import {
   stringifyMetadata,
   type CreateEngineerNoteInput,
   type SaveSymbolDraftInput,
+  symbolLayoutMetadataUpdateInputSchema,
+  type SymbolLayoutMetadataUpdateInput,
   terminalMapUpdateInputSchema,
   type TerminalMapUpdateInput,
   uploadSymbolDocumentInputSchema,
@@ -209,6 +212,59 @@ export async function updateSymbolTerminalMap(input: TerminalMapUpdateInput) {
   return getSymbolDetail(version.symbolId);
 }
 
+export async function updateSymbolLayoutMetadata(
+  input: SymbolLayoutMetadataUpdateInput
+) {
+  const parsed = symbolLayoutMetadataUpdateInputSchema.parse(input);
+  const version = await prisma.symbolVersion.findUnique({
+    where: { id: parsed.versionId },
+    include: { symbol: true }
+  });
+
+  if (!version) {
+    throw new Error("Symbol version was not found.");
+  }
+
+  const metadata = parseMetadataJson(version.metadataJson);
+  const updatedMetadata = {
+    ...metadata,
+    layoutUsage: parsed.layoutUsage,
+    physicalWidthMm: parsed.physicalWidthMm,
+    physicalHeightMm: parsed.physicalHeightMm,
+    mountingType: parsed.mountingType,
+    panelCategory: parsed.panelCategory,
+    resizable: parsed.resizable
+  };
+  const validation = validateSymbol(version.svg, updatedMetadata);
+  const nextVersionStatus =
+    version.status === "approved" ? "needs_review" : version.status;
+  const nextSymbolStatus =
+    version.symbol.status === "archived" ? "archived" : "needs_review";
+
+  await prisma.$transaction([
+    prisma.symbolVersion.update({
+      where: { id: version.id },
+      data: {
+        status: nextVersionStatus,
+        svg: validation.sanitizedSvg,
+        metadataJson: stringifyMetadata(validation.metadata ?? updatedMetadata)
+      }
+    }),
+    prisma.symbol.update({
+      where: { id: version.symbolId },
+      data: { status: nextSymbolStatus }
+    })
+  ]);
+
+  await replaceValidationIssues({
+    symbolId: version.symbolId,
+    versionId: version.id,
+    issues: validation.issues
+  });
+
+  return getSymbolDetail(version.symbolId);
+}
+
 export async function createEngineerNote(input: CreateEngineerNoteInput) {
   const parsed = createEngineerNoteInputSchema.parse(input);
 
@@ -299,6 +355,54 @@ export async function archiveSymbol(symbolId: string) {
   await prisma.symbol.update({
     where: { id: symbolId },
     data: { status: "archived" }
+  });
+}
+
+function formatDrawingReferences(titles: string[]): string {
+  const visibleTitles = titles.slice(0, 4).join(", ");
+  const remainingCount = titles.length - 4;
+
+  return remainingCount > 0
+    ? `${visibleTitles}, and ${remainingCount} more`
+    : visibleTitles;
+}
+
+export async function deleteSymbol(symbolId: string) {
+  const symbol = await prisma.symbol.findUnique({
+    where: { id: symbolId },
+    select: { displayName: true }
+  });
+
+  if (!symbol) {
+    throw new Error("Symbol was not found.");
+  }
+
+  const drawings = await prisma.drawing.findMany({
+    where: {
+      NOT: { status: "archived" }
+    },
+    select: {
+      title: true,
+      modelJson: true
+    }
+  });
+  const referencedBy = drawings.flatMap((drawing) => {
+    const model = parseDrawingModelJson(drawing.modelJson);
+    const isReferenced = model.sheets.some((sheet) =>
+      sheet.placements.some((placement) => placement.symbolId === symbolId)
+    );
+
+    return isReferenced ? [drawing.title] : [];
+  });
+
+  if (referencedBy.length > 0) {
+    throw new Error(
+      `Cannot delete "${symbol.displayName}" because it is used in ${referencedBy.length} drawing${referencedBy.length === 1 ? "" : "s"}: ${formatDrawingReferences(referencedBy)}. Remove those placements first.`
+    );
+  }
+
+  await prisma.symbol.delete({
+    where: { id: symbolId }
   });
 }
 

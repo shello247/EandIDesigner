@@ -1,4 +1,4 @@
-import type { DrawingModel } from "../../data/schema";
+import type { DrawingSheetCanvasModel } from "../../data/schema";
 
 function escapeHtml(value: string): string {
   return value
@@ -10,16 +10,22 @@ function escapeHtml(value: string): string {
 
 export function buildDrawingPdfPrintHtml({
   title,
-  sheet,
-  svg,
+  pages,
   drawingUrl
 }: {
   title: string;
-  sheet: DrawingModel["sheet"];
-  svg: string;
+  pages: Array<{
+    sheet: DrawingSheetCanvasModel["sheet"];
+    svg: string;
+  }>;
   drawingUrl?: string;
 }): string {
   const safeTitle = escapeHtml(title.trim() || "Engineering Drawing");
+  const firstPage = pages[0];
+
+  if (!firstPage) {
+    throw new Error("Cannot build drawing print HTML without at least one page.");
+  }
   const toolbar = drawingUrl
     ? `<nav class="print-toolbar" aria-label="Print actions">
         <a href="${escapeHtml(drawingUrl)}">Back to drawing</a>
@@ -59,7 +65,7 @@ export function buildDrawingPdfPrintHtml({
     <title>${safeTitle}</title>
     <style>
       @page {
-        size: ${sheet.width}mm ${sheet.height}mm;
+        size: ${firstPage.sheet.width}mm ${firstPage.sheet.height}mm;
         margin: 0;
       }
 
@@ -69,8 +75,8 @@ export function buildDrawingPdfPrintHtml({
 
       html,
       body {
-        width: ${sheet.width}mm;
-        min-height: ${sheet.height}mm;
+        width: ${firstPage.sheet.width}mm;
+        min-height: ${firstPage.sheet.height}mm;
         margin: 0;
         padding: 0;
         background: #ffffff;
@@ -82,10 +88,17 @@ export function buildDrawingPdfPrintHtml({
       }
 
       .drawing-page {
-        width: ${sheet.width}mm;
-        height: ${sheet.height}mm;
+        width: ${firstPage.sheet.width}mm;
+        height: ${firstPage.sheet.height}mm;
         overflow: hidden;
         background: #ffffff;
+        break-after: page;
+        page-break-after: always;
+      }
+
+      .drawing-page:last-child {
+        break-after: auto;
+        page-break-after: auto;
       }
 
       .drawing-page > svg {
@@ -144,7 +157,11 @@ export function buildDrawingPdfPrintHtml({
   </head>
   <body>
     ${toolbar}
-    <main class="drawing-page">${svg}</main>
+    <main class="drawing-pages">
+      ${pages
+        .map((page) => `<section class="drawing-page">${page.svg}</section>`)
+        .join("")}
+    </main>
     ${printScript}
   </body>
 </html>`;

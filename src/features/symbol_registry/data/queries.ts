@@ -224,14 +224,14 @@ export async function getSymbolVersionForExport(symbolId: string) {
   };
 }
 
-export async function listApprovedSymbolVersions() {
+export async function listDrawingSymbolVersions() {
   const rows = await prisma.symbol.findMany({
     where: {
-      status: "approved"
+      status: { not: "archived" }
     },
     include: {
       versions: {
-        where: { status: "approved" },
+        where: { status: { not: "archived" } },
         orderBy: { versionNumber: "desc" },
         take: 1
       }
@@ -261,6 +261,10 @@ export async function listApprovedSymbolVersions() {
       }
     ];
   });
+}
+
+export async function listApprovedSymbolVersions() {
+  return listDrawingSymbolVersions();
 }
 
 export async function getSymbolVersionForTerminalVerification(versionId: string) {

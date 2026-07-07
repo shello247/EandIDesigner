@@ -14,7 +14,7 @@ export default async function DrawingsPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-normal">Drawings</h1>
           <p className="mt-1 max-w-2xl text-sm text-slate-600">
-            Model-driven engineering sheets generated from approved symbols,
+            Model-driven engineering sheets generated from registry symbols,
             placements, anchors, and connection records.
           </p>
         </div>
@@ -28,4 +28,3 @@ export default async function DrawingsPage() {
     </div>
   );
 }
-

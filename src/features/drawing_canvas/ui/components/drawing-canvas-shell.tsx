@@ -1,8 +1,26 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition
+} from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, FileDown, Link2, Save, StickyNote } from "lucide-react";
+import {
+  CheckCircle2,
+  FileDown,
+  Link2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  PackageSearch,
+  Save,
+  StickyNote
+} from "lucide-react";
 import type {
   DrawingAnnotation,
   DrawingConnection,
@@ -10,13 +28,26 @@ import type {
   DrawingEndpoint,
   DrawingModel,
   DrawingPlacement,
-  DrawingPlacementRole
+  DrawingSheetCanvasModel
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol, DrawingDetail } from "../../types";
 import {
   approveDrawingAction,
   saveDrawingAction
 } from "../../api/actions";
+import {
+  getSheetTemplateAction,
+  listSheetTemplatesAction,
+  saveSheetTemplateAction
+} from "@/features/drawing_sheet_templates/api/actions";
+import {
+  instantiateTemplateSheet,
+  type TemplateAssetResolutionChoice
+} from "@/features/drawing_sheet_templates/logic/use_cases/drawing-sheet-template-use-cases";
+import type {
+  DrawingSheetTemplateDetail,
+  DrawingSheetTemplateListItem
+} from "@/features/drawing_sheet_templates/types";
 import {
   addConnection as addConnectionCommand,
   addAnnotation as addAnnotationCommand,
@@ -29,18 +60,134 @@ import {
   updateConnectionRoute as updateConnectionRouteCommand,
   updatePlacementProperties
 } from "../../logic/commands/drawing-model-commands";
+import {
+  addDrawingSheet as addDrawingSheetCommand,
+  addSectionTitlePage as addSectionTitlePageCommand,
+  deleteSheet as deleteSheetCommand,
+  getActiveSheetId,
+  moveSheet as moveSheetCommand,
+  moveSheetToEnd as moveSheetToEndCommand,
+  replaceSheetFromCanvasModel,
+  toSheetCanvasModel,
+  updatePackageTitleBlock,
+  updateSectionTitlePage,
+  updateSheetMetadata
+} from "../../logic/commands/drawing-sheet-commands";
 import { generateDefaultOrthogonalRoute } from "../../logic/services/connection-route-geometry";
-import { createDefaultNoteAnnotation } from "../../logic/services/drawing-annotations";
+import {
+  clampPointToSheet,
+  createDefaultNoteAnnotation
+} from "../../logic/services/drawing-annotations";
+import {
+  defaultPlacementScale,
+  placementAssetId,
+  roleFromSymbol,
+  renameDrawingAssetTag
+} from "../../logic/services/drawing-asset-identity";
+import {
+  assignPlacementToContainer,
+  clearPlacementContainer,
+  createPanelEnclosurePlacement,
+  getPanelEnclosureTitle,
+  getVisibleSheetContainers,
+  updatePanelEnclosureTitle
+} from "../../logic/services/drawing-asset-containment";
+import {
+  autosizeLayoutHelperToBackplane,
+  createBackplanePlacement,
+  getBackplanesForSheet,
+  isBackplanePlacement,
+  isGeneratedBackplaneSymbolReference
+} from "../../logic/services/drawing-backplane-layouts";
 import { createConnectionFromEndpoints } from "../../logic/services/drawing-connections";
+import {
+  copySelectionToClipboard,
+  pasteClipboardToSheet,
+  type DrawingCanvasClipboard
+} from "../../logic/services/drawing-clipboard-commands";
+import { moveCanvasSelection } from "../../logic/services/drawing-movement";
+import {
+  createEmptyDrawingHistory,
+  pushDrawingHistoryEntry,
+  redoDrawingHistory,
+  undoDrawingHistory,
+  type DrawingModelHistoryEntry
+} from "../../logic/services/drawing-model-history";
+import {
+  EMPTY_CANVAS_SELECTION,
+  normalizeCanvasSelection,
+  primaryAnnotationId,
+  primaryPlacementId,
+  replaceCanvasSelection,
+  type DrawingCanvasSelection,
+  type SelectionKind
+} from "../../logic/services/drawing-selection";
 import type { ViewportTransform } from "../../logic/services/viewport-transform";
+import {
+  AddSymbolAssetDialog,
+  type AddSymbolAssetSubmission
+} from "./add-symbol-asset-dialog";
+import {
+  AddPanelEnclosureDialog,
+  type AddPanelEnclosureSubmission
+} from "./add-panel-enclosure-dialog";
+import {
+  AddTerminalBlockDialog,
+  type AddTerminalBlockSubmission
+} from "./add-terminal-block-dialog";
+import {
+  AddSheetDialog,
+  type AddSheetDialogSubmission
+} from "./add-sheet-dialog";
+import {
+  AssetLinkDialog,
+  type AssetLinkDialogMode
+} from "./asset-link-dialog";
+import { DeleteSheetConfirmationDialog } from "./delete-sheet-confirmation-dialog";
+import { DuplicateSheetWizardDialog } from "./duplicate-sheet-wizard-dialog";
+import {
+  AddSheetTemplateDialog
+} from "@/features/drawing_sheet_templates/ui/components/add-sheet-template-dialog";
+import {
+  createManagedAsset,
+  deleteManagedAsset,
+  reconcileDrawingAssets,
+  updateManagedAsset
+} from "@/features/drawing_asset_manager/logic/use_cases/drawing-asset-manager-use-cases";
+import type {
+  ManagedAssetCreateInput,
+  ManagedAssetUpdateInput
+} from "@/features/drawing_asset_manager/data/schema";
+import { AssetManagerDialog } from "@/features/drawing_asset_manager/ui/components/asset-manager-dialog";
 import { PlacementPropertiesPanel } from "./placement-properties-panel";
+import {
+  SaveSheetTemplateDialog,
+  type SaveSheetTemplateForm
+} from "@/features/drawing_sheet_templates/ui/components/save-sheet-template-dialog";
 import { SvgDrawingSurface } from "./svg-drawing-surface";
 import { SymbolLibraryPanel } from "./symbol-library-panel";
+import {
+  getSymbolLibraryContextForSheetKind,
+  isPanelLayoutLibrarySymbol
+} from "../../logic/services/symbol-library-context";
+import { createTerminalBlockPlacement } from "../../logic/services/drawing-terminal-blocks";
+import {
+  createNewAssetFromPlacement,
+  relinkPlacementsToExistingAsset,
+  type DrawingAssetPlacementTarget
+} from "../../logic/services/drawing-asset-resolution";
+import {
+  applySheetDuplicatePlan,
+  type SheetDuplicatePlan
+} from "../../logic/services/drawing-sheet-duplication";
+import type { TerminalBlockPlacement } from "@/features/drawing_terminal_blocks/types";
 
 type DragState = {
   placementId: string;
+  placementIds: string[];
   startPointer: { x: number; y: number };
   startPlacement: { x: number; y: number };
+  startModel: DrawingSheetCanvasModel;
 };
 
 type ConnectionMode = "idle" | "connecting";
@@ -50,98 +197,11 @@ type ConnectionDraft = {
   pointer?: { x: number; y: number };
 };
 
-function roleFromCategory(category: ApprovedDrawingSymbol["category"]): DrawingPlacementRole {
-  if (category === "cable_assembly") {
-    return "cable_assembly";
-  }
-
-  if (category === "terminal_block") {
-    return "terminal_block";
-  }
-
-  if (category === "instrument" || category === "monitor") {
-    return "device";
-  }
-
-  return "other";
-}
-
-function defaultScale(symbol: ApprovedDrawingSymbol): number {
-  if (symbol.category === "cable_assembly") {
-    return 0.5;
-  }
-
-  if (symbol.category === "monitor") {
-    return 0.36;
-  }
-
-  return 0.34;
-}
-
-function uniqueTag(base: string, placements: DrawingPlacement[]): string {
-  const normalized = base.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
-  const fallback = normalized || "SYM";
-  const existing = new Set(placements.map((placement) => placement.tag));
-
-  if (!existing.has(fallback)) {
-    return fallback;
-  }
-
-  for (let index = 2; index < placements.length + 20; index += 1) {
-    const candidate = `${fallback}_${index}`;
-    if (!existing.has(candidate)) {
-      return candidate;
-    }
-  }
-
-  return `${fallback}_${Date.now()}`;
-}
-
-function tagPrefixForSymbol(symbol: ApprovedDrawingSymbol): string {
-  if (symbol.category === "cable_assembly") {
-    return "C";
-  }
-
-  if (symbol.category === "terminal_block") {
-    return "TB";
-  }
-
-  if (symbol.category === "monitor") {
-    return "TSM";
-  }
-
-  if (symbol.category === "instrument") {
-    const descriptor = `${symbol.symbolKey} ${symbol.model ?? ""} ${symbol.displayName}`.toUpperCase();
-
-    if (descriptor.includes("NMT") || descriptor.includes("TEMP")) {
-      return "TT";
-    }
-
-    if (descriptor.includes("FMP") || descriptor.includes("RADAR") || descriptor.includes("LEVEL")) {
-      return "LIT";
-    }
-
-    return "INST";
-  }
-
-  return "EQ";
-}
-
-function nextEngineeringTag(
-  symbol: ApprovedDrawingSymbol,
-  placements: DrawingPlacement[]
-): string {
-  const prefix = tagPrefixForSymbol(symbol);
-  const existing = new Set(placements.map((placement) => placement.tag));
-
-  for (let index = 101; index < 1000; index += 1) {
-    const candidate = `${prefix}-${index}`;
-    if (!existing.has(candidate)) {
-      return candidate;
-    }
-  }
-
-  return uniqueTag(`${prefix}-1000`, placements);
+function normalizeCanvasModel(
+  model: DrawingModel,
+  symbols: ApprovedDrawingSymbol[]
+): DrawingModel {
+  return reconcileDrawingAssets(model, symbols);
 }
 
 export function DrawingCanvasShell({
@@ -153,15 +213,21 @@ export function DrawingCanvasShell({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const initialSheet = drawing.model.sheets[0];
+  const initialSelection: DrawingCanvasSelection = initialSheet.placements[0]
+    ? {
+        placementIds: [initialSheet.placements[0].id],
+        annotationIds: []
+      }
+    : { ...EMPTY_CANVAS_SELECTION };
   const [title, setTitle] = useState(drawing.title);
-  const [model, setModel] = useState<DrawingModel>(drawing.model);
-  const [selectedPlacementId, setSelectedPlacementId] = useState<string | undefined>(
-    drawing.model.placements[0]?.id
+  const [model, setModelState] = useState<DrawingModel>(() =>
+    normalizeCanvasModel(drawing.model, symbols)
   );
+  const [activeSheetId, setActiveSheetId] = useState(initialSheet.id);
+  const [selection, setSelectionState] =
+    useState<DrawingCanvasSelection>(initialSelection);
   const [selectedConnectionId, setSelectedConnectionId] = useState<
-    string | undefined
-  >(undefined);
-  const [selectedAnnotationId, setSelectedAnnotationId] = useState<
     string | undefined
   >(undefined);
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>("idle");
@@ -173,68 +239,685 @@ export function DrawingCanvasShell({
     panY: 0
   });
   const [viewportCenter, setViewportCenter] = useState({
-    x: drawing.model.sheet.width / 2,
-    y: drawing.model.sheet.height / 2
+    x: initialSheet.page.width / 2,
+    y: initialSheet.page.height / 2
   });
+  const [sheetFocusRequestKey, setSheetFocusRequestKey] = useState(0);
+  const [isSymbolsCollapsed, setIsSymbolsCollapsed] = useState(false);
+  const [isPropertiesCollapsed, setIsPropertiesCollapsed] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [pendingSymbol, setPendingSymbol] = useState<ApprovedDrawingSymbol | null>(
+    null
+  );
+  const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
+  const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
+  const [isAddTerminalBlockOpen, setIsAddTerminalBlockOpen] = useState(false);
+  const [isBackplanePanelPickerOpen, setIsBackplanePanelPickerOpen] =
+    useState(false);
+  const [isAssetManagerOpen, setIsAssetManagerOpen] = useState(false);
+  const [isSaveTemplateOpen, setIsSaveTemplateOpen] = useState(false);
+  const [isTemplateLibraryOpen, setIsTemplateLibraryOpen] = useState(false);
+  const [sheetDeleteCandidateId, setSheetDeleteCandidateId] = useState<
+    string | null
+  >(null);
+  const [sheetDuplicateCandidateId, setSheetDuplicateCandidateId] = useState<
+    string | null
+  >(null);
+  const [assetLinkDialogState, setAssetLinkDialogState] = useState<{
+    placementId: string;
+    initialMode: AssetLinkDialogMode;
+  } | null>(null);
+  const [templateList, setTemplateList] = useState<DrawingSheetTemplateListItem[]>(
+    []
+  );
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<DrawingSheetTemplateDetail | null>(null);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [clipboard, setClipboard] = useState<DrawingCanvasClipboard | null>(null);
+  const modelRef = useRef(model);
+  const activeSheetIdRef = useRef(activeSheetId);
+  const selectionRef = useRef(selection);
+  const historyRef = useRef(createEmptyDrawingHistory());
+  const historyTransactionRef = useRef<DrawingModelHistoryEntry | null>(null);
+  const historyCoalesceRef = useRef<{
+    key: string;
+    time: number;
+  } | null>(null);
+  const resolvedActiveSheetId = getActiveSheetId(model, activeSheetId);
+  const activeSheetCanvasModel = useMemo(
+    () => toSheetCanvasModel(model, resolvedActiveSheetId),
+    [model, resolvedActiveSheetId]
+  );
+  const selectedPlacementId = primaryPlacementId(selection);
+  const visibleSheetContainers = useMemo(
+    () => getVisibleSheetContainers(activeSheetCanvasModel),
+    [activeSheetCanvasModel]
+  );
+  const selectedAnnotationId = primaryAnnotationId(selection);
+  const activeSheet =
+    model.sheets.find((sheet) => sheet.id === resolvedActiveSheetId) ??
+    model.sheets[0];
+  const activeSheetNumber = Math.max(
+    1,
+    model.sheets.findIndex((sheet) => sheet.id === activeSheet.id) + 1
+  );
+  const symbolLibraryContext = getSymbolLibraryContextForSheetKind(
+    activeSheet.kind ?? "drawing"
+  );
+  const sheetDeleteCandidate = sheetDeleteCandidateId
+    ? model.sheets.find((sheet) => sheet.id === sheetDeleteCandidateId) ?? null
+    : null;
+  const sheetDeleteCandidateNumber = sheetDeleteCandidate
+    ? model.sheets.findIndex((sheet) => sheet.id === sheetDeleteCandidate.id) + 1
+    : 0;
+  const sheetDuplicateCandidate = sheetDuplicateCandidateId
+    ? model.sheets.find((sheet) => sheet.id === sheetDuplicateCandidateId) ?? null
+    : null;
+  const assetLinkPlacement = assetLinkDialogState
+    ? model.sheets
+        .flatMap((sheet) => sheet.placements)
+        .find((placement) => placement.id === assetLinkDialogState.placementId) ??
+      null
+    : null;
 
-  const selectPlacement = (placementId: string | undefined) => {
-    setSelectedPlacementId(placementId);
+  const setSelection = useCallback((nextSelection: DrawingCanvasSelection) => {
+    selectionRef.current = nextSelection;
+    setSelectionState(nextSelection);
+  }, []);
 
-    if (placementId) {
+  const setActiveSheet = useCallback((sheetId: string) => {
+    activeSheetIdRef.current = sheetId;
+    setActiveSheetId(sheetId);
+  }, []);
+
+  const currentHistoryEntry = useCallback(
+    (entryModel: DrawingModel = modelRef.current): DrawingModelHistoryEntry => ({
+      model: entryModel,
+      activeSheetId: activeSheetIdRef.current,
+      selection: selectionRef.current
+    }),
+    []
+  );
+
+  const applyHistoryEntry = useCallback(
+    (entry: DrawingModelHistoryEntry) => {
+      modelRef.current = entry.model;
+      setModelState(entry.model);
+      setActiveSheet(entry.activeSheetId);
+      setSelection(entry.selection);
       setSelectedConnectionId(undefined);
-      setSelectedAnnotationId(undefined);
+      setConnectionMode("idle");
+      setConnectionDraft({});
+      setDragState(null);
+      setSheetFocusRequestKey((current) => current + 1);
+    },
+    [setActiveSheet, setSelection]
+  );
+
+  const commitModel = useCallback(
+    (
+      updater: DrawingModel | ((current: DrawingModel) => DrawingModel),
+      options: {
+        history?: "record" | "skip";
+        coalesceKey?: string;
+      } = {}
+    ) => {
+      setModelState((current) => {
+        const rawNextModel =
+          typeof updater === "function" ? updater(current) : updater;
+
+        if (rawNextModel === current) {
+          return current;
+        }
+
+        const nextModel = normalizeCanvasModel(rawNextModel, symbols);
+        const beforeEntry = currentHistoryEntry(current);
+        const shouldRecord = options.history !== "skip";
+
+        if (shouldRecord && !historyTransactionRef.current) {
+          const now = Date.now();
+          const coalesceKey = options.coalesceKey;
+          const previousCoalesce = historyCoalesceRef.current;
+          const shouldCoalesce =
+            coalesceKey !== undefined &&
+            previousCoalesce !== null &&
+            previousCoalesce.key === coalesceKey &&
+            now - previousCoalesce.time < 900;
+
+          if (!shouldCoalesce) {
+            historyRef.current = pushDrawingHistoryEntry(
+              historyRef.current,
+              beforeEntry
+            );
+          }
+
+          historyCoalesceRef.current = coalesceKey
+            ? { key: coalesceKey, time: now }
+            : null;
+        }
+
+        modelRef.current = nextModel;
+        return nextModel;
+      });
+    },
+    [currentHistoryEntry, symbols]
+  );
+
+  const beginModelHistoryTransaction = useCallback(() => {
+    if (!historyTransactionRef.current) {
+      historyTransactionRef.current = currentHistoryEntry();
+      historyCoalesceRef.current = null;
+    }
+  }, [currentHistoryEntry]);
+
+  const endModelHistoryTransaction = useCallback(() => {
+    const entry = historyTransactionRef.current;
+
+    if (!entry) {
+      return;
+    }
+
+    historyTransactionRef.current = null;
+
+    if (entry.model !== modelRef.current) {
+      historyRef.current = pushDrawingHistoryEntry(historyRef.current, entry);
+    }
+  }, []);
+
+  const undo = useCallback(() => {
+    const result = undoDrawingHistory(
+      historyRef.current,
+      currentHistoryEntry()
+    );
+
+    if (!result.entry) {
+      setMessage("Nothing to undo.");
+      return;
+    }
+
+    historyRef.current = result.history;
+    historyTransactionRef.current = null;
+    historyCoalesceRef.current = null;
+    applyHistoryEntry(result.entry);
+    setMessage("Undo.");
+  }, [applyHistoryEntry, currentHistoryEntry]);
+
+  const redo = useCallback(() => {
+    const result = redoDrawingHistory(
+      historyRef.current,
+      currentHistoryEntry()
+    );
+
+    if (!result.entry) {
+      setMessage("Nothing to redo.");
+      return;
+    }
+
+    historyRef.current = result.history;
+    historyTransactionRef.current = null;
+    historyCoalesceRef.current = null;
+    applyHistoryEntry(result.entry);
+    setMessage("Redo.");
+  }, [applyHistoryEntry, currentHistoryEntry]);
+
+  useEffect(() => {
+    if (!message) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setMessage(null);
+    }, 5000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [message]);
+
+  const clearActiveSheetSelection = () => {
+    setSelection({ ...EMPTY_CANVAS_SELECTION });
+    setSelectedConnectionId(undefined);
+    setConnectionMode("idle");
+    setConnectionDraft({});
+    setDragState(null);
+  };
+
+  const updateActiveSheet = (
+    updater: (current: DrawingSheetCanvasModel) => DrawingSheetCanvasModel,
+    options?: {
+      history?: "record" | "skip";
+      coalesceKey?: string;
+    }
+  ) => {
+    commitModel((current) => {
+      const sheetId = getActiveSheetId(current, activeSheetId);
+      const currentCanvasModel = toSheetCanvasModel(current, sheetId);
+
+      return replaceSheetFromCanvasModel(
+        current,
+        sheetId,
+        updater(currentCanvasModel)
+      );
+    }, options);
+  };
+
+  const selectSheet = (sheetId: string) => {
+    if (sheetId === resolvedActiveSheetId) {
+      return;
+    }
+
+    const sheet = model.sheets.find((candidate) => candidate.id === sheetId);
+
+    setActiveSheet(sheetId);
+    clearActiveSheetSelection();
+
+    if (sheet) {
+      setViewportCenter({
+        x: sheet.page.width / 2,
+        y: sheet.page.height / 2
+      });
     }
   };
 
-  const addSymbol = (symbol: ApprovedDrawingSymbol) => {
-    const tag = nextEngineeringTag(symbol, model.placements);
+  const selectCanvasObject = (
+    kind: SelectionKind,
+    id: string | undefined,
+    options: { additive?: boolean } = {}
+  ) => {
+    setSelection(
+      id
+        ? replaceCanvasSelection(
+            selectionRef.current,
+            kind,
+            id,
+            Boolean(options.additive)
+          )
+        : { ...EMPTY_CANVAS_SELECTION }
+    );
+
+    if (id) {
+      setSelectedConnectionId(undefined);
+    }
+  };
+
+  const selectPlacement = (
+    placementId: string | undefined,
+    options?: { additive?: boolean }
+  ) => {
+    selectCanvasObject("placement", placementId, options);
+  };
+
+  const replaceSelection = (nextSelection: DrawingCanvasSelection) => {
+    setSelection(normalizeCanvasSelection(nextSelection, activeSheetCanvasModel));
+    setSelectedConnectionId(undefined);
+    setConnectionDraft({});
+  };
+
+  const addSymbol = ({
+    symbol,
+    assetId,
+    tag,
+    containerAssetId
+  }: AddSymbolAssetSubmission) => {
     const placement: DrawingPlacement = {
       id: `pl_${Date.now()}`,
+      assetId,
+      containerAssetId,
       symbolId: symbol.symbolId,
       versionId: symbol.versionId,
-      role: roleFromCategory(symbol.category),
+      role: roleFromSymbol(symbol),
       tag,
-      x: 35 + model.placements.length * 18,
-      y: 45 + model.placements.length * 12,
+      x: 35 + activeSheetCanvasModel.placements.length * 18,
+      y: 45 + activeSheetCanvasModel.placements.length * 12,
       rotation: 0,
-      scale: defaultScale(symbol)
+      scale: defaultPlacementScale(symbol)
     };
 
-    setModel((current) => addPlacementCommand(current, placement));
+    updateActiveSheet((current) => addPlacementCommand(current, placement));
     selectPlacement(placement.id);
     setSelectedConnectionId(undefined);
+    setPendingSymbol(null);
+  };
+
+  const placeBackplaneInPanel = (panelPlacement: DrawingPlacement) => {
+    const placement = createBackplanePlacement({ panelPlacement });
+
+    updateActiveSheet((current) => addPlacementCommand(current, placement));
+    selectPlacement(placement.id);
+    setSelectedConnectionId(undefined);
+    setIsBackplanePanelPickerOpen(false);
+    setMessage("Backplane added.");
+  };
+
+  const addBackplaneFromLibrary = () => {
+    const containers = visibleSheetContainers;
+
+    if (containers.length === 0) {
+      setMessage("Add or select a panel before adding a backplane.");
+      return;
+    }
+
+    const selectedContainer = selectedPlacementId
+      ? containers.find(
+          (container) => container.placement.id === selectedPlacementId
+        )
+      : undefined;
+
+    if (selectedContainer) {
+      placeBackplaneInPanel(selectedContainer.placement);
+      return;
+    }
+
+    if (containers.length === 1) {
+      placeBackplaneInPanel(containers[0].placement);
+      return;
+    }
+
+    setIsBackplanePanelPickerOpen(true);
+    setMessage("Choose the panel for this backplane.");
+  };
+
+  const selectedBackplane = selectedPlacementId
+    ? activeSheetCanvasModel.placements.find(
+        (placement) =>
+          placement.id === selectedPlacementId && isBackplanePlacement(placement)
+      )
+    : undefined;
+
+  const addLayoutSymbol = (symbol: ApprovedDrawingSymbol) => {
+    const backplanes = getBackplanesForSheet(activeSheetCanvasModel);
+    const backplane = selectedBackplane ?? backplanes[0];
+
+    if (!backplane) {
+      setMessage("Add a backplane before placing panel layout symbols.");
+      return;
+    }
+
+    const lengthMm =
+      symbol.metadata.physicalWidthMm ?? symbol.metadata.viewBox.width;
+    const widthMm =
+      symbol.metadata.physicalHeightMm ?? symbol.metadata.viewBox.height;
+    const placement = autosizeLayoutHelperToBackplane({
+      backplane,
+      symbol,
+      placement: {
+        id: `pl_${Date.now()}`,
+        symbolId: symbol.symbolId,
+        versionId: symbol.versionId,
+        role: "other",
+        tag: symbol.displayName,
+        x: backplane.x,
+        y: backplane.y,
+        rotation: 0,
+        scale: 1,
+        layoutKind: "layout_helper",
+        layoutDimensions: {
+          lengthMm,
+          widthMm
+        }
+      }
+    });
+
+    updateActiveSheet((current) => addPlacementCommand(current, placement));
+    selectPlacement(placement.id);
+    setSelectedConnectionId(undefined);
+    setMessage(`${symbol.displayName} added to backplane.`);
+  };
+
+  const addPanel = ({ assetId, tag, title }: AddPanelEnclosureSubmission) => {
+    const placement = createPanelEnclosurePlacement({
+      model,
+      activeSheet,
+      assetId,
+      tag,
+      title,
+      x: viewportCenter.x - 59,
+      y: viewportCenter.y - 46
+    });
+
+    updateActiveSheet((current) => addPlacementCommand(current, placement));
+    selectPlacement(placement.id);
+    setSelectedConnectionId(undefined);
+    setIsAddPanelOpen(false);
+    setMessage(`${placement.tag} panel added.`);
+  };
+
+  const addTerminalBlock = ({
+    assetId,
+    tag,
+    terminalBlock,
+    containerAssetId
+  }: AddTerminalBlockSubmission) => {
+    const placement = createTerminalBlockPlacement({
+      model,
+      activeSheet,
+      assetId,
+      tag,
+      terminalBlock,
+      x: viewportCenter.x - 18,
+      y: viewportCenter.y - 31
+    });
+
+    updateActiveSheet((current) =>
+      addPlacementCommand(current, {
+        ...placement,
+        containerAssetId
+      })
+    );
+    selectPlacement(placement.id);
+    setSelectedConnectionId(undefined);
+    setIsAddTerminalBlockOpen(false);
+    setMessage(`${placement.tag} terminal block added.`);
   };
 
   const updatePlacement = (
     placementId: string,
     updates: Partial<DrawingPlacement>
   ) => {
-    setModel((current) =>
+    updateActiveSheet((current) =>
       updatePlacementProperties(current, placementId, updates)
     );
   };
 
-  const updateTitleBlock = (
-    updates: Partial<DrawingModel["sheet"]["titleBlock"]>
+  const updatePlacementContainer = (
+    placementId: string,
+    containerAssetId: string | undefined
   ) => {
-    setModel((current) => ({
-      ...current,
-      sheet: {
-        ...current.sheet,
-        titleBlock: {
-          ...current.sheet.titleBlock,
-          ...updates
-        }
-      }
-    }));
+    updateActiveSheet((current) =>
+      containerAssetId
+        ? assignPlacementToContainer(current, placementId, containerAssetId)
+        : clearPlacementContainer(current, placementId)
+    );
+  };
+
+  const moveSelection = ({
+    selection: targetSelection,
+    delta,
+    baseModel
+  }: {
+    selection: DrawingCanvasSelection;
+    delta: { x: number; y: number };
+    baseModel?: DrawingSheetCanvasModel;
+  }) => {
+    if (
+      targetSelection.placementIds.length === 0 &&
+      targetSelection.annotationIds.length === 0
+    ) {
+      return;
+    }
+
+    updateActiveSheet((current) =>
+      moveCanvasSelection({
+        model: baseModel ?? current,
+        selection: targetSelection,
+        delta,
+        symbols
+      })
+    );
+  };
+
+  const updatePlacementAssetTag = (assetId: string, tag: string) => {
+    try {
+      commitModel(
+        (current) => renameDrawingAssetTag(current, assetId, tag, symbols),
+        { coalesceKey: `asset-tag:${assetId}` }
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Asset tag could not be updated."
+      );
+    }
+  };
+
+  const openAssetLinkDialog = (mode: AssetLinkDialogMode) => {
+    if (!selectedPlacementId) {
+      return;
+    }
+
+    setAssetLinkDialogState({
+      placementId: selectedPlacementId,
+      initialMode: mode
+    });
+  };
+
+  const createNewAssetLink = (
+    targets: DrawingAssetPlacementTarget[],
+    tag: string
+  ) => {
+    const placementId = assetLinkDialogState?.placementId;
+
+    if (!placementId) {
+      return;
+    }
+
+    try {
+      commitModel((current) =>
+        createNewAssetFromPlacement(current, placementId, {
+          symbols,
+          tag,
+          placementTargets: targets
+        })
+      );
+      setAssetLinkDialogState(null);
+      setMessage("New asset link created.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Asset link could not be created."
+      );
+    }
+  };
+
+  const referenceExistingAssetLink = (
+    targets: DrawingAssetPlacementTarget[],
+    targetAssetId: string
+  ) => {
+    commitModel((current) =>
+      relinkPlacementsToExistingAsset(current, targets, targetAssetId, symbols)
+    );
+    setAssetLinkDialogState(null);
+    setMessage("Asset reference updated.");
+  };
+
+  const createAssetManagerAsset = (input: ManagedAssetCreateInput) => {
+    commitModel((current) => createManagedAsset(current, input, symbols));
+    setMessage("Asset created.");
+  };
+
+  const updateAssetManagerAsset = (
+    assetId: string,
+    updates: ManagedAssetUpdateInput
+  ) => {
+    commitModel(
+      (current) => updateManagedAsset(current, assetId, updates, symbols),
+      { coalesceKey: `asset-manager:${assetId}:${Object.keys(updates).join(",")}` }
+    );
+  };
+
+  const deleteAssetManagerAsset = (
+    assetId: string
+  ): { ok: true } | { ok: false; error: string } => {
+    try {
+      commitModel((current) => deleteManagedAsset(current, assetId));
+      setMessage("Asset deleted.");
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error instanceof Error ? error.message : "Asset could not be deleted."
+      };
+    }
+  };
+
+  const updatePlacementTitle = (placementId: string, placementTitle: string) => {
+    const normalizedTitle = placementTitle.trim();
+
+    updateActiveSheet(
+      (current) => ({
+        ...current,
+        placements: current.placements.map((placement) => {
+          if (placement.id !== placementId) {
+            return placement;
+          }
+
+          if (!normalizedTitle) {
+            const placementWithoutTitle = { ...placement };
+            delete placementWithoutTitle.title;
+            return placementWithoutTitle;
+          }
+
+          return {
+            ...placement,
+            title: normalizedTitle
+          };
+        })
+      }),
+      { coalesceKey: `placement-title:${placementId}` }
+    );
+  };
+
+  const updatePanelTitle = (assetId: string, panelTitle: string) => {
+    commitModel(
+      (current) => updatePanelEnclosureTitle(current, assetId, panelTitle),
+      { coalesceKey: `panel-title:${assetId}` }
+    );
+  };
+
+  const updateTerminalBlockConfig = (
+    assetId: string,
+    terminalBlock: TerminalBlockPlacement
+  ) => {
+    commitModel(
+      (current) => ({
+        ...current,
+        sheets: current.sheets.map((sheet) => ({
+          ...sheet,
+          placements: sheet.placements.map((placement) =>
+            placementAssetId(placement) === assetId && placement.terminalBlock
+              ? { ...placement, terminalBlock }
+              : placement
+          )
+        }))
+      }),
+      { coalesceKey: `terminal-block:${assetId}` }
+    );
+  };
+
+  const updateTitleBlock = (
+    updates: Partial<DrawingModel["titleBlock"]>
+  ) => {
+    commitModel((current) => updatePackageTitleBlock(current, updates), {
+      coalesceKey: `title-block:${Object.keys(updates).join(",")}`
+    });
   };
 
   const removePlacement = (placementId: string) => {
-    setModel((current) => deletePlacementCommand(current, placementId));
-    setSelectedPlacementId(undefined);
+    updateActiveSheet((current) => deletePlacementCommand(current, placementId));
     setSelectedConnectionId(undefined);
-    setSelectedAnnotationId(undefined);
+    setSelection({
+      placementIds: selectionRef.current.placementIds.filter(
+        (id) => id !== placementId
+      ),
+      annotationIds: selectionRef.current.annotationIds
+    });
     setConnectionDraft({});
   };
 
@@ -245,12 +928,11 @@ export function DrawingCanvasShell({
         x: viewportCenter.x - 35,
         y: viewportCenter.y - 12
       },
-      sheet: model.sheet
+      sheet: activeSheetCanvasModel.sheet
     });
 
-    setModel((current) => addAnnotationCommand(current, annotation));
-    setSelectedAnnotationId(annotation.id);
-    setSelectedPlacementId(undefined);
+    updateActiveSheet((current) => addAnnotationCommand(current, annotation));
+    selectCanvasObject("annotation", annotation.id);
     setSelectedConnectionId(undefined);
     setConnectionDraft({});
     setMessage("Note added.");
@@ -260,23 +942,155 @@ export function DrawingCanvasShell({
     annotationId: string,
     updates: Partial<DrawingAnnotation>
   ) => {
-    setModel((current) =>
+    updateActiveSheet((current) =>
       updateAnnotationCommand(current, annotationId, updates)
     );
   };
 
+  const updateAnnotationGroup = (
+    updates: Array<{
+      annotationId: string;
+      updates: Partial<DrawingAnnotation>;
+    }>
+  ) => {
+    if (updates.length === 0) {
+      return;
+    }
+
+    updateActiveSheet((current) => ({
+      ...current,
+      annotations: current.annotations.map((annotation) => {
+        const update = updates.find(
+          (candidate) => candidate.annotationId === annotation.id
+        );
+
+        if (!update) {
+          return annotation;
+        }
+
+        const delta = {
+          x:
+            update.updates.x === undefined
+              ? 0
+              : update.updates.x - annotation.x,
+          y:
+            update.updates.y === undefined
+              ? 0
+              : update.updates.y - annotation.y
+        };
+
+        if (!annotation.leader?.enabled || (delta.x === 0 && delta.y === 0)) {
+          return { ...annotation, ...update.updates };
+        }
+
+        const leaderTarget = clampPointToSheet(
+          {
+            x: annotation.leader.targetX + delta.x,
+            y: annotation.leader.targetY + delta.y
+          },
+          current.sheet
+        );
+
+        return {
+          ...annotation,
+          ...update.updates,
+          leader: {
+            ...annotation.leader,
+            targetX: leaderTarget.x,
+            targetY: leaderTarget.y
+          }
+        };
+      })
+    }));
+  };
+
   const removeAnnotation = (annotationId: string) => {
-    setModel((current) => deleteAnnotationCommand(current, annotationId));
-    setSelectedAnnotationId((current) =>
-      current === annotationId ? undefined : current
+    updateActiveSheet((current) =>
+      deleteAnnotationCommand(current, annotationId)
     );
+    setSelection({
+      placementIds: selectionRef.current.placementIds,
+      annotationIds: selectionRef.current.annotationIds.filter(
+        (id) => id !== annotationId
+      )
+    });
+  };
+
+  const removeSelection = () => {
+    const currentSelection = selectionRef.current;
+
+    if (
+      currentSelection.placementIds.length === 0 &&
+      currentSelection.annotationIds.length === 0
+    ) {
+      return;
+    }
+
+    const placementIds = new Set(currentSelection.placementIds);
+    const annotationIds = new Set(currentSelection.annotationIds);
+
+    updateActiveSheet((current) => {
+      const withoutPlacements = current.placements.reduce(
+        (nextModel, placement) =>
+          placementIds.has(placement.id)
+            ? deletePlacementCommand(nextModel, placement.id)
+            : nextModel,
+        current
+      );
+
+      return {
+        ...withoutPlacements,
+        annotations: withoutPlacements.annotations.filter(
+          (annotation) => !annotationIds.has(annotation.id)
+        )
+      };
+    });
+    setSelection({ ...EMPTY_CANVAS_SELECTION });
+    setSelectedConnectionId(undefined);
+    setConnectionDraft({});
+  };
+
+  const copySelection = () => {
+    const nextClipboard = copySelectionToClipboard({
+      model,
+      sheetId: resolvedActiveSheetId,
+      selection
+    });
+
+    if (!nextClipboard) {
+      setMessage("Select symbols or notes to copy.");
+      return;
+    }
+
+    setClipboard(nextClipboard);
+    setMessage("Selection copied.");
+  };
+
+  const pasteSelection = () => {
+    if (!clipboard) {
+      setMessage("Nothing copied.");
+      return;
+    }
+
+    const result = pasteClipboardToSheet({
+      model,
+      sheetId: resolvedActiveSheetId,
+      clipboard,
+      symbols
+    });
+
+    commitModel(result.model);
+    replaceSelection(result.selection);
+    setSelectedConnectionId(undefined);
+    setConnectionDraft({});
+    setMessage("Selection pasted.");
   };
 
   const updateConnection = (
     connectionId: string,
     updates: Partial<DrawingConnection>
   ) => {
-    setModel((current) =>
+    updateActiveSheet((current) =>
       updateConnectionCommand(current, connectionId, updates)
     );
   };
@@ -285,14 +1099,16 @@ export function DrawingCanvasShell({
     connectionId: string,
     route: DrawingConnectionRoute
   ) => {
-    setModel((current) =>
+    updateActiveSheet((current) =>
       updateConnectionRouteCommand(current, connectionId, route)
     );
   };
 
   const resetConnectionRoute = (connectionId: string) => {
-    setModel((current) => {
-      const connection = current.connections.find(
+    commitModel((current) => {
+      const sheetId = getActiveSheetId(current, activeSheetId);
+      const currentCanvasModel = toSheetCanvasModel(current, sheetId);
+      const connection = currentCanvasModel.connections.find(
         (candidate) => candidate.id === connectionId
       );
 
@@ -301,20 +1117,24 @@ export function DrawingCanvasShell({
       }
 
       const route = generateDefaultOrthogonalRoute({
-        model: current,
+        model: currentCanvasModel,
         symbols,
         connection,
         mode: "auto"
       });
 
       return route
-        ? updateConnectionRouteCommand(current, connectionId, route)
+        ? replaceSheetFromCanvasModel(
+            current,
+            sheetId,
+            updateConnectionRouteCommand(currentCanvasModel, connectionId, route)
+          )
         : current;
     });
   };
 
   const removeConnection = (connectionId: string) => {
-    setModel((current) => deleteConnectionCommand(current, connectionId));
+    updateActiveSheet((current) => deleteConnectionCommand(current, connectionId));
     setSelectedConnectionId((current) =>
       current === connectionId ? undefined : current
     );
@@ -324,16 +1144,17 @@ export function DrawingCanvasShell({
     setSelectedConnectionId(connectionId);
 
     if (connectionId) {
-      setSelectedPlacementId(undefined);
-      setSelectedAnnotationId(undefined);
+      setSelection({ ...EMPTY_CANVAS_SELECTION });
     }
   };
 
-  const selectAnnotation = (annotationId: string | undefined) => {
-    setSelectedAnnotationId(annotationId);
+  const selectAnnotation = (
+    annotationId: string | undefined,
+    options?: { additive?: boolean }
+  ) => {
+    selectCanvasObject("annotation", annotationId, options);
 
     if (annotationId) {
-      setSelectedPlacementId(undefined);
       setSelectedConnectionId(undefined);
       setConnectionDraft({});
     }
@@ -365,14 +1186,14 @@ export function DrawingCanvasShell({
 
     if (!connectionDraft.from) {
       setConnectionDraft({ from: endpoint });
-      setSelectedPlacementId(endpoint.placementId);
+      selectPlacement(endpoint.placementId);
       setSelectedConnectionId(undefined);
       setMessage("Select a destination anchor.");
       return;
     }
 
     const result = createConnectionFromEndpoints({
-      model,
+      model: activeSheetCanvasModel,
       symbols,
       from: connectionDraft.from,
       to: endpoint
@@ -384,7 +1205,7 @@ export function DrawingCanvasShell({
     }
 
     const route = generateDefaultOrthogonalRoute({
-      model,
+      model: activeSheetCanvasModel,
       symbols,
       connection: result.connection,
       mode: "auto"
@@ -393,9 +1214,9 @@ export function DrawingCanvasShell({
       ? { ...result.connection, route }
       : result.connection;
 
-    setModel((current) => addConnectionCommand(current, routedConnection));
+    updateActiveSheet((current) => addConnectionCommand(current, routedConnection));
     setSelectedConnectionId(routedConnection.id);
-    setSelectedPlacementId(undefined);
+    setSelection({ ...EMPTY_CANVAS_SELECTION });
     setConnectionDraft({});
     setMessage("Connection added.");
   };
@@ -406,12 +1227,248 @@ export function DrawingCanvasShell({
     );
   };
 
+  const addSheet = (submission: AddSheetDialogSubmission) => {
+    const result =
+      submission.kind === "section_title"
+        ? addSectionTitlePageCommand(model, {
+            name: submission.name,
+            title: submission.title,
+            subtitle: submission.subtitle,
+            sectionNumber: submission.sectionNumber
+          })
+        : addDrawingSheetCommand(model, submission.name);
+    const newSheet = result.model.sheets.find(
+      (sheet) => sheet.id === result.sheetId
+    );
+
+    commitModel(result.model);
+    setIsAddSheetOpen(false);
+    setActiveSheet(result.sheetId);
+    setSheetFocusRequestKey((current) => current + 1);
+    clearActiveSheetSelection();
+
+    if (newSheet) {
+      setViewportCenter({
+        x: newSheet.page.width / 2,
+        y: newSheet.page.height / 2
+      });
+    }
+
+    setMessage(
+      submission.kind === "section_title"
+        ? "Section title page added."
+        : "Sheet added."
+    );
+  };
+
+  const requestDuplicateSheet = (sheetId: string) => {
+    setSheetDuplicateCandidateId(sheetId);
+  };
+
+  const duplicateSheetFromPlan = (plan: SheetDuplicatePlan) => {
+    try {
+      const result = applySheetDuplicatePlan({ model, symbols, plan });
+      const newSheet = result.model.sheets.find(
+        (sheet) => sheet.id === result.sheetId
+      );
+
+      setSheetDuplicateCandidateId(null);
+      commitModel(result.model);
+      setActiveSheet(result.sheetId);
+      setSheetFocusRequestKey((current) => current + 1);
+      clearActiveSheetSelection();
+
+      if (newSheet) {
+        setViewportCenter({
+          x: newSheet.page.width / 2,
+          y: newSheet.page.height / 2
+        });
+      }
+
+      setMessage("Sheet duplicated.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Sheet could not be duplicated."
+      );
+    }
+  };
+
+  const updateActiveSheetMetadata = (updates: {
+    name?: string;
+    description?: string;
+  }) => {
+    commitModel(
+      (current) => updateSheetMetadata(current, resolvedActiveSheetId, updates),
+      { coalesceKey: `sheet-metadata:${resolvedActiveSheetId}:${Object.keys(updates).join(",")}` }
+    );
+  };
+
+  const updateActiveSectionTitlePage = (
+    updates: Partial<
+      NonNullable<DrawingModel["sheets"][number]["sectionTitlePage"]>
+    >
+  ) => {
+    commitModel(
+      (current) =>
+        updateSectionTitlePage(current, resolvedActiveSheetId, updates),
+      { coalesceKey: `section-title-page:${resolvedActiveSheetId}:${Object.keys(updates).join(",")}` }
+    );
+  };
+
+  const addSymbolFromLibrary = (symbol: ApprovedDrawingSymbol) => {
+    if (symbolLibraryContext === "wiring") {
+      if (isGeneratedBackplaneSymbolReference(symbol)) {
+        addBackplaneFromLibrary();
+        return;
+      }
+
+      if (isPanelLayoutLibrarySymbol(symbol)) {
+        addLayoutSymbol(symbol);
+        return;
+      }
+
+      setPendingSymbol(symbol);
+    }
+  };
+
+  const moveSheet = (sheetId: string, direction: -1 | 1) => {
+    commitModel((current) => moveSheetCommand(current, sheetId, direction));
+  };
+
+  const moveSheetToEnd = (sheetId: string) => {
+    commitModel((current) => moveSheetToEndCommand(current, sheetId));
+  };
+
+  const requestDeleteSheet = (sheetId: string) => {
+    setSheetDeleteCandidateId(sheetId);
+  };
+
+  const deleteSheet = (sheetId: string) => {
+    const result = deleteSheetCommand(model, sheetId);
+    const activeSheet = result.model.sheets.find(
+      (candidate) => candidate.id === result.activeSheetId
+    );
+
+    setSheetDeleteCandidateId(null);
+    commitModel(result.model);
+    setActiveSheet(result.activeSheetId);
+    clearActiveSheetSelection();
+
+    if (activeSheet) {
+      setViewportCenter({
+        x: activeSheet.page.width / 2,
+        y: activeSheet.page.height / 2
+      });
+    }
+  };
+
+  const saveActiveSheetAsTemplate = (form: SaveSheetTemplateForm) => {
+    startTransition(async () => {
+      const result = await saveSheetTemplateAction({
+        name: form.name,
+        description: form.description,
+        category: form.category,
+        keywords: form.keywords,
+        sourceDrawingId: drawing.id,
+        sourceSheetId: resolvedActiveSheetId,
+        sheetId: resolvedActiveSheetId,
+        model
+      });
+
+      if (!result.ok) {
+        setTemplateError(result.error);
+        setMessage(result.error);
+        return;
+      }
+
+      setIsSaveTemplateOpen(false);
+      setTemplateError(null);
+      setMessage("Sheet template saved.");
+    });
+  };
+
+  const openTemplateLibrary = () => {
+    setIsTemplateLibraryOpen(true);
+    setSelectedTemplate(null);
+    setTemplateError(null);
+    startTransition(async () => {
+      const result = await listSheetTemplatesAction();
+
+      if (!result.ok) {
+        setTemplateError(result.error);
+        return;
+      }
+
+      setTemplateList(result.data);
+    });
+  };
+
+  const selectTemplateForImport = (templateId: string) => {
+    setTemplateError(null);
+    startTransition(async () => {
+      const result = await getSheetTemplateAction(templateId);
+
+      if (!result.ok) {
+        setTemplateError(result.error);
+        return;
+      }
+
+      setSelectedTemplate(result.data);
+    });
+  };
+
+  const importTemplate = (
+    template: DrawingSheetTemplateDetail,
+    choices: TemplateAssetResolutionChoice[]
+  ) => {
+    try {
+      const result = instantiateTemplateSheet({
+        model,
+        template: template.model,
+        symbols,
+        choices,
+        insertAfterSheetId: resolvedActiveSheetId
+      });
+      const newSheet = result.model.sheets.find(
+        (candidate) => candidate.id === result.sheetId
+      );
+
+      commitModel(result.model);
+      setActiveSheet(result.sheetId);
+      setSheetFocusRequestKey((current) => current + 1);
+      clearActiveSheetSelection();
+      setSelectedTemplate(null);
+      setIsTemplateLibraryOpen(false);
+      setTemplateError(null);
+      setMessage(
+        result.warnings.length > 0
+          ? `Template added with ${result.warnings.length} warning.`
+          : "Template added."
+      );
+
+      if (newSheet) {
+        setViewportCenter({
+          x: newSheet.page.width / 2,
+          y: newSheet.page.height / 2
+        });
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Template could not be imported.";
+      setTemplateError(errorMessage);
+      setMessage(errorMessage);
+    }
+  };
+
   const save = () => {
     startTransition(async () => {
+      const modelToSave = normalizeCanvasModel(model, symbols);
       const result = await saveDrawingAction({
         drawingId: drawing.id,
         title,
-        model
+        model: modelToSave
       });
 
       if (!result.ok) {
@@ -426,10 +1483,11 @@ export function DrawingCanvasShell({
 
   const approve = () => {
     startTransition(async () => {
+      const modelToSave = normalizeCanvasModel(model, symbols);
       const saveResult = await saveDrawingAction({
         drawingId: drawing.id,
         title,
-        model
+        model: modelToSave
       });
 
       if (!saveResult.ok) {
@@ -457,6 +1515,118 @@ export function DrawingCanvasShell({
 
   return (
     <div className="space-y-5">
+      {pendingSymbol ? (
+        <AddSymbolAssetDialog
+          symbol={pendingSymbol}
+          model={model}
+          activeSheetModel={activeSheetCanvasModel}
+          symbols={symbols}
+          onCancel={() => setPendingSymbol(null)}
+          onPlace={addSymbol}
+        />
+      ) : null}
+      {isAddPanelOpen ? (
+        <AddPanelEnclosureDialog
+          model={model}
+          onCancel={() => setIsAddPanelOpen(false)}
+          onPlace={addPanel}
+        />
+      ) : null}
+      {isAddTerminalBlockOpen ? (
+        <AddTerminalBlockDialog
+          model={model}
+          activeSheetModel={activeSheetCanvasModel}
+          onCancel={() => setIsAddTerminalBlockOpen(false)}
+          onPlace={addTerminalBlock}
+        />
+      ) : null}
+      {isBackplanePanelPickerOpen ? (
+        <BackplanePanelPickerDialog
+          panels={visibleSheetContainers.map((container) => container.placement)}
+          onCancel={() => setIsBackplanePanelPickerOpen(false)}
+          onSelect={placeBackplaneInPanel}
+        />
+      ) : null}
+      {isAddSheetOpen ? (
+        <AddSheetDialog
+          nextSheetNumber={model.sheets.length + 1}
+          onCancel={() => setIsAddSheetOpen(false)}
+          onAdd={addSheet}
+        />
+      ) : null}
+      {isSaveTemplateOpen ? (
+        <SaveSheetTemplateDialog
+          defaultName={`${activeSheet.name} Template`}
+          isPending={isPending}
+          onCancel={() => {
+            setIsSaveTemplateOpen(false);
+            setTemplateError(null);
+          }}
+          onSave={saveActiveSheetAsTemplate}
+        />
+      ) : null}
+      {isTemplateLibraryOpen ? (
+        <AddSheetTemplateDialog
+          templates={templateList}
+          selectedTemplate={selectedTemplate}
+          model={model}
+          symbols={symbols}
+          isPending={isPending}
+          error={templateError}
+          onCancel={() => {
+            setIsTemplateLibraryOpen(false);
+            setSelectedTemplate(null);
+            setTemplateError(null);
+          }}
+          onSelectTemplate={selectTemplateForImport}
+          onBackToList={() => {
+            setSelectedTemplate(null);
+            setTemplateError(null);
+          }}
+          onImport={importTemplate}
+        />
+      ) : null}
+      {sheetDeleteCandidate ? (
+        <DeleteSheetConfirmationDialog
+          sheetName={sheetDeleteCandidate.name}
+          sheetNumber={sheetDeleteCandidateNumber}
+          sheetCount={model.sheets.length}
+          onCancel={() => setSheetDeleteCandidateId(null)}
+          onConfirm={() => deleteSheet(sheetDeleteCandidate.id)}
+        />
+      ) : null}
+      {sheetDuplicateCandidate ? (
+        <DuplicateSheetWizardDialog
+          model={model}
+          symbols={symbols}
+          activeSheetId={sheetDuplicateCandidate.id}
+          onCancel={() => setSheetDuplicateCandidateId(null)}
+          onDuplicateSheet={duplicateSheetFromPlan}
+        />
+      ) : null}
+      {assetLinkDialogState && assetLinkPlacement ? (
+        <AssetLinkDialog
+          placement={assetLinkPlacement}
+          activeSheetId={resolvedActiveSheetId}
+          packageModel={model}
+          symbols={symbols}
+          initialMode={assetLinkDialogState.initialMode}
+          onCancel={() => setAssetLinkDialogState(null)}
+          onCreateNewAsset={createNewAssetLink}
+          onReferenceExisting={referenceExistingAssetLink}
+        />
+      ) : null}
+      {isAssetManagerOpen ? (
+        <AssetManagerDialog
+          model={model}
+          symbols={symbols}
+          onCancel={() => setIsAssetManagerOpen(false)}
+          onCreateAsset={createAssetManagerAsset}
+          onUpdateAsset={updateAssetManagerAsset}
+          onDeleteAsset={deleteAssetManagerAsset}
+        />
+      ) : null}
+
       <div className="tool-panel flex flex-wrap items-center justify-between gap-3 p-4">
         <div>
           <h1 className="text-lg font-semibold">{title}</h1>
@@ -465,6 +1635,15 @@ export function DrawingCanvasShell({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="icon-button"
+            disabled={isPending}
+            onClick={() => setIsAssetManagerOpen(true)}
+          >
+            <PackageSearch aria-hidden="true" size={14} />
+            Asset Manager
+          </button>
           <button type="button" className="icon-button" disabled={isPending} onClick={save}>
             <Save aria-hidden="true" size={14} />
             Save
@@ -507,35 +1686,103 @@ export function DrawingCanvasShell({
         </div>
       </div>
 
-      {message ? (
-        <div
-          className="fixed right-6 top-24 z-50 flex max-w-sm items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-lg shadow-emerald-950/10"
-          role="status"
-          data-testid="drawing-toast"
+      <div
+        className={[
+          "drawing-canvas-layout",
+          isSymbolsCollapsed
+            ? "drawing-canvas-layout-symbols-collapsed"
+            : "",
+          isPropertiesCollapsed
+            ? "drawing-canvas-layout-properties-collapsed"
+            : ""
+        ].join(" ")}
+      >
+        <aside
+          className={[
+            "drawing-symbols-sidebar",
+            isSymbolsCollapsed
+              ? "drawing-symbols-sidebar-collapsed"
+              : "drawing-symbols-sidebar-expanded"
+          ].join(" ")}
+          aria-label="Symbol library"
         >
-          <CheckCircle2 aria-hidden="true" size={16} className="shrink-0" />
-          <span>{message}</span>
-        </div>
-      ) : null}
-
-      <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)_340px]">
-        <SymbolLibraryPanel symbols={symbols} onAddSymbol={addSymbol} />
+          {isSymbolsCollapsed ? (
+            <div
+              className="tool-panel drawing-sidebar-rail"
+              data-testid="drawing-symbols-rail"
+            >
+              <button
+                type="button"
+                className="sidebar-toggle"
+                onClick={() => setIsSymbolsCollapsed(false)}
+                aria-label="Expand symbol library panel"
+                title="Expand symbol library panel"
+              >
+                <PanelLeftOpen aria-hidden="true" size={17} />
+              </button>
+            </div>
+          ) : (
+            <SymbolLibraryPanel
+              symbols={symbols}
+              context={symbolLibraryContext}
+              headerAction={
+                <button
+                  type="button"
+                  className="sidebar-toggle"
+                  onClick={() => setIsSymbolsCollapsed(true)}
+                  aria-label="Collapse symbol library panel"
+                  title="Collapse symbol library panel"
+                >
+                  <PanelLeftClose aria-hidden="true" size={17} />
+                </button>
+              }
+              onAddSymbol={addSymbolFromLibrary}
+            />
+          )}
+        </aside>
         <SvgDrawingSurface
           model={model}
+          drawingTitle={title}
+          activeSheetId={resolvedActiveSheetId}
+          focusSheetRequestKey={sheetFocusRequestKey}
           symbols={symbols}
+          selection={selection}
           selectedPlacementId={selectedPlacementId}
           viewportTransform={viewportTransform}
           setViewportTransform={setViewportTransform}
           dragState={dragState}
+          onActiveSheetChange={selectSheet}
+          onAddSheet={() => setIsAddSheetOpen(true)}
+          onAddPanel={() => setIsAddPanelOpen(true)}
+          onAddTerminalBlock={() => setIsAddTerminalBlockOpen(true)}
+          onAddSheetFromTemplate={openTemplateLibrary}
+          onSaveSheetTemplate={() => {
+            setTemplateError(null);
+            setIsSaveTemplateOpen(true);
+          }}
+          onDuplicateSheet={requestDuplicateSheet}
+          onMoveSheet={moveSheet}
+          onMoveSheetToEnd={moveSheetToEnd}
+          onDeleteSheet={requestDeleteSheet}
           onSelectPlacement={selectPlacement}
+          onSelectionChange={replaceSelection}
           onPlacementChange={updatePlacement}
+          onSelectionMove={moveSelection}
           onPlacementRemove={removePlacement}
+          onSelectionRemove={removeSelection}
           selectedAnnotationId={selectedAnnotationId}
           onAnnotationSelect={selectAnnotation}
           onAnnotationChange={updateAnnotation}
+          onAnnotationGroupChange={updateAnnotationGroup}
           onDragStart={setDragState}
-          onDragMove={(placementId, x, y) => updatePlacement(placementId, { x, y })}
+          onDragMove={moveSelection}
           onDragEnd={() => setDragState(null)}
+          onGestureStart={beginModelHistoryTransaction}
+          onGestureEnd={endModelHistoryTransaction}
+          onCopySelection={copySelection}
+          onPasteSelection={pasteSelection}
+          onUndo={undo}
+          onRedo={redo}
           connectionMode={connectionMode}
           connectionDraft={connectionDraft}
           selectedConnectionId={selectedConnectionId}
@@ -545,23 +1792,140 @@ export function DrawingCanvasShell({
           onConnectionRouteChange={updateConnectionRoute}
           onConnectionCancel={cancelConnectionAuthoring}
           onViewportCenterChange={setViewportCenter}
+          statusMessage={message}
         />
-        <div className="space-y-5">
-          <PlacementPropertiesPanel
-            title={title}
-            model={model}
-            symbols={symbols}
-            onTitleChange={setTitle}
-            onTitleBlockChange={updateTitleBlock}
-            selectedConnectionId={selectedConnectionId}
-            selectedAnnotationId={selectedAnnotationId}
-            onConnectionSelect={selectConnection}
-            onConnectionChange={updateConnection}
-            onConnectionRemove={removeConnection}
-            onConnectionRouteReset={resetConnectionRoute}
-            onAnnotationChange={updateAnnotation}
-            onAnnotationRemove={removeAnnotation}
-          />
+        <aside
+          className={[
+            "drawing-properties-sidebar",
+            isPropertiesCollapsed
+              ? "drawing-properties-sidebar-collapsed"
+              : "drawing-properties-sidebar-expanded"
+          ].join(" ")}
+          aria-label="Drawing properties"
+        >
+          {isPropertiesCollapsed ? (
+            <div
+              className="tool-panel drawing-sidebar-rail"
+              data-testid="drawing-properties-rail"
+            >
+              <button
+                type="button"
+                className="sidebar-toggle"
+                onClick={() => setIsPropertiesCollapsed(false)}
+                aria-label="Expand drawing properties panel"
+                title="Expand drawing properties panel"
+              >
+                <PanelRightOpen aria-hidden="true" size={17} />
+              </button>
+            </div>
+          ) : (
+            <PlacementPropertiesPanel
+              title={title}
+              model={activeSheetCanvasModel}
+              packageModel={model}
+              activeSheet={activeSheet}
+              activeSheetNumber={activeSheetNumber}
+              sheetCount={model.sheets.length}
+              symbols={symbols}
+              headerAction={
+                <button
+                  type="button"
+                  className="sidebar-toggle"
+                  onClick={() => setIsPropertiesCollapsed(true)}
+                  aria-label="Collapse drawing properties panel"
+                  title="Collapse drawing properties panel"
+                >
+                  <PanelRightClose aria-hidden="true" size={17} />
+                </button>
+              }
+              onTitleChange={setTitle}
+              onTitleBlockChange={updateTitleBlock}
+              onSheetMetadataChange={updateActiveSheetMetadata}
+              onSectionTitlePageChange={updateActiveSectionTitlePage}
+              selection={selection}
+              selectedPlacementId={selectedPlacementId}
+              onPlacementAssetTagChange={updatePlacementAssetTag}
+              onOpenAssetLinkDialog={openAssetLinkDialog}
+              onPlacementTitleChange={updatePlacementTitle}
+              onPlacementChange={updatePlacement}
+              onPanelTitleChange={updatePanelTitle}
+              onTerminalBlockChange={updateTerminalBlockConfig}
+              onPlacementContainerChange={updatePlacementContainer}
+              selectedConnectionId={selectedConnectionId}
+              selectedAnnotationId={selectedAnnotationId}
+              onConnectionSelect={selectConnection}
+              onConnectionChange={updateConnection}
+              onConnectionRemove={removeConnection}
+              onConnectionRouteReset={resetConnectionRoute}
+              onAnnotationChange={updateAnnotation}
+              onAnnotationRemove={removeAnnotation}
+            />
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function BackplanePanelPickerDialog({
+  panels,
+  onCancel,
+  onSelect
+}: {
+  panels: DrawingPlacement[];
+  onCancel: () => void;
+  onSelect: (panel: DrawingPlacement) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm">
+      <div
+        className="w-full max-w-lg overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="backplane-panel-picker-title"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+          <div>
+            <h2
+              id="backplane-panel-picker-title"
+              className="text-base font-bold text-slate-950"
+            >
+              Add Backplane
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Choose the visible panel that will contain this backplane.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="rounded-md border border-slate-200 px-2 py-1 text-sm font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-800"
+            onClick={onCancel}
+            aria-label="Close backplane panel picker"
+          >
+            x
+          </button>
+        </div>
+        <div className="max-h-80 space-y-2 overflow-auto p-5">
+          {panels.map((panel) => (
+            <button
+              key={panel.id}
+              type="button"
+              className="w-full rounded-md border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-teal-200 hover:bg-teal-50"
+              onClick={() => onSelect(panel)}
+            >
+              <span className="block text-sm font-bold text-slate-950">
+                {panel.tag}
+              </span>
+              <span className="mt-0.5 block text-xs font-medium text-slate-500">
+                {getPanelEnclosureTitle(panel)}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-end border-t border-slate-200 px-5 py-4">
+          <button type="button" className="btn-secondary" onClick={onCancel}>
+            Cancel
+          </button>
         </div>
       </div>
     </div>

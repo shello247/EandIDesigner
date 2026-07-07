@@ -5,7 +5,10 @@ import type {
 } from "@/features/symbol_registry/data/schema";
 import {
   symbolMetadataSchema,
-  type SymbolCategory
+  type SymbolCategory,
+  type SymbolLayoutUsage,
+  type SymbolPanelCategory,
+  type SymbolPanelMountingType
 } from "@/features/symbol_registry/data/schema";
 import type { SvgViewBox } from "@/shared/svg/svg-inspector";
 
@@ -24,12 +27,32 @@ function normalizeSymbolKey(value: string): string {
   return normalized.length > 0 ? normalized : "imported_symbol";
 }
 
+function normalizePositiveNumber(value: string | number | undefined): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+  }
+
+  const normalized = value?.trim() ?? "";
+  if (!normalized) {
+    return undefined;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 export function buildImportedSymbolMetadata(input: {
   symbolKey: string;
   displayName: string;
   manufacturer?: string;
   model?: string;
   category: SymbolCategory;
+  layoutUsage?: SymbolLayoutUsage;
+  physicalWidthMm?: string | number;
+  physicalHeightMm?: string | number;
+  mountingType?: SymbolPanelMountingType | "";
+  panelCategory?: SymbolPanelCategory | "";
+  resizable?: boolean;
   viewBox: SvgViewBox;
   anchors: SymbolAnchor[];
   terminals: SymbolTerminal[];
@@ -40,6 +63,12 @@ export function buildImportedSymbolMetadata(input: {
     manufacturer: normalizeOptional(input.manufacturer),
     model: normalizeOptional(input.model),
     category: input.category,
+    layoutUsage: input.layoutUsage ?? "wiring",
+    physicalWidthMm: normalizePositiveNumber(input.physicalWidthMm),
+    physicalHeightMm: normalizePositiveNumber(input.physicalHeightMm),
+    mountingType: input.mountingType || undefined,
+    panelCategory: input.panelCategory || undefined,
+    resizable: input.resizable ?? false,
     viewBox: input.viewBox,
     anchors: input.anchors.map((anchor) => ({
       ...anchor,
@@ -54,4 +83,3 @@ export function buildImportedSymbolMetadata(input: {
     }))
   });
 }
-

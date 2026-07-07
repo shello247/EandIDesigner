@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  calculateScrollForZoomAnchor,
   calculateFitTransform,
   clampZoom,
   zoomAtPoint
@@ -44,5 +45,24 @@ describe("viewport transform", () => {
     };
 
     expect(after).toEqual(before);
+  });
+
+  it("calculates scroll offsets that keep a sheet point under the cursor", () => {
+    const nextScroll = calculateScrollForZoomAnchor({
+      scrollLeft: 120,
+      scrollTop: 240,
+      paperLeft: 80,
+      paperTop: 140,
+      pointerClientX: 300,
+      pointerClientY: 260,
+      sheetX: 110,
+      sheetY: 60,
+      nextScale: 3
+    });
+    const correctedPaperLeft = 80 - (nextScroll.left - 120);
+    const correctedPaperTop = 140 - (nextScroll.top - 240);
+
+    expect(correctedPaperLeft + 110 * 3).toBeCloseTo(300);
+    expect(correctedPaperTop + 60 * 3).toBeCloseTo(260);
   });
 });

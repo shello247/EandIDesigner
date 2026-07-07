@@ -1,28 +1,21 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
+import {
+  createE2eNmt81ToNrf81Drawing,
+  deleteE2eDrawing
+} from "./drawing-fixtures";
+
+test.describe.configure({ mode: "serial" });
 
 test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", async ({
   page
 }) => {
   test.setTimeout(90000);
 
-  await page.goto("/drawings/new");
-
-  await expect(
-    page.getByRole("heading", { name: "NMT81 to NRF81 Sample" })
-  ).toBeVisible();
-
-  await page
-    .getByRole("button", { name: "Create NMT81 to NRF81 sample" })
-    .click();
-
-  await expect(page.getByRole("heading", { name: "Drawing Sheet" })).toBeVisible({
+  const drawingId = await createE2eNmt81ToNrf81Drawing();
+  await page.goto(`/drawings/${drawingId}`);
+  await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible({
     timeout: 15000
   });
-  const drawingId = new URL(page.url()).pathname.split("/").pop();
-
-  if (!drawingId) {
-    throw new Error("Expected drawing id in URL after sample drawing creation.");
-  }
 
   await expect(
     page.getByRole("heading", { name: "NMT81 to NRF81 Wiring" })
@@ -135,34 +128,117 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     throw new Error("Expected drawing viewport to be visible.");
   }
 
-  await viewport.dispatchEvent("wheel", {
-    bubbles: true,
-    cancelable: true,
-    ctrlKey: true,
-    deltaY: -240,
-    clientX: viewportBox.x + viewportBox.width / 2,
-    clientY: viewportBox.y + viewportBox.height / 2
-  });
-  await expect(zoomDisplay).not.toHaveText(fitZoom ?? "");
+  const centerViewportScroll = async () => {
+    await viewport.evaluate((element) => {
+      element.style.scrollBehavior = "auto";
+      element.scrollLeft = Math.max(0, (element.scrollWidth - element.clientWidth) / 2);
+      element.scrollTop = Math.max(0, (element.scrollHeight - element.clientHeight) / 2);
+    });
+  };
 
-  const beforeMiddlePanTransform = await sheetStage.evaluate(
-    (element) => (element as HTMLElement).style.transform
-  );
+  const zoomAtVisiblePaperPoint = async (paperLocator: Locator) => {
+    const beforePaperBox = await paperLocator.boundingBox();
+    const currentViewportBox = await viewport.boundingBox();
+
+    if (!beforePaperBox || !currentViewportBox) {
+      throw new Error("Expected sheet paper to be visible for cursor zoom.");
+    }
+
+    const point = {
+      x: Math.min(
+        beforePaperBox.x + beforePaperBox.width - 40,
+        Math.max(
+          beforePaperBox.x + 40,
+          currentViewportBox.x + currentViewportBox.width / 2
+        )
+      ),
+      y: Math.min(
+        beforePaperBox.y + beforePaperBox.height - 40,
+        Math.max(
+          beforePaperBox.y + 40,
+          currentViewportBox.y + currentViewportBox.height / 2
+        )
+      )
+    };
+    const xRatio = (point.x - beforePaperBox.x) / beforePaperBox.width;
+    const yRatio = (point.y - beforePaperBox.y) / beforePaperBox.height;
+    const zoomBefore = await zoomDisplay.textContent();
+
+    await viewport.dispatchEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      deltaY: -240,
+      clientX: point.x,
+      clientY: point.y
+    });
+    await expect(zoomDisplay).not.toHaveText(zoomBefore ?? "");
+    await page.waitForTimeout(100);
+
+    const afterPaperBox = await paperLocator.boundingBox();
+
+    if (!afterPaperBox) {
+      throw new Error("Expected sheet paper after cursor zoom.");
+    }
+
+    const anchoredPoint = {
+      x: afterPaperBox.x + afterPaperBox.width * xRatio,
+      y: afterPaperBox.y + afterPaperBox.height * yRatio
+    };
+
+    expect(Math.abs(anchoredPoint.x - point.x)).toBeLessThan(8);
+    expect(Math.abs(anchoredPoint.y - point.y)).toBeLessThan(8);
+  };
+
+  await page
+    .getByRole("button", { name: "Set drawing zoom to 100 percent" })
+    .click();
+  await expect(zoomDisplay).toHaveText("100%");
+  await centerViewportScroll();
+  await zoomAtVisiblePaperPoint(sheetStage.locator("[data-sheet-paper]"));
+  await page.getByRole("button", { name: "Fit drawing" }).click();
+  await viewport.evaluate((element) => {
+    element.scrollLeft = 0;
+    element.scrollTop = 0;
+  });
+  const panStartBox = await sheetStage.boundingBox();
+
+  if (!panStartBox) {
+    throw new Error("Expected active drawing sheet to be visible for panning.");
+  }
+
   await page.mouse.move(
-    viewportBox.x + viewportBox.width / 2,
-    viewportBox.y + viewportBox.height / 2
+    panStartBox.x + panStartBox.width / 2,
+    panStartBox.y + panStartBox.height / 2
   );
   await page.mouse.down({ button: "middle" });
+  await expect(viewport).toHaveClass(/drawing-canvas-viewport-middle-panning/);
   await page.mouse.move(
-    viewportBox.x + viewportBox.width / 2 + 70,
-    viewportBox.y + viewportBox.height / 2 + 40
+    panStartBox.x + panStartBox.width / 2 - 80,
+    panStartBox.y + panStartBox.height / 2 - 60
   );
   await page.mouse.up({ button: "middle" });
-  const afterMiddlePanTransform = await sheetStage.evaluate(
-    (element) => (element as HTMLElement).style.transform
+  await expect(viewport).not.toHaveClass(
+    /drawing-canvas-viewport-middle-panning/
   );
+  const scrollAfterMiddlePan = await viewport.evaluate((element) => ({
+    left: element.scrollLeft,
+    maxLeft: element.scrollWidth - element.clientWidth,
+    maxTop: element.scrollHeight - element.clientHeight,
+    top: element.scrollTop
+  }));
 
-  expect(afterMiddlePanTransform).not.toBe(beforeMiddlePanTransform);
+  if (scrollAfterMiddlePan.maxLeft > 20) {
+    expect(scrollAfterMiddlePan.left).toBeGreaterThan(20);
+  }
+
+  if (scrollAfterMiddlePan.maxTop > 20) {
+    expect(scrollAfterMiddlePan.top).toBeGreaterThan(20);
+  }
+
+  expect(
+    scrollAfterMiddlePan.left + scrollAfterMiddlePan.top
+  ).toBeGreaterThan(20);
 
   const anchorHotspot = page.getByTestId("canvas-anchor-hotspot").last();
   await anchorHotspot.hover();
@@ -289,6 +365,10 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await page
     .getByRole("button", { name: "CLX Cable 1 Pair clx_cable_1_pair" })
     .click();
+  await expect(page.getByRole("dialog", { name: "Add Symbol" })).toBeVisible();
+  await expect(page.getByLabel("Asset tag")).toHaveValue("C-102");
+  await page.getByRole("button", { name: "Place symbol" }).click();
+  await expect(page.getByRole("dialog", { name: "Add Symbol" })).toHaveCount(0);
   const spareCablePlacement = page
     .locator('svg[aria-label="Interactive drawing overlay"] rect[data-placement-id]')
     .last();
@@ -342,12 +422,78 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   const afterResizeBox = await spareCablePlacement.boundingBox();
 
   expect(afterResizeBox?.width ?? 0).toBeGreaterThan(beforeResizeBox.width);
+  await expect(page.getByTestId("canvas-placement-rotation-label")).toContainText(
+    "0\u00b0"
+  );
 
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("Drawing saved.")).toBeVisible();
+  const rotateHandle = page.getByTestId("canvas-placement-rotate-handle");
+  const rotateHandleBox = await rotateHandle.boundingBox();
+
+  if (!rotateHandleBox || !afterResizeBox) {
+    throw new Error("Expected selected placement rotate handle to be visible.");
+  }
+
+  await page.mouse.move(
+    rotateHandleBox.x + rotateHandleBox.width / 2,
+    rotateHandleBox.y + rotateHandleBox.height / 2
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    afterResizeBox.x + afterResizeBox.width + 24,
+    afterResizeBox.y + afterResizeBox.height / 2
+  );
+  await page.mouse.up();
+  await expect(page.getByTestId("canvas-placement-rotation-label")).toContainText(
+    "90\u00b0"
+  );
+
+  await noteHit.click({ modifiers: ["Control"] });
+  await expect(page.getByRole("heading", { name: "Selection" })).toBeVisible();
+  const placementHitboxes = page.locator(
+    'svg[aria-label="Interactive drawing overlay"] rect[data-placement-id]'
+  );
+  const placementCountBeforePaste = await placementHitboxes.count();
+  const noteCountBeforePaste = await page.getByTestId("canvas-note-hit").count();
+
+  await page.keyboard.press("Control+C");
+  await expect(page.getByText("Selection copied.")).toBeVisible();
+  await page.keyboard.press("Control+V");
+  await expect(page.getByText("Selection pasted.")).toBeVisible();
+  await expect(placementHitboxes).toHaveCount(placementCountBeforePaste + 1);
+  await expect(page.getByTestId("canvas-note-hit")).toHaveCount(
+    noteCountBeforePaste + 1
+  );
+  await page.keyboard.press("Control+Z");
+  await expect(page.getByText("Undo.")).toBeVisible();
+  await expect(placementHitboxes).toHaveCount(placementCountBeforePaste);
+  await expect(page.getByTestId("canvas-note-hit")).toHaveCount(
+    noteCountBeforePaste
+  );
+  await page.keyboard.press("Control+Y");
+  await expect(page.getByText("Redo.")).toBeVisible();
+  await expect(placementHitboxes).toHaveCount(placementCountBeforePaste + 1);
+  await page.keyboard.press("Control+Z");
+  await expect(placementHitboxes).toHaveCount(placementCountBeforePaste);
+  await spareCablePlacement.click();
+
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const drawingToast = page.getByTestId("drawing-toast");
+  await expect(drawingToast).toBeVisible();
+  await expect(drawingToast).toContainText("Drawing saved.");
+  const toastBox = await drawingToast.boundingBox();
+  const viewportBoxAfterSave = await viewport.boundingBox();
+
+  if (!toastBox || !viewportBoxAfterSave) {
+    throw new Error("Expected drawing toast and viewport to be visible.");
+  }
+
+  expect(toastBox.x).toBeGreaterThanOrEqual(viewportBoxAfterSave.x - 4);
+  expect(toastBox.x).toBeLessThan(viewportBoxAfterSave.x + 80);
+  expect(toastBox.y).toBeGreaterThanOrEqual(viewportBoxAfterSave.y - 48);
+  expect(toastBox.y).toBeLessThan(viewportBoxAfterSave.y + 80);
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Drawing Sheet" })).toBeVisible();
+  await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible();
   await expect(page.getByText("Installation Instructions")).toBeVisible();
   await expect(page.getByText("Class I seal fitting required")).toBeVisible();
   await expect(page.getByTestId("canvas-note-hit")).toHaveCount(1);
@@ -361,6 +507,10 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     throw new Error("Expected reloaded spare cable placement to be visible.");
   }
 
+  await expect(reloadedSpareCablePlacement).toHaveAttribute(
+    "transform",
+    /rotate\(90/
+  );
   expect(reloadedPlacementBox.x).toBeGreaterThan(
     placementBoxBeforeMove.x + 10
   );
@@ -369,11 +519,11 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await page.keyboard.press("Delete");
   await expect(reloadedSpareCablePlacement).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Drawing saved.")).toBeVisible();
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Drawing Sheet" })).toBeVisible();
+  await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible();
   await page.getByRole("button", { name: "TT-101 ↔ C-101" }).click();
   const reloadedDirectHartConnection = page.getByRole("button", {
     name: /C-101-DIRECT-HART/
@@ -382,8 +532,168 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await reloadedDirectHartConnection.click();
   await page.getByRole("button", { name: "Delete connection" }).click();
   await expect(reloadedDirectHartConnection).toHaveCount(0);
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Drawing saved.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add to drawing" }).click();
+  await page.getByRole("menuitem", { name: /Sheet/ }).click();
+  await page.getByRole("dialog", { name: "Add Sheet" }).getByRole("button", {
+    name: "Add sheet"
+  }).click();
+  await expect(page.getByTestId("drawing-sheet-frame")).toHaveCount(2);
+  await expect(page.getByTestId("active-sheet-readout")).toContainText(
+    "Sheet 2 of 2"
+  );
+  await expect(page.getByLabel("Sheet name")).toHaveValue("Sheet 2");
+  await page.getByLabel("Sheet name").fill("Instrumentation");
+  await page
+    .getByLabel("Description")
+    .fill("Instrument detail and sheet 2 notes");
+  await expect(
+    page.getByTestId("active-sheet-readout")
+  ).toContainText("Instrumentation");
+  await expect(
+    page.getByTestId("drawing-sheet-frame").nth(1)
+  ).toBeVisible();
+  await expect(page.getByLabel("Description")).toHaveValue(
+    "Instrument detail and sheet 2 notes"
+  );
+
+  const sheetFrames = page.getByTestId("drawing-sheet-frame");
+  const firstSheetBox = await sheetFrames.nth(0).boundingBox();
+  const secondSheetBox = await sheetFrames.nth(1).boundingBox();
+
+  if (!firstSheetBox || !secondSheetBox) {
+    throw new Error("Expected both drawing sheets to be rendered.");
+  }
+
+  expect(secondSheetBox.y).toBeGreaterThan(firstSheetBox.y);
+  await expect(
+    sheetFrames.nth(1).locator(".drawing-sheet-caption-name")
+  ).toHaveText("Instrumentation");
+  await expect(
+    sheetFrames.nth(1).getByText("Instrument detail and sheet 2 notes")
+  ).toHaveCount(0);
+
+  await viewport.evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await expect(page.getByTestId("active-sheet-readout")).toContainText(
+    "Sheet 1 of 2"
+  );
+  await page
+    .getByRole("button", { name: /Activate sheet 2: Instrumentation/ })
+    .click();
+  await expect(page.getByTestId("active-sheet-readout")).toContainText(
+    "Sheet 2 of 2"
+  );
+  await page
+    .getByRole("button", { name: "Set drawing zoom to 100 percent" })
+    .click();
+  await expect(zoomDisplay).toHaveText("100%");
+  await centerViewportScroll();
+  await zoomAtVisiblePaperPoint(sheetFrames.nth(1).locator("[data-sheet-paper]"));
+  await expect(page.getByTestId("active-sheet-readout")).toContainText(
+    "Sheet 2 of 2"
+  );
+  await page.getByRole("button", { name: "Fit drawing" }).click();
+
+  await page
+    .getByRole("button", { name: "CLX Cable 1 Pair clx_cable_1_pair" })
+    .click();
+  await expect(page.getByRole("dialog", { name: "Add Symbol" })).toBeVisible();
+  await expect(page.getByLabel("Asset tag")).toHaveValue("C-102");
+  await page.getByRole("button", { name: "Place symbol" }).click();
+  await expect(page.getByRole("textbox", { name: "Tag" })).toHaveValue("C-102");
+
+  await page
+    .getByRole("button", { name: "NRF81 Tank Side Monitor nrf81_tank_side_monitor" })
+    .click();
+  const referenceDialog = page.getByRole("dialog", { name: "Add Symbol" });
+  await expect(referenceDialog).toBeVisible();
+  await page.getByRole("button", { name: /Reference existing/ }).click();
+  await expect(referenceDialog.getByText("TSM-101")).toBeVisible();
+  await page.getByRole("button", { name: "Place symbol" }).click();
+  await expect(page.getByRole("textbox", { name: "Tag" })).toHaveValue(
+    "TSM-101"
+  );
+  await page.getByRole("button", { name: "Add note" }).click();
+  await page.getByLabel("Note title").fill("Sheet 2 Note");
+  await page.getByLabel("Note text").fill("Sheet 2 isolated content");
+  await expect(
+    sheetStage.getByText("Sheet 2 isolated content")
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: /Activate sheet 1: Wiring/ }).click();
+  await expect(page.getByTestId("active-sheet-readout")).toContainText(
+    "Sheet 1 of 2"
+  );
+  await expect(sheetStage.getByText("Sheet 2 isolated content")).toHaveCount(0);
+  await expect(page.getByText("Installation Instructions")).toBeVisible();
+  await page
+    .getByRole("button", { name: /Activate sheet 2: Instrumentation/ })
+    .click();
+  await expect(page.getByTestId("active-sheet-readout")).toContainText(
+    "Sheet 2 of 2"
+  );
+  await expect(
+    sheetStage.getByText("Sheet 2 isolated content")
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Drawing saved.")).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible();
+  await expect(page.getByTestId("active-sheet-readout")).toContainText(
+    "Sheet 1 of 2"
+  );
+  await page
+    .getByRole("button", { name: /Activate sheet 2: Instrumentation/ })
+    .click();
+  await expect(page.getByLabel("Description")).toHaveValue(
+    "Instrument detail and sheet 2 notes"
+  );
+  await expect(
+    sheetStage.getByText("Sheet 2 isolated content")
+  ).toBeVisible();
+
+  const multiSheetPrintResponse = await page.request.get(
+    `/drawings/${drawingId}/print`
+  );
+  expect(multiSheetPrintResponse.ok()).toBeTruthy();
+  const multiSheetPrintHtml = await multiSheetPrintResponse.text();
+  expect(multiSheetPrintHtml.match(/class="drawing-page"/g)).toHaveLength(2);
+  expect(multiSheetPrintHtml).toContain("1 OF 2");
+  expect(multiSheetPrintHtml).toContain("2 OF 2");
+
+  await page
+    .getByRole("button", { name: "Collapse approved symbols panel" })
+    .click();
+  await expect(page.getByTestId("drawing-symbols-rail")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Expand approved symbols panel" })
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Expand approved symbols panel" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Approved Symbols" })
+  ).toBeVisible();
+
+  await page
+    .getByRole("button", { name: "Collapse drawing properties panel" })
+    .click();
+  await expect(page.getByTestId("drawing-properties-rail")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Expand drawing properties panel" })
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Expand drawing properties panel" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Drawing Properties" })
+  ).toBeVisible();
 
   await page.goto("/drawings");
   const drawingLink = page.locator(`a[href="/drawings/${drawingId}"]`);
@@ -396,4 +706,83 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(page.getByText("This action cannot be undone.")).toBeVisible();
   await page.getByRole("button", { name: "Delete drawing", exact: true }).click();
   await expect(drawingLink).toHaveCount(0);
+});
+
+test("saves and imports a drawing sheet template with asset resolution", async ({
+  page
+}) => {
+  test.setTimeout(90000);
+
+  const drawingId = await createE2eNmt81ToNrf81Drawing();
+  await page.goto(`/drawings/${drawingId}`);
+  await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible({
+    timeout: 15000
+  });
+
+  const templateName = `Tank Wiring Template ${Date.now()}`;
+
+  await page.getByRole("button", { name: "Save active sheet as template" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Save Sheet as Template" })
+  ).toBeVisible();
+  await page.getByLabel("Template name").fill(templateName);
+  const saveTemplateDialog = page.getByRole("dialog", {
+    name: "Save Sheet as Template"
+  });
+
+  await saveTemplateDialog
+    .getByLabel("Description")
+    .fill("Reusable NMT81 to NRF81 wiring sheet");
+  await page.getByLabel("Keywords").fill("tank, wiring, template");
+  await saveTemplateDialog
+    .getByRole("button", { name: "Save template", exact: true })
+    .click();
+  await expect(page.getByText("Sheet template saved.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add sheet from template" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Add Sheet from Template" })
+  ).toBeVisible();
+  await page.getByRole("button", { name: `Use template ${templateName}` }).click();
+  await expect(page.getByText("Resolve template assets")).toBeVisible();
+  await expect(page.getByLabel("New tag for C-101")).toHaveValue("C-102");
+  await expect(page.getByLabel("Resolution for TSM-101")).toHaveValue(
+    "reference"
+  );
+  await expect(page.getByLabel("Existing asset for TSM-101")).toContainText(
+    "TSM-101"
+  );
+  await page.getByRole("button", { name: "Import template" }).click();
+  await expect(page.getByTestId("active-sheet-readout")).toContainText(
+    "Sheet 2 of 2"
+  );
+  await expect(
+    page.getByTestId("drawing-sheet-frame").nth(1).getByText("C-102").first()
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("drawing-sheet-frame").nth(1).getByText("TSM-101").first()
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Drawing saved.")).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible();
+  await page
+    .getByRole("button", { name: /Activate sheet 2: Wiring 2/ })
+    .click();
+  await expect(page.getByTestId("active-sheet-readout")).toContainText(
+    "Sheet 2 of 2"
+  );
+  await expect(
+    page.getByTestId("drawing-sheet-frame").nth(1).getByText("C-102").first()
+  ).toBeVisible();
+
+  const printResponse = await page.request.get(`/drawings/${drawingId}/print`);
+  expect(printResponse.ok()).toBeTruthy();
+  const printHtml = await printResponse.text();
+  expect(printHtml.match(/class="drawing-page"/g)).toHaveLength(2);
+  expect(printHtml).toContain("1 OF 2");
+  expect(printHtml).toContain("2 OF 2");
+
+  await deleteE2eDrawing(drawingId);
 });

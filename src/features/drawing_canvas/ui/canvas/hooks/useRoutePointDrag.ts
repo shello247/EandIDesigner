@@ -1,5 +1,5 @@
 import { useCallback, useRef, type PointerEvent } from "react";
-import type { DrawingModel } from "../../../data/schema";
+import type { DrawingSheetCanvasModel as DrawingModel } from "../../../data/schema";
 import {
   removeRouteControlPoint,
   updateRoutePoint
@@ -14,7 +14,9 @@ export function useRoutePointDrag({
   onFocusCanvas,
   onConnectionSelect,
   onConnectionRouteChange,
-  setSelectedRoutePointId
+  setSelectedRoutePointId,
+  onGestureStart,
+  onGestureEnd
 }: {
   model: DrawingModel;
   connectionSegments: ConnectionSegment[];
@@ -26,6 +28,8 @@ export function useRoutePointDrag({
     route: NonNullable<ConnectionSegment["connection"]["route"]>
   ) => void;
   setSelectedRoutePointId: (pointId: string | null) => void;
+  onGestureStart: () => void;
+  onGestureEnd: () => void;
 }) {
   const routeDragStateRef = useRef<RouteDragState | null>(null);
 
@@ -71,18 +75,26 @@ export function useRoutePointDrag({
       onFocusCanvas();
       onConnectionSelect(selectedConnectionSegment.connection.id);
       setSelectedRoutePointId(pointId);
+      onGestureStart();
       routeDragStateRef.current = {
         connectionId: selectedConnectionSegment.connection.id,
         pointId,
         pointerId: event.pointerId
       };
     },
-    [onConnectionSelect, onFocusCanvas, selectedConnectionSegment, setSelectedRoutePointId]
+    [
+      onConnectionSelect,
+      onFocusCanvas,
+      onGestureStart,
+      selectedConnectionSegment,
+      setSelectedRoutePointId
+    ]
   );
 
   const endRoutePointDrag = useCallback(() => {
     routeDragStateRef.current = null;
-  }, []);
+    onGestureEnd();
+  }, [onGestureEnd]);
 
   const deleteRoutePoint = useCallback(
     (pointId: string) => {

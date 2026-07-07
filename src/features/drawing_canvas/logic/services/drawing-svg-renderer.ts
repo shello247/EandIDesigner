@@ -1,4 +1,9 @@
-import type { DrawingAnnotation, DrawingModel } from "../../data/schema";
+import type {
+  DrawingAnnotation,
+  DrawingPackageSheetKind,
+  DrawingSectionTitlePage,
+  DrawingSheetCanvasModel as DrawingModel
+} from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import { getAnchorWorldPoint, getPlacementTransform } from "./drawing-geometry";
 import { renderConnectionRouteSvg } from "./connection-route-renderer";
@@ -7,9 +12,20 @@ import {
   getLeaderStartPoint
 } from "./drawing-annotations";
 import {
+  getPlacementDisplayTitle,
   getPlacementLabelPoints,
   shouldShowPlacementTitle
 } from "./placement-title-labels";
+import {
+  getPanelEnclosureBounds,
+  getPanelEnclosureTitle,
+  isGeneratedPanelEnclosurePlacement
+} from "./drawing-asset-containment";
+import {
+  isBackplanePlacement,
+  renderBackplanePlacement
+} from "./drawing-backplane-layouts";
+import { getRenderableSymbolForPlacement } from "./drawing-generated-symbols";
 
 function escapeXml(value: string): string {
   return value
@@ -29,7 +45,28 @@ function truncateText(value: string | undefined, maxLength: number): string {
   return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }
 
-function titleBlockText(params: {
+function nameInitials(value: string | undefined): string {
+  const parts = (value ?? "")
+    .trim()
+    .split(/[\s._-]+/)
+    .map((part) => part.replace(/[^A-Za-z0-9]/g, ""))
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return "";
+  }
+
+  return parts.map((part) => `${part[0].toUpperCase()}.`).join("");
+}
+
+function nameWithInitials(value: string | undefined): string {
+  const normalized = (value ?? "").trim();
+  const initials = nameInitials(normalized);
+
+  return normalized && initials ? `${normalized} (${initials})` : normalized;
+}
+
+function cadText(params: {
   x: number;
   y: number;
   value: string | undefined;
@@ -51,11 +88,21 @@ function titleBlockText(params: {
   return `<text x="${x}" y="${y}" font-family="Arial, Helvetica, sans-serif" font-size="${size}" font-weight="${weight}" text-anchor="${anchor}" fill="#111827">${escapeXml(truncateText(value, maxLength))}</text>`;
 }
 
-function titleBlockLabel(x: number, y: number, label: string): string {
-  return `<text x="${x}" y="${y}" font-family="Arial, Helvetica, sans-serif" font-size="2.2" font-weight="700" fill="#475569">${escapeXml(label)}</text>`;
+function cadLabel(x: number, y: number, label: string): string {
+  return `<text x="${x}" y="${y}" font-family="Arial, Helvetica, sans-serif" font-size="2.05" font-weight="700" fill="#111827">${escapeXml(label.toUpperCase())}</text>`;
 }
 
-function titleBlockCell(params: {
+function line(params: {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  width?: number;
+}): string {
+  return `<line x1="${params.x1}" y1="${params.y1}" x2="${params.x2}" y2="${params.y2}" stroke="#111827" stroke-width="${params.width ?? 0.28}"/>`;
+}
+
+function technicalCell(params: {
   x: number;
   y: number;
   width: number;
@@ -65,130 +112,389 @@ function titleBlockCell(params: {
   maxLength: number;
   valueSize?: number;
   valueWeight?: number;
+  valueAnchor?: "start" | "middle" | "end";
 }): string {
+  const textX =
+    params.valueAnchor === "middle"
+      ? params.x + params.width / 2
+      : params.valueAnchor === "end"
+        ? params.x + params.width - 2
+        : params.x + 2;
+
   return `
-    <rect x="${params.x}" y="${params.y}" width="${params.width}" height="${params.height}" fill="white" stroke="#111827" stroke-width="0.32"/>
-    <rect x="${params.x}" y="${params.y}" width="${params.width}" height="4.2" fill="#f1f5f9" stroke="#111827" stroke-width="0.18"/>
-    ${titleBlockLabel(params.x + 2, params.y + 3, params.label)}
-    ${titleBlockText({
-      x: params.x + 2,
+    <rect x="${params.x}" y="${params.y}" width="${params.width}" height="${params.height}" fill="none" stroke="#111827" stroke-width="0.28"/>
+    ${cadLabel(params.x + 1.6, params.y + 3, params.label)}
+    ${cadText({
+      x: textX,
       y: params.y + params.height - 2.2,
       value: params.value,
       maxLength: params.maxLength,
       size: params.valueSize,
-      weight: params.valueWeight
+      weight: params.valueWeight,
+      anchor: params.valueAnchor
     })}
   `;
 }
 
-function renderTitleBlock(model: DrawingModel): string {
-  const blockWidth = 164;
-  const blockHeight = 34;
-  const titleBlockX = model.sheet.width - blockWidth - 6;
-  const titleBlockY = model.sheet.height - blockHeight - 6;
-  const leftWidth = 78;
-  const middleWidth = 56;
-  const rightWidth = 30;
-  const rowHeights = [10, 12, 12];
-  const titleBlock = model.sheet.titleBlock;
-  const rightX = titleBlockX + leftWidth + middleWidth;
-  const middleX = titleBlockX + leftWidth;
-  const row2Y = titleBlockY + rowHeights[0];
-  const row3Y = row2Y + rowHeights[1];
+function renderRevisionGrid(params: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  revision?: string;
+  date?: string;
+  preparedBy?: string;
+  checkedBy?: string;
+}): string {
+  const columnWidths = [10, 18, 13, 13, 13, params.width - 67];
+  const labels = ["REV", "DATE", "BY", "CHK", "APP", "REMARKS"];
+  const headerHeight = 5.2;
+  const rowHeight = (params.height - headerHeight) / 4;
+  let x = params.x;
+  const columns = columnWidths.map((width, index) => {
+    const currentX = x;
+    x += width;
+
+    return { x: currentX, width, label: labels[index] };
+  });
 
   return `
-    <g data-title-block="professional">
-      <rect x="${titleBlockX}" y="${titleBlockY}" width="${blockWidth}" height="${blockHeight}" fill="white" stroke="#0f172a" stroke-width="0.65"/>
-      ${titleBlockCell({
-        x: titleBlockX,
-        y: titleBlockY,
-        width: leftWidth,
-        height: rowHeights[0],
-        label: "CLIENT",
-        value: titleBlock.client,
-        maxLength: 30,
-        valueWeight: 600
-      })}
-      ${titleBlockCell({
-        x: titleBlockX,
-        y: row2Y,
-        width: leftWidth,
-        height: rowHeights[1],
-        label: "PROJECT / PROCESS",
-        value: titleBlock.project,
-        maxLength: 34,
-        valueSize: 3.1,
-        valueWeight: 600
-      })}
-      ${titleBlockCell({
-        x: titleBlockX,
-        y: row3Y,
-        width: leftWidth,
-        height: rowHeights[2],
-        label: "DRAWING NUMBER",
-        value: titleBlock.drawingNumber,
-        maxLength: 28,
-        valueWeight: 600
-      })}
-      ${titleBlockCell({
-        x: middleX,
-        y: titleBlockY,
-        width: middleWidth,
-        height: rowHeights[0],
-        label: "PREPARED BY",
-        value: titleBlock.preparedBy,
-        maxLength: 22
-      })}
-      ${titleBlockCell({
-        x: middleX,
-        y: row2Y,
-        width: middleWidth,
-        height: rowHeights[1],
-        label: "CHECKED BY",
-        value: titleBlock.checkedBy,
-        maxLength: 22
-      })}
-      ${titleBlockCell({
-        x: middleX,
-        y: row3Y,
-        width: middleWidth,
-        height: rowHeights[2],
-        label: "REVISION",
-        value: titleBlock.revision,
+    <g data-title-block-section="revisions">
+      <rect x="${params.x}" y="${params.y}" width="${params.width}" height="${params.height}" fill="none" stroke="#111827" stroke-width="0.42"/>
+      ${cadText({
+        x: params.x + params.width / 2,
+        y: params.y + params.height - 1.8,
+        value: "REVISIONS",
         maxLength: 12,
-        valueWeight: 700
+        size: 2.35,
+        weight: 700,
+        anchor: "middle"
       })}
-      ${titleBlockCell({
-        x: rightX,
-        y: titleBlockY,
-        width: rightWidth,
-        height: rowHeights[0],
-        label: "SHEET",
-        value: "1 OF 1",
+      ${line({
+        x1: params.x,
+        y1: params.y + headerHeight,
+        x2: params.x + params.width,
+        y2: params.y + headerHeight,
+        width: 0.34
+      })}
+      ${[1, 2, 3].map((row) =>
+        line({
+          x1: params.x,
+          y1: params.y + headerHeight + row * rowHeight,
+          x2: params.x + params.width,
+          y2: params.y + headerHeight + row * rowHeight
+        })
+      ).join("")}
+      ${columns.slice(1).map((column) =>
+        line({
+          x1: column.x,
+          y1: params.y,
+          x2: column.x,
+          y2: params.y + params.height
+        })
+      ).join("")}
+      ${columns.map((column) =>
+        cadText({
+          x: column.x + column.width / 2,
+          y: params.y + 3.5,
+          value: column.label,
+          maxLength: 9,
+          size: 1.8,
+          weight: 700,
+          anchor: "middle"
+        })
+      ).join("")}
+      ${cadText({
+        x: columns[0].x + columns[0].width / 2,
+        y: params.y + headerHeight + rowHeight - 1.8,
+        value: params.revision,
+        maxLength: 5,
+        size: 2.1,
+        weight: 700,
+        anchor: "middle"
+      })}
+      ${cadText({
+        x: columns[1].x + columns[1].width / 2,
+        y: params.y + headerHeight + rowHeight - 1.8,
+        value: params.date,
         maxLength: 10,
+        size: 1.9,
+        weight: 500,
+        anchor: "middle"
+      })}
+      ${cadText({
+        x: columns[2].x + columns[2].width / 2,
+        y: params.y + headerHeight + rowHeight - 1.8,
+        value: nameInitials(params.preparedBy),
+        maxLength: 8,
+        size: 1.9,
+        weight: 500,
+        anchor: "middle"
+      })}
+      ${cadText({
+        x: columns[3].x + columns[3].width / 2,
+        y: params.y + headerHeight + rowHeight - 1.8,
+        value: nameInitials(params.checkedBy),
+        maxLength: 8,
+        size: 1.9,
+        weight: 500,
+        anchor: "middle"
+      })}
+    </g>
+  `;
+}
+
+function renderApprovalGrid(params: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  preparedBy?: string;
+  checkedBy?: string;
+  date?: string;
+}): string {
+  const labelWidth = 37;
+  const rowHeight = params.height / 6;
+  const rows = [
+    { label: "DRAWN", value: nameWithInitials(params.preparedBy) },
+    { label: "DATE", value: params.date },
+    { label: "CHECKED", value: nameWithInitials(params.checkedBy) },
+    { label: "APPROVED", value: "" },
+    { label: "ORIGINAL SCALE", value: "NTS" },
+    { label: "D/O MOC NO.", value: "" }
+  ];
+
+  return `
+    <g data-title-block-section="approval">
+      <rect x="${params.x}" y="${params.y}" width="${params.width}" height="${params.height}" fill="none" stroke="#111827" stroke-width="0.42"/>
+      ${line({
+        x1: params.x + labelWidth,
+        y1: params.y,
+        x2: params.x + labelWidth,
+        y2: params.y + params.height,
+        width: 0.34
+      })}
+      ${rows.slice(1).map((_, index) =>
+        line({
+          x1: params.x,
+          y1: params.y + (index + 1) * rowHeight,
+          x2: params.x + params.width,
+          y2: params.y + (index + 1) * rowHeight
+        })
+      ).join("")}
+      ${rows.map((row, index) => `
+        ${cadLabel(params.x + 2, params.y + index * rowHeight + 3.8, row.label)}
+        ${cadText({
+          x: params.x + labelWidth + 2,
+          y: params.y + index * rowHeight + 4.3,
+          value: row.value,
+          maxLength: 34,
+          size: 2.05,
+          weight: 500
+        })}
+      `).join("")}
+    </g>
+  `;
+}
+
+function renderTitleField(params: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  sheetTitle: string;
+}): string {
+  const topHeight = 6.4;
+  const maxCharacters = Math.max(24, Math.floor(params.width / 4.2));
+  const titleLines = wrapText(params.sheetTitle, maxCharacters)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const titleFontSize = titleLines.length > 1 ? 4.25 : 4.85;
+  const titleLineGap = titleFontSize + 1.75;
+  const firstTitleBaseline =
+    params.y + topHeight + 5.2 + titleFontSize * 0.72;
+  const titleText = titleLines.length
+    ? `<text x="${params.x + params.width / 2}" y="${firstTitleBaseline}" font-family="Arial, Helvetica, sans-serif" font-size="${titleFontSize}" font-weight="500" text-anchor="middle" fill="#111827">
+        ${titleLines
+          .map(
+            (line, index) =>
+              `<tspan x="${params.x + params.width / 2}" dy="${index === 0 ? 0 : titleLineGap}">${escapeXml(line)}</tspan>`
+          )
+          .join("")}
+      </text>`
+    : "";
+
+  return `
+    <g data-title-block-section="drawing-title">
+      <rect x="${params.x}" y="${params.y}" width="${params.width}" height="${params.height}" fill="none" stroke="#111827" stroke-width="0.42"/>
+      ${line({
+        x1: params.x,
+        y1: params.y + topHeight,
+        x2: params.x + params.width,
+        y2: params.y + topHeight
+      })}
+      ${cadLabel(params.x + 2, params.y + 3.2, "TITLE")}
+      ${titleText}
+    </g>
+  `;
+}
+
+function renderMetadataGrid(params: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  drawingNumber?: string;
+  sheetNumber: number;
+  sheetCount: number;
+  revision?: string;
+  date?: string;
+}): string {
+  const rowHeight = params.height / 5;
+
+  return `
+    <g data-title-block-section="metadata">
+      ${technicalCell({
+        x: params.x,
+        y: params.y,
+        width: params.width,
+        height: rowHeight,
+        label: "DRAWING No.",
+        value: params.drawingNumber,
+        maxLength: 22,
+        valueSize: 2.25,
         valueWeight: 700
       })}
-      ${titleBlockCell({
-        x: rightX,
-        y: row2Y,
-        width: rightWidth,
-        height: rowHeights[1],
-        label: "DATE",
-        value: titleBlock.date,
-        maxLength: 12,
-        valueSize: 2.9
+      ${technicalCell({
+        x: params.x,
+        y: params.y + rowHeight,
+        width: params.width,
+        height: rowHeight,
+        label: "SHEET No.",
+        value: `${params.sheetNumber} OF ${params.sheetCount}`,
+        maxLength: 10,
+        valueSize: 2.35,
+        valueWeight: 700
       })}
-      ${titleBlockCell({
-        x: rightX,
-        y: row3Y,
-        width: rightWidth,
-        height: rowHeights[2],
+      ${technicalCell({
+        x: params.x,
+        y: params.y + rowHeight * 2,
+        width: params.width,
+        height: rowHeight,
+        label: "ISSUE",
+        value: params.revision,
+        maxLength: 8,
+        valueSize: 2.35,
+        valueWeight: 700
+      })}
+      ${technicalCell({
+        x: params.x,
+        y: params.y + rowHeight * 3,
+        width: params.width,
+        height: rowHeight,
+        label: "DATE",
+        value: params.date,
+        maxLength: 12,
+        valueSize: 2.1
+      })}
+      ${technicalCell({
+        x: params.x,
+        y: params.y + rowHeight * 4,
+        width: params.width,
+        height: rowHeight,
         label: "SCALE",
         value: "NTS",
-        maxLength: 10,
+        maxLength: 8,
+        valueSize: 2.35,
         valueWeight: 700
       })}
     </g>
+  `;
+}
+
+function renderTitleBlock(
+  model: DrawingModel,
+  sheetNumber: number,
+  sheetCount: number,
+  drawingTitle?: string,
+  sheetTitle?: string
+): string {
+  const titleBlock = model.sheet.titleBlock;
+  const margin = 6;
+  const blockX = margin;
+  const blockHeight = 36;
+  const blockY = model.sheet.height - margin - blockHeight;
+  const blockWidth = model.sheet.width - margin * 2;
+  const revisionWidth = 112;
+  const approvalWidth = 94;
+  const metadataWidth = 62;
+  const titleWidth = blockWidth - revisionWidth - approvalWidth - metadataWidth;
+  const approvalX = blockX + revisionWidth;
+  const titleX = approvalX + approvalWidth;
+  const metadataX = titleX + titleWidth;
+  const resolvedTitle =
+    sheetTitle?.trim() ||
+    drawingTitle?.trim() ||
+    titleBlock.project?.trim() ||
+    "DRAWING";
+
+  return `
+    <g data-title-block="technical-full-width">
+      <rect x="${blockX}" y="${blockY}" width="${blockWidth}" height="${blockHeight}" fill="white" stroke="#111827" stroke-width="0.72"/>
+      ${renderRevisionGrid({
+        x: blockX,
+        y: blockY,
+        width: revisionWidth,
+        height: blockHeight,
+        revision: titleBlock.revision,
+        date: titleBlock.date,
+        preparedBy: titleBlock.preparedBy,
+        checkedBy: titleBlock.checkedBy
+      })}
+      ${renderApprovalGrid({
+        x: approvalX,
+        y: blockY,
+        width: approvalWidth,
+        height: blockHeight,
+        preparedBy: titleBlock.preparedBy,
+        checkedBy: titleBlock.checkedBy,
+        date: titleBlock.date
+      })}
+      ${renderTitleField({
+        x: titleX,
+        y: blockY,
+        width: titleWidth,
+        height: blockHeight,
+        sheetTitle: resolvedTitle
+      })}
+      ${renderMetadataGrid({
+        x: metadataX,
+        y: blockY,
+        width: metadataWidth,
+        height: blockHeight,
+        drawingNumber: titleBlock.drawingNumber,
+        sheetNumber,
+        sheetCount,
+        revision: titleBlock.revision,
+        date: titleBlock.date
+      })}
+    </g>
+  `;
+}
+
+function renderSheetFrame(model: DrawingModel, showGrid: boolean): string {
+  const outerMargin = 4;
+  const innerMargin = 6;
+  const gridFill = showGrid
+    ? `<rect x="0" y="0" width="${model.sheet.width}" height="${model.sheet.height}" fill="url(#ei-grid)"/>`
+    : "";
+
+  return `
+    <rect x="0" y="0" width="${model.sheet.width}" height="${model.sheet.height}" fill="white"/>
+    ${gridFill}
+    <rect x="${outerMargin}" y="${outerMargin}" width="${model.sheet.width - outerMargin * 2}" height="${model.sheet.height - outerMargin * 2}" fill="none" stroke="#111827" stroke-width="0.78"/>
+    <rect x="${innerMargin}" y="${innerMargin}" width="${model.sheet.width - innerMargin * 2}" height="${model.sheet.height - innerMargin * 2}" fill="none" stroke="#111827" stroke-width="0.32"/>
   `;
 }
 
@@ -246,10 +552,6 @@ function extractInheritedRootAttributes(svg: string): string {
   return attributes.join(" ");
 }
 
-function symbolKey(symbolId: string, versionId: string): string {
-  return `${symbolId}:${versionId}`;
-}
-
 function wrapText(value: string, maxCharacters: number): string[] {
   return value
     .split(/\r?\n/)
@@ -280,12 +582,17 @@ function renderAnnotation(annotation: DrawingAnnotation): string {
   }
 
   const size = getAnnotationSize(annotation);
-  const title = annotation.title?.trim() || "Note";
+  const title = annotation.title?.trim() ?? "";
+  const titleText = title
+    ? `<text x="${annotation.x + 4}" y="${annotation.y + 6.2}" font-family="Arial, Helvetica, sans-serif" font-size="2.75" font-weight="700" fill="#0f172a">${escapeXml(title)}</text>`
+    : "";
+  const bodyY = title ? annotation.y + 11.2 : annotation.y + 6.2;
+  const bodyHeight = title ? size.height - 13 : size.height - 8;
   const maxCharacters = Math.max(12, Math.floor((size.width - 8) / 2));
   const lines = annotation.text.trim()
     ? wrapText(annotation.text, maxCharacters).slice(
         0,
-        Math.max(1, Math.floor((size.height - 13) / 4.1))
+        Math.max(1, Math.floor(bodyHeight / 4.1))
       )
     : [];
   const leader = annotation.leader?.enabled
@@ -299,9 +606,8 @@ function renderAnnotation(annotation: DrawingAnnotation): string {
   return `
     <g data-annotation-id="${escapeXml(annotation.id)}" data-annotation-kind="${escapeXml(annotation.kind)}">
       ${leader}
-      <rect x="${annotation.x}" y="${annotation.y}" width="${size.width}" height="${size.height}" rx="1" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.26"/>
-      <text x="${annotation.x + 4}" y="${annotation.y + 6.2}" font-family="Arial, Helvetica, sans-serif" font-size="2.75" font-weight="700" fill="#0f172a">${escapeXml(title)}</text>
-      <text x="${annotation.x + 4}" y="${annotation.y + 11.2}" font-family="Arial, Helvetica, sans-serif" font-size="2.7" font-weight="500" fill="#475569">
+      ${titleText}
+      <text x="${annotation.x + 4}" y="${bodyY}" font-family="Arial, Helvetica, sans-serif" font-size="2.7" font-weight="500" fill="#475569">
         ${lines
           .map(
             (line, index) =>
@@ -313,13 +619,106 @@ function renderAnnotation(annotation: DrawingAnnotation): string {
   `;
 }
 
-function approvedSymbolMap(approvedSymbols: ApprovedDrawingSymbol[]) {
-  return new Map(
-    approvedSymbols.map((symbol) => [
-      symbolKey(symbol.symbolId, symbol.versionId),
-      symbol
-    ])
-  );
+function renderCenteredText(params: {
+  x: number;
+  y: number;
+  lines: string[];
+  size: number;
+  weight: number;
+  fill: string;
+  lineGap: number;
+  letterSpacing?: number;
+}): string {
+  if (params.lines.length === 0) {
+    return "";
+  }
+
+  return `<text x="${params.x}" y="${params.y}" font-family="Arial, Helvetica, sans-serif" font-size="${params.size}" font-weight="${params.weight}" text-anchor="middle" fill="${params.fill}" letter-spacing="${params.letterSpacing ?? 0}">
+    ${params.lines
+      .map(
+        (line, index) =>
+          `<tspan x="${params.x}" dy="${index === 0 ? 0 : params.lineGap}">${escapeXml(line)}</tspan>`
+      )
+      .join("")}
+  </text>`;
+}
+
+function renderSectionTitlePage(params: {
+  model: DrawingModel;
+  sectionTitlePage?: DrawingSectionTitlePage;
+  fallbackTitle?: string;
+}): string {
+  const title =
+    params.sectionTitlePage?.title?.trim() ||
+    params.fallbackTitle?.trim() ||
+    "SECTION TITLE";
+  const subtitle = params.sectionTitlePage?.subtitle?.trim() ?? "";
+  const sectionNumber = params.sectionTitlePage?.sectionNumber?.trim() ?? "";
+  const titleLines = wrapText(title.toUpperCase(), 28).slice(0, 3);
+  const subtitleLines = subtitle ? wrapText(subtitle, 54).slice(0, 3) : [];
+  const centerX = params.model.sheet.width / 2;
+  const usableCenterY = (params.model.sheet.height - 42) / 2;
+  const titleStartY = usableCenterY - titleLines.length * 6;
+  const subtitleStartY =
+    titleStartY + Math.max(1, titleLines.length) * 11 + 9;
+  const topRuleY = titleStartY - 14;
+
+  return `
+    <g data-section-title-page="true">
+      ${sectionNumber
+        ? cadText({
+            x: centerX,
+            y: topRuleY - 7,
+            value: sectionNumber.toUpperCase(),
+            maxLength: 28,
+            size: 5,
+            weight: 700,
+            anchor: "middle"
+          })
+        : ""}
+      <line x1="${centerX - 66}" y1="${topRuleY}" x2="${centerX + 66}" y2="${topRuleY}" stroke="#111827" stroke-width="0.46"/>
+      ${renderCenteredText({
+        x: centerX,
+        y: titleStartY,
+        lines: titleLines,
+        size: 10.8,
+        weight: 700,
+        fill: "#111827",
+        lineGap: 11.4
+      })}
+      ${subtitleLines.length > 0
+        ? renderCenteredText({
+            x: centerX,
+            y: subtitleStartY,
+            lines: subtitleLines,
+            size: 4.3,
+            weight: 500,
+            fill: "#475569",
+            lineGap: 6
+          })
+        : ""}
+      <line x1="${centerX - 42}" y1="${subtitleStartY + subtitleLines.length * 6 + 7}" x2="${centerX + 42}" y2="${subtitleStartY + subtitleLines.length * 6 + 7}" stroke="#111827" stroke-width="0.32"/>
+    </g>
+  `;
+}
+
+function renderPanelEnclosure(placement: DrawingModel["placements"][number]): string {
+  if (!isGeneratedPanelEnclosurePlacement(placement)) {
+    return "";
+  }
+
+  const bounds = getPanelEnclosureBounds(placement);
+  const headerHeight = Math.min(12, Math.max(8, bounds.height * 0.12));
+  const label = `${placement.tag}  ${getPanelEnclosureTitle(placement).toUpperCase()}`;
+
+  return `
+    <g data-placement-id="${escapeXml(placement.id)}" data-panel-enclosure="true" pointer-events="none">
+      <rect x="${bounds.x}" y="${bounds.y}" width="${bounds.width}" height="${bounds.height}" fill="#f8fafc" fill-opacity="0.38" stroke="#475569" stroke-width="0.48"/>
+      <rect x="${bounds.x}" y="${bounds.y}" width="${bounds.width}" height="${headerHeight}" fill="#eff6ff" fill-opacity="0.62" stroke="#475569" stroke-width="0.42"/>
+      <path d="M ${bounds.x + 4} ${bounds.y + headerHeight + 3} H ${bounds.x + bounds.width - 4}" stroke="#cbd5e1" stroke-width="0.25" stroke-dasharray="2 2"/>
+      <text x="${bounds.x + 4}" y="${bounds.y + headerHeight - 3}" font-family="Arial, Helvetica, sans-serif" font-size="3.4" font-weight="700" fill="#0f172a">${escapeXml(label)}</text>
+    </g>
+  `;
 }
 
 export function renderDrawingToSvg(params: {
@@ -327,15 +726,36 @@ export function renderDrawingToSvg(params: {
   approvedSymbols: ApprovedDrawingSymbol[];
   showAnchors?: boolean;
   showConnections?: boolean;
+  sheetNumber?: number;
+  sheetCount?: number;
+  drawingTitle?: string;
+  sheetTitle?: string;
+  sheetKind?: DrawingPackageSheetKind;
+  sectionTitlePage?: DrawingSectionTitlePage;
 }): string {
   const {
     model,
     approvedSymbols,
     showAnchors = true,
-    showConnections = true
+    showConnections = true,
+    sheetNumber = 1,
+    sheetCount = 1,
+    drawingTitle,
+    sheetTitle,
+    sheetKind = "drawing",
+    sectionTitlePage
   } = params;
-  const approvedSymbolsByKey = approvedSymbolMap(approvedSymbols);
   const gridSize = model.sheet.gridSize;
+  const isSectionTitlePage = sheetKind === "section_title";
+  const panelPlacements = model.placements.filter(
+    isGeneratedPanelEnclosurePlacement
+  );
+  const backplanePlacements = model.placements.filter(isBackplanePlacement);
+  const normalPlacements = model.placements.filter(
+    (placement) =>
+      !isGeneratedPanelEnclosurePlacement(placement) &&
+      !isBackplanePlacement(placement)
+  );
 
   const grid = `
     <defs>
@@ -346,9 +766,7 @@ export function renderDrawingToSvg(params: {
         <path d="M 0 0 L 8 4 L 0 8 z" fill="#64748b"/>
       </marker>
     </defs>
-    <rect x="0" y="0" width="${model.sheet.width}" height="${model.sheet.height}" fill="white"/>
-    <rect x="0" y="0" width="${model.sheet.width}" height="${model.sheet.height}" fill="url(#ei-grid)"/>
-    <rect x="4" y="4" width="${model.sheet.width - 8}" height="${model.sheet.height - 8}" fill="none" stroke="#111827" stroke-width="0.5"/>
+    ${renderSheetFrame(model, !isSectionTitlePage)}
   `;
 
   const connections = showConnections
@@ -364,10 +782,14 @@ export function renderDrawingToSvg(params: {
         .join("")
     : "";
 
-  const placements = model.placements
-    .map((placement) => {
-      const symbol = approvedSymbolsByKey.get(
-        symbolKey(placement.symbolId, placement.versionId)
+  const panelEnclosures = panelPlacements.map(renderPanelEnclosure).join("");
+  const backplanes = backplanePlacements.map(renderBackplanePlacement).join("");
+
+  const placements = normalPlacements
+        .map((placement) => {
+      const symbol = getRenderableSymbolForPlacement(
+        placement,
+        approvedSymbols
       );
 
       if (!symbol) {
@@ -392,29 +814,31 @@ export function renderDrawingToSvg(params: {
           ${anchors}
         </g>
       `;
-    })
-    .join("");
-  const placementLabels = model.placements
-    .map((placement) => {
-      const symbol = approvedSymbolsByKey.get(
-        symbolKey(placement.symbolId, placement.versionId)
+        })
+        .join("");
+  const placementLabels = normalPlacements
+        .map((placement) => {
+      const symbol = getRenderableSymbolForPlacement(
+        placement,
+        approvedSymbols
       );
 
       if (!symbol) {
         return "";
       }
 
-      const showPlacementTitle = shouldShowPlacementTitle(symbol);
+      const showPlacementTitle = shouldShowPlacementTitle(placement, symbol);
       const placementLabelPoints = showPlacementTitle
         ? getPlacementLabelPoints(placement)
         : undefined;
+      const placementTitleText = getPlacementDisplayTitle(placement, symbol);
       const tagPoint = placementLabelPoints?.tagPoint ?? {
         x: placement.x,
         y: placement.y - 3
       };
       const placementTitle =
         showPlacementTitle && placementLabelPoints
-          ? `<text data-placement-title="${escapeXml(placement.id)}" x="${placementLabelPoints.titlePoint.x}" y="${placementLabelPoints.titlePoint.y}" font-family="Arial, Helvetica, sans-serif" font-size="3.1" font-weight="600" fill="#64748b">${escapeXml(symbol.displayName)}</text>`
+          ? `<text data-placement-title="${escapeXml(placement.id)}" x="${placementLabelPoints.titlePoint.x}" y="${placementLabelPoints.titlePoint.y}" font-family="Arial, Helvetica, sans-serif" font-size="3.1" font-weight="600" fill="#64748b">${escapeXml(placementTitleText)}</text>`
           : "";
 
       return `
@@ -423,18 +847,34 @@ export function renderDrawingToSvg(params: {
           ${placementTitle}
         </g>
       `;
-    })
-    .join("");
+        })
+        .join("");
 
   const annotations = model.annotations.map(renderAnnotation).join("");
+  const sectionTitlePageContent = isSectionTitlePage
+    ? renderSectionTitlePage({
+        model,
+        sectionTitlePage,
+        fallbackTitle: sheetTitle
+      })
+    : "";
 
-  const titleBlock = renderTitleBlock(model);
+  const titleBlock = renderTitleBlock(
+    model,
+    sheetNumber,
+    sheetCount,
+    drawingTitle,
+    sheetTitle
+  );
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${model.sheet.width}mm" height="${model.sheet.height}mm" viewBox="0 0 ${model.sheet.width} ${model.sheet.height}">
     ${grid}
+    ${panelEnclosures}
+    ${backplanes}
     ${placements}
     ${connections}
     ${placementLabels}
+    ${sectionTitlePageContent}
     ${annotations}
     ${titleBlock}
   </svg>`;

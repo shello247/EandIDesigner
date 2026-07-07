@@ -79,6 +79,26 @@ export function zoomAtViewportCenter(input: {
   });
 }
 
+export function calculateScrollForZoomAnchor(input: {
+  scrollLeft: number;
+  scrollTop: number;
+  paperLeft: number;
+  paperTop: number;
+  pointerClientX: number;
+  pointerClientY: number;
+  sheetX: number;
+  sheetY: number;
+  nextScale: number;
+}): { left: number; top: number } {
+  const desiredPaperLeft = input.pointerClientX - input.sheetX * input.nextScale;
+  const desiredPaperTop = input.pointerClientY - input.sheetY * input.nextScale;
+
+  return {
+    left: round(input.scrollLeft + input.paperLeft - desiredPaperLeft),
+    top: round(input.scrollTop + input.paperTop - desiredPaperTop)
+  };
+}
+
 export function formatZoomPercent(zoom: number): string {
   return `${Math.round(clampZoom(zoom) * 100)}%`;
 }

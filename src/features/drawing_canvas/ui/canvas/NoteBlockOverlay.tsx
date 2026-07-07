@@ -1,5 +1,8 @@
 import { useRef, type PointerEvent } from "react";
-import type { DrawingAnnotation, DrawingModel } from "../../data/schema";
+import type {
+  DrawingAnnotation,
+  DrawingSheetCanvasModel as DrawingModel
+} from "../../data/schema";
 import {
   clampAnnotationPosition,
   clampPointToSheet,
@@ -18,24 +21,40 @@ function visibleNoteAnnotations(model: DrawingModel): DrawingAnnotation[] {
 export function NoteBlockOverlay({
   model,
   selectedAnnotationId,
+  selectedAnnotationIds,
   selectedAnnotationLeaderId,
   viewportZoom,
   onFocusCanvas,
   onAnnotationSelect,
   onAnnotationLeaderSelect,
-  onAnnotationChange
+  onAnnotationChange,
+  onAnnotationGroupChange,
+  onGestureStart,
+  onGestureEnd
 }: {
   model: DrawingModel;
   selectedAnnotationId?: string;
+  selectedAnnotationIds: ReadonlySet<string>;
   selectedAnnotationLeaderId?: string | null;
   viewportZoom: number;
   onFocusCanvas: () => void;
-  onAnnotationSelect: (annotationId: string | undefined) => void;
+  onAnnotationSelect: (
+    annotationId: string | undefined,
+    options?: { additive?: boolean }
+  ) => void;
   onAnnotationLeaderSelect: (annotationId: string | null) => void;
   onAnnotationChange: (
     annotationId: string,
     updates: Partial<DrawingAnnotation>
   ) => void;
+  onAnnotationGroupChange: (
+    updates: Array<{
+      annotationId: string;
+      updates: Partial<DrawingAnnotation>;
+    }>
+  ) => void;
+  onGestureStart: () => void;
+  onGestureEnd: () => void;
 }) {
   const dragStateRef = useRef<AnnotationDragState | null>(null);
   const leaderDragStateRef = useRef<AnnotationLeaderDragState | null>(null);
@@ -52,13 +71,30 @@ export function NoteBlockOverlay({
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     onFocusCanvas();
-    onAnnotationSelect(annotation.id);
+    onAnnotationSelect(annotation.id, {
+      additive: event.ctrlKey || event.metaKey || event.shiftKey
+    });
     onAnnotationLeaderSelect(null);
+    onGestureStart();
+    const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+    const annotationIds =
+      selectedAnnotationIds.has(annotation.id) && !additive
+        ? [...selectedAnnotationIds]
+        : [annotation.id];
     dragStateRef.current = {
       annotationId: annotation.id,
+      annotationIds,
       pointerId: event.pointerId,
       startPointer: toSvgPoint(event, model.sheet),
-      startAnnotation: { x: annotation.x, y: annotation.y }
+      startAnnotation: { x: annotation.x, y: annotation.y },
+      startAnnotations: Object.fromEntries(
+        model.annotations
+          .filter((candidate) => annotationIds.includes(candidate.id))
+          .map((candidate) => [
+            candidate.id,
+            { x: candidate.x, y: candidate.y }
+          ])
+      )
     };
   };
 
@@ -79,20 +115,47 @@ export function NoteBlockOverlay({
 
     event.preventDefault();
     const pointer = toSvgPoint(event, model.sheet);
-    const position = clampAnnotationPosition(
-      annotation,
-      {
-        x: dragState.startAnnotation.x + pointer.x - dragState.startPointer.x,
-        y: dragState.startAnnotation.y + pointer.y - dragState.startPointer.y
-      },
-      model.sheet
-    );
+    const delta = {
+      x: pointer.x - dragState.startPointer.x,
+      y: pointer.y - dragState.startPointer.y
+    };
 
-    onAnnotationChange(annotation.id, position);
+    onAnnotationGroupChange(
+      dragState.annotationIds.flatMap((annotationId) => {
+        const currentAnnotation = model.annotations.find(
+          (candidate) => candidate.id === annotationId
+        );
+
+        if (!currentAnnotation) {
+          return [];
+        }
+
+        const startPosition = dragState.startAnnotations[annotationId];
+
+        if (!startPosition) {
+          return [];
+        }
+
+        return [
+          {
+            annotationId,
+            updates: clampAnnotationPosition(
+              currentAnnotation,
+              {
+                x: startPosition.x + delta.x,
+                y: startPosition.y + delta.y
+              },
+              model.sheet
+            )
+          }
+        ];
+      })
+    );
   };
 
   const endDrag = () => {
     dragStateRef.current = null;
+    onGestureEnd();
   };
 
   const startLeaderDrag = (
@@ -109,6 +172,7 @@ export function NoteBlockOverlay({
     onFocusCanvas();
     onAnnotationSelect(annotation.id);
     onAnnotationLeaderSelect(annotation.id);
+    onGestureStart();
     leaderDragStateRef.current = {
       annotationId: annotation.id,
       pointerId: event.pointerId
@@ -143,12 +207,15 @@ export function NoteBlockOverlay({
 
   const endLeaderDrag = () => {
     leaderDragStateRef.current = null;
+    onGestureEnd();
   };
 
   return (
     <g data-testid="canvas-note-overlay">
       {visibleNoteAnnotations(model).map((annotation) => {
-        const isSelected = selectedAnnotationId === annotation.id;
+        const isSelected =
+          selectedAnnotationId === annotation.id ||
+          selectedAnnotationIds.has(annotation.id);
         const isLeaderSelected = selectedAnnotationLeaderId === annotation.id;
         const size = getAnnotationSize(annotation);
         const handleRadius = Math.max(1.5, Math.min(3, 2.4 / viewportZoom));
@@ -175,7 +242,9 @@ export function NoteBlockOverlay({
               onDoubleClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                onAnnotationSelect(annotation.id);
+                onAnnotationSelect(annotation.id, {
+                  additive: event.ctrlKey || event.metaKey || event.shiftKey
+                });
                 onAnnotationLeaderSelect(null);
               }}
             />

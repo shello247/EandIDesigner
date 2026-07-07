@@ -2,14 +2,15 @@ import type {
   DrawingAnnotation,
   DrawingConnection,
   DrawingConnectionRoute,
-  DrawingModel,
-  DrawingPlacement
+  DrawingPlacement,
+  DrawingSheetCanvasModel
 } from "../../data/schema";
+import { placementAssetId } from "../services/drawing-asset-identity";
 
 export function addPlacement(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   placement: DrawingPlacement
-): DrawingModel {
+): DrawingSheetCanvasModel {
   return {
     ...model,
     placements: [...model.placements, placement]
@@ -17,10 +18,10 @@ export function addPlacement(
 }
 
 export function updatePlacementProperties(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   placementId: string,
   updates: Partial<DrawingPlacement>
-): DrawingModel {
+): DrawingSheetCanvasModel {
   return {
     ...model,
     placements: model.placements.map((placement) =>
@@ -30,28 +31,50 @@ export function updatePlacementProperties(
 }
 
 export function movePlacement(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   placementId: string,
   point: { x: number; y: number }
-): DrawingModel {
+): DrawingSheetCanvasModel {
   return updatePlacementProperties(model, placementId, point);
 }
 
 export function resizePlacement(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   placementId: string,
   scale: number
-): DrawingModel {
+): DrawingSheetCanvasModel {
   return updatePlacementProperties(model, placementId, { scale });
 }
 
 export function deletePlacement(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   placementId: string
-): DrawingModel {
+): DrawingSheetCanvasModel {
+  const deletedPlacement = model.placements.find(
+    (placement) => placement.id === placementId
+  );
+  const deletedAssetId =
+    deletedPlacement?.role === "enclosure"
+      ? placementAssetId(deletedPlacement)
+      : undefined;
+  const deletedLayoutParentId =
+    deletedPlacement?.layoutKind === "backplane" ? deletedPlacement.id : undefined;
+
   return {
     ...model,
-    placements: model.placements.filter((placement) => placement.id !== placementId),
+    placements: model.placements
+      .filter((placement) => placement.id !== placementId)
+      .map((placement) => {
+        const withoutDeletedContainer =
+          deletedAssetId && placement.containerAssetId === deletedAssetId
+            ? { ...placement, containerAssetId: undefined }
+            : placement;
+
+        return deletedLayoutParentId &&
+          withoutDeletedContainer.layoutParentId === deletedLayoutParentId
+          ? { ...withoutDeletedContainer, layoutParentId: undefined }
+          : withoutDeletedContainer;
+      }),
     connections: model.connections.filter(
       (connection) =>
         connection.from.placementId !== placementId &&
@@ -62,9 +85,9 @@ export function deletePlacement(
 }
 
 export function addConnection(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   connection: DrawingConnection
-): DrawingModel {
+): DrawingSheetCanvasModel {
   return {
     ...model,
     connections: [...model.connections, connection]
@@ -72,10 +95,10 @@ export function addConnection(
 }
 
 export function updateConnection(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   connectionId: string,
   updates: Partial<DrawingConnection>
-): DrawingModel {
+): DrawingSheetCanvasModel {
   return {
     ...model,
     connections: model.connections.map((connection) =>
@@ -85,25 +108,25 @@ export function updateConnection(
 }
 
 export function updateConnectionRoute(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   connectionId: string,
   route: DrawingConnectionRoute
-): DrawingModel {
+): DrawingSheetCanvasModel {
   return updateConnection(model, connectionId, { route });
 }
 
 export function updateConnectionLabel(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   connectionId: string,
   label: string | undefined
-): DrawingModel {
+): DrawingSheetCanvasModel {
   return updateConnection(model, connectionId, { label });
 }
 
 export function deleteConnection(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   connectionId: string
-): DrawingModel {
+): DrawingSheetCanvasModel {
   return {
     ...model,
     connections: model.connections.filter(
@@ -113,9 +136,9 @@ export function deleteConnection(
 }
 
 export function addAnnotation(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   annotation: DrawingAnnotation
-): DrawingModel {
+): DrawingSheetCanvasModel {
   return {
     ...model,
     annotations: [...model.annotations, annotation]
@@ -123,10 +146,10 @@ export function addAnnotation(
 }
 
 export function updateAnnotation(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   annotationId: string,
   updates: Partial<DrawingAnnotation>
-): DrawingModel {
+): DrawingSheetCanvasModel {
   return {
     ...model,
     annotations: model.annotations.map((annotation) =>
@@ -136,17 +159,17 @@ export function updateAnnotation(
 }
 
 export function moveAnnotation(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   annotationId: string,
   point: { x: number; y: number }
-): DrawingModel {
+): DrawingSheetCanvasModel {
   return updateAnnotation(model, annotationId, point);
 }
 
 export function deleteAnnotation(
-  model: DrawingModel,
+  model: DrawingSheetCanvasModel,
   annotationId: string
-): DrawingModel {
+): DrawingSheetCanvasModel {
   return {
     ...model,
     annotations: model.annotations.filter(

@@ -5,8 +5,10 @@ import {
   approveSymbolVersion,
   archiveSymbol,
   createEngineerNote,
+  deleteSymbol,
   exportSymbolPackage,
   saveSymbolDraft,
+  updateSymbolLayoutMetadata,
   updateSymbolTerminalMap,
   uploadSymbolDocument,
   validateSymbolVersion
@@ -16,7 +18,11 @@ import {
   getSymbolVersionForTerminalVerification,
   listSymbols
 } from "../data/queries";
-import type { SaveSymbolDraftInput, TerminalMapUpdateInput } from "../data/schema";
+import type {
+  SaveSymbolDraftInput,
+  SymbolLayoutMetadataUpdateInput,
+  TerminalMapUpdateInput
+} from "../data/schema";
 import { verifyTerminalMapWithAi } from "../logic/services/openai-terminal-map-verifier";
 import type { ActionResult, SymbolDetail, SymbolListItem } from "../types";
 
@@ -110,6 +116,22 @@ export async function updateSymbolTerminalMapAction(
     const updated = await updateSymbolTerminalMap(input);
     if (!updated) {
       return { ok: false, error: "Terminal map could not be updated." };
+    }
+    revalidatePath("/symbols");
+    revalidatePath(`/symbols/${updated.id}`);
+    return { ok: true, data: updated };
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
+export async function updateSymbolLayoutMetadataAction(
+  input: SymbolLayoutMetadataUpdateInput
+): Promise<ActionResult<SymbolDetail>> {
+  try {
+    const updated = await updateSymbolLayoutMetadata(input);
+    if (!updated) {
+      return { ok: false, error: "Layout metadata could not be updated." };
     }
     revalidatePath("/symbols");
     revalidatePath(`/symbols/${updated.id}`);
@@ -260,6 +282,19 @@ export async function archiveSymbolAction(
 ): Promise<ActionResult<{ id: string }>> {
   try {
     await archiveSymbol(symbolId);
+    revalidatePath("/symbols");
+    revalidatePath(`/symbols/${symbolId}`);
+    return { ok: true, data: { id: symbolId } };
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
+export async function deleteSymbolAction(
+  symbolId: string
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    await deleteSymbol(symbolId);
     revalidatePath("/symbols");
     revalidatePath(`/symbols/${symbolId}`);
     return { ok: true, data: { id: symbolId } };

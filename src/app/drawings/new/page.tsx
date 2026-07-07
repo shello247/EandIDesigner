@@ -6,7 +6,7 @@ export default function NewDrawingPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-normal">New Drawing</h1>
         <p className="mt-1 max-w-2xl text-sm text-slate-600">
-          Start with a blank A3 sheet or create the first NMT81 to NRF81 sample.
+          Start a blank A3 drawing package.
         </p>
       </div>
 
@@ -14,4 +14,3 @@ export default function NewDrawingPage() {
     </div>
   );
 }
-

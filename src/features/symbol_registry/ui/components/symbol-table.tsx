@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import type { SymbolListItem } from "../../types";
+import { SymbolDeleteButton } from "./symbol-delete-button";
 import { SymbolStatusBadge } from "./symbol-status-badge";
 
 export function SymbolTable({ symbols }: { symbols: SymbolListItem[] }) {
@@ -29,6 +30,7 @@ export function SymbolTable({ symbols }: { symbols: SymbolListItem[] }) {
             <th>Version</th>
             <th>Issues</th>
             <th>Updated</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -62,6 +64,13 @@ export function SymbolTable({ symbols }: { symbols: SymbolListItem[] }) {
                 )}
               </td>
               <td>{new Date(symbol.updatedAt).toLocaleString()}</td>
+              <td>
+                <SymbolDeleteButton
+                  displayName={symbol.displayName}
+                  symbolId={symbol.id}
+                  symbolKey={symbol.symbolKey}
+                />
+              </td>
             </tr>
           ))}
         </tbody>

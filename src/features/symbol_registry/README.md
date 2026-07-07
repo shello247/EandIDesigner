@@ -11,7 +11,8 @@ records directly.
 
 - Store symbols and symbol versions.
 - Store sanitized SVG text.
-- Store metadata JSON including viewBox, terminals, and anchors.
+- Store metadata JSON including viewBox, terminals, anchors, and optional panel
+  layout physical metadata.
 - Store source asset records for imported SVGs.
 - Store engineer notes and pasted/reference images for symbols.
 - Store uploaded symbol documents for later review.
@@ -52,6 +53,8 @@ uses each symbol's metadata to:
 - support anchor-to-anchor connection authoring.
 - derive readable endpoint labels.
 - derive conductor and wire ID defaults.
+- filter and place approved panel layout symbols at configured physical
+  millimetre size.
 
 The canvas should not bypass this module to read symbol internals directly.
 

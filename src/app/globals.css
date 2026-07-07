@@ -248,8 +248,73 @@ svg {
   font-weight: 600;
 }
 
+.drawing-canvas-layout {
+  --drawing-symbols-column: 300px;
+  --drawing-properties-column: 340px;
+  display: grid;
+  gap: 20px;
+}
+
+@media (min-width: 1280px) {
+  .drawing-canvas-layout {
+    grid-template-columns:
+      var(--drawing-symbols-column)
+      minmax(0, 1fr)
+      var(--drawing-properties-column);
+    transition: grid-template-columns 160ms ease;
+  }
+
+  .drawing-canvas-layout-symbols-collapsed {
+    --drawing-symbols-column: 56px;
+  }
+
+  .drawing-canvas-layout-properties-collapsed {
+    --drawing-properties-column: 56px;
+  }
+}
+
 .drawing-canvas-panel {
   min-width: 0;
+  position: relative;
+}
+
+.drawing-canvas-toast {
+  position: absolute;
+  left: 16px;
+  top: 72px;
+  z-index: 30;
+  display: flex;
+  max-width: min(360px, calc(100% - 32px));
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  background: #ecfdf5;
+  padding: 10px 14px;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 14px 30px rgba(6, 78, 59, 0.12);
+}
+
+.drawing-symbols-sidebar,
+.drawing-properties-sidebar {
+  min-width: 0;
+}
+
+.drawing-symbols-sidebar-collapsed,
+.drawing-properties-sidebar-collapsed {
+  display: flex;
+  justify-content: center;
+}
+
+.drawing-sidebar-rail {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8px;
 }
 
 .drawing-canvas-header {
@@ -266,6 +331,82 @@ svg {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.drawing-canvas-viewport-shell {
+  position: relative;
+}
+
+.drawing-canvas-add-menu {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 25;
+  width: max-content;
+  pointer-events: none;
+}
+
+.drawing-canvas-add-menu-trigger {
+  display: inline-flex;
+  height: 34px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 0 10px;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
+  pointer-events: auto;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.drawing-canvas-add-menu-trigger:hover {
+  border-color: #94a3b8;
+  background: #ffffff;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
+}
+
+.drawing-canvas-add-menu-trigger:focus-visible,
+.drawing-canvas-add-menu-item:focus-visible {
+  outline: 2px solid #0ea5e9;
+  outline-offset: 2px;
+}
+
+.drawing-canvas-add-menu-panel {
+  display: grid;
+  min-width: 220px;
+  gap: 4px;
+  margin-top: 8px;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  padding: 6px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+  pointer-events: auto;
+}
+
+.drawing-canvas-add-menu-item {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+  padding: 8px;
+  color: #0f172a;
+  text-align: left;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.drawing-canvas-add-menu-item:hover {
+  background: #f1f5f9;
 }
 
 .drawing-zoom-readout {
@@ -287,29 +428,81 @@ svg {
   position: relative;
   height: clamp(520px, calc(100vh - 220px), 820px);
   min-height: 420px;
-  overflow: hidden;
+  overflow: auto;
   background:
     linear-gradient(rgba(148, 163, 184, 0.09) 1px, transparent 1px),
     linear-gradient(90deg, rgba(148, 163, 184, 0.09) 1px, transparent 1px),
     #eef2f6;
   background-size: 24px 24px;
-  cursor: grab;
-  touch-action: none;
+  cursor: default;
+  scroll-behavior: smooth;
+  touch-action: auto;
 }
 
-.drawing-canvas-viewport:active {
+.drawing-canvas-viewport-middle-panning {
   cursor: grabbing;
+  scroll-behavior: auto;
+  user-select: none;
 }
 
-.drawing-canvas-viewport.is-panning {
-  cursor: grabbing;
+.drawing-canvas-viewport-middle-panning * {
+  cursor: grabbing !important;
+}
+
+.drawing-sheet-stack {
+  display: flex;
+  min-height: 100%;
+  min-width: max-content;
+  flex-direction: column;
+  align-items: center;
+  gap: 72px;
+  padding: 56px;
 }
 
 .drawing-sheet-stage {
-  position: absolute;
-  left: 0;
-  top: 0;
+  position: relative;
   transform-origin: 0 0;
+}
+
+.drawing-sheet-frame {
+  display: flex;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  scroll-margin: 56px;
+}
+
+.drawing-sheet-frame[role="button"] {
+  cursor: pointer;
+}
+
+.drawing-sheet-caption {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.drawing-sheet-caption-index {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 4px 9px;
+  font-weight: 700;
+  color: #1d4ed8;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.22);
+}
+
+.drawing-sheet-caption-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .drawing-sheet-paper {
@@ -322,6 +515,14 @@ svg {
   box-shadow:
     0 0 0 1px rgba(15, 23, 42, 0.12),
     0 18px 42px rgba(15, 23, 42, 0.16);
+}
+
+.drawing-sheet-frame-active .drawing-sheet-paper {
+  cursor: default;
+  box-shadow:
+    0 0 0 1px rgba(59, 130, 246, 0.16),
+    0 20px 44px rgba(15, 23, 42, 0.16),
+    0 0 34px rgba(59, 130, 246, 0.24);
 }
 
 .drawing-sheet-rendered,

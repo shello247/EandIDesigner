@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { listApprovedSymbolsForDrawing } from "@/features/symbol_registry/api/public";
+import { listSymbolsForDrawing } from "@/features/symbol_registry/api/public";
 import { getDrawingDetail } from "@/features/drawing_canvas/data/queries";
 import { DrawingCanvasShell } from "@/features/drawing_canvas/ui/components/drawing-canvas-shell";
 
@@ -13,7 +13,7 @@ export default async function DrawingDetailPage({
   const { id } = await params;
   const [drawing, symbols] = await Promise.all([
     getDrawingDetail(id),
-    listApprovedSymbolsForDrawing()
+    listSymbolsForDrawing()
   ]);
 
   if (!drawing) {
@@ -22,4 +22,3 @@ export default async function DrawingDetailPage({
 
   return <DrawingCanvasShell drawing={drawing} symbols={symbols} />;
 }
-

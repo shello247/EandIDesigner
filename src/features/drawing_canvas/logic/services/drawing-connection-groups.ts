@@ -1,4 +1,7 @@
-import type { DrawingConnection, DrawingModel } from "../../data/schema";
+import type {
+  DrawingConnection,
+  DrawingSheetCanvasModel as DrawingModel
+} from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import {
   getConnectionWireId,

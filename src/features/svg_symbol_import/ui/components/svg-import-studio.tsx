@@ -47,7 +47,13 @@ const initialForm: SymbolMetadataFormState = {
   displayName: "",
   manufacturer: "",
   model: "",
-  category: "instrument"
+  category: "instrument",
+  layoutUsage: "wiring",
+  physicalWidthMm: "",
+  physicalHeightMm: "",
+  mountingType: "",
+  panelCategory: "",
+  resizable: false
 };
 
 export function SvgImportStudio() {

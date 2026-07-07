@@ -16,7 +16,7 @@ export function DrawingTable({ drawings }: { drawings: DrawingListItem[] }) {
         <div>
           <h2 className="text-lg font-bold">No drawings yet</h2>
           <p className="mt-2 max-w-md text-sm text-slate-600">
-            Create a drawing, place approved symbols, connect anchors, and save
+            Create a drawing, place symbols, connect anchors, and save
             a structured engineering sheet.
           </p>
         </div>
@@ -31,6 +31,7 @@ export function DrawingTable({ drawings }: { drawings: DrawingListItem[] }) {
           <tr>
             <th>Drawing</th>
             <th>Status</th>
+            <th>Sheets</th>
             <th>Placements</th>
             <th>Connections</th>
             <th>Updated</th>
@@ -52,6 +53,7 @@ export function DrawingTable({ drawings }: { drawings: DrawingListItem[] }) {
                 </div>
               </td>
               <td>{statusLabels[drawing.status]}</td>
+              <td>{drawing.sheetCount}</td>
               <td>{drawing.placementCount}</td>
               <td>{drawing.connectionCount}</td>
               <td>{new Date(drawing.updatedAt).toLocaleString()}</td>

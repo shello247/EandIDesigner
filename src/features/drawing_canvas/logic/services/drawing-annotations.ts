@@ -1,4 +1,7 @@
-import type { DrawingAnnotation, DrawingModel } from "../../data/schema";
+import type {
+  DrawingAnnotation,
+  DrawingSheetCanvasModel as DrawingModel
+} from "../../data/schema";
 
 export const DEFAULT_NOTE_WIDTH = 70;
 export const DEFAULT_NOTE_HEIGHT = 24;
@@ -73,7 +76,6 @@ export function createDefaultNoteAnnotation(input: {
   const position = clampAnnotationPosition(
     {
       id: input.id,
-      title: "Note",
       text: "",
       x: input.point.x,
       y: input.point.y,
@@ -87,7 +89,6 @@ export function createDefaultNoteAnnotation(input: {
 
   return {
     id: input.id,
-    title: "Note",
     text: "",
     x: position.x,
     y: position.y,

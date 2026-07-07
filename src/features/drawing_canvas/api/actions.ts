@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import {
   approveDrawing,
   createDrawing,
-  createNmt81ToNrf81SampleDrawing,
   deleteDrawing,
   saveDrawing
 } from "../data/mutations";
@@ -28,23 +27,6 @@ export async function createDrawingAction(
 
     if (!drawing) {
       return { ok: false, error: "Drawing could not be created." };
-    }
-
-    revalidatePath("/drawings");
-    return { ok: true, data: drawing };
-  } catch (error) {
-    return { ok: false, error: toErrorMessage(error) };
-  }
-}
-
-export async function createSampleDrawingAction(): Promise<
-  ActionResult<DrawingDetail>
-> {
-  try {
-    const drawing = await createNmt81ToNrf81SampleDrawing();
-
-    if (!drawing) {
-      return { ok: false, error: "Sample drawing could not be created." };
     }
 
     revalidatePath("/drawings");

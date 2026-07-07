@@ -132,6 +132,25 @@ model Drawing {
   @@index([updatedAt])
 }
 
+model DrawingSheetTemplate {
+  id              String   @id @default(cuid())
+  templateKey     String   @unique
+  name            String
+  description     String?
+  category        String?
+  status          String   @default("active")
+  modelJson       String
+  metadataJson    String
+  sourceDrawingId String?
+  sourceSheetId   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([updatedAt])
+  @@index([category])
+}
+
 model DrawingValidationIssue {
   id        String   @id @default(cuid())
   drawingId String
