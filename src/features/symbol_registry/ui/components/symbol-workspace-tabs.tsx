@@ -1,8 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useState } from "react";
-import { FileText, LayoutDashboard, NotebookPen, PackageSearch } from "lucide-react";
+import { FileText, LayoutDashboard, NotebookPen } from "lucide-react";
 import type { SymbolDetail, SymbolVersionSummary } from "../../types";
 import { EngineerNotesPanel } from "./engineer-notes-panel";
 import { SvgPreviewPanel } from "./svg-preview-panel";
@@ -11,9 +10,9 @@ import { SymbolLayoutMetadataPanel } from "./symbol-layout-metadata-panel";
 import { TerminalMapTable } from "./terminal-map-table";
 import { ValidationPanel } from "./validation-panel";
 
-type WorkspaceTab = "overview" | "bom" | "engineer_notes" | "documents";
+type WorkspaceTab = "overview" | "engineer_notes" | "documents";
 
-const baseTabs: Array<{
+const tabs: Array<{
   key: WorkspaceTab;
   label: string;
   icon: typeof LayoutDashboard;
@@ -25,21 +24,12 @@ const baseTabs: Array<{
 
 export function SymbolWorkspaceTabs({
   symbol,
-  latest,
-  bomPanel
+  latest
 }: {
   symbol: SymbolDetail;
   latest: SymbolVersionSummary;
-  bomPanel?: ReactNode;
 }) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
-  const tabs = bomPanel
-    ? [
-        baseTabs[0],
-        { key: "bom" as const, label: "BOM", icon: PackageSearch },
-        ...baseTabs.slice(1)
-      ]
-    : baseTabs;
 
   return (
     <div className="space-y-5">
@@ -102,8 +92,6 @@ export function SymbolWorkspaceTabs({
           documents={symbol.documents}
         />
       ) : null}
-
-      {activeTab === "bom" ? bomPanel : null}
     </div>
   );
 }
