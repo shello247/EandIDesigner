@@ -268,6 +268,17 @@ Adjacent drawing features:
 - Existing field connections remain authoritative and immutable. The panel graph
   derives external terminations with their original sheet, connection, endpoint,
   wire, cable, conductor, placement, and anchor provenance.
+- A Detailed Panel Drawing exposes a Panel Work Queue derived from the memoized
+  connectivity graph. It lists associated physical assets and field terminations
+  as available, represented, missing, conflicting, or unsupported records.
+- Placing from the Panel Work Queue reuses the existing physical `assetId` and
+  copies only the source occurrence's visual/device definition. It never creates
+  a package asset, allocates a new tag, or copies source connections.
+- Removing a Detailed Panel occurrence returns its asset to the work queue.
+  Removal is blocked when sheet-local wiring references that occurrence.
+- The Detailed Panel work queue is distinct from the Backplane Associated Panel
+  Assets workflow: the former supports electrical-detail drawings; the latter
+  supports physical arrangement at real millimetre scale.
 - The public canvas adapter converts `DrawingModel` plus approved/generated symbols
   into a neutral DTO. The panel domain builds indexed graph views from that DTO,
   keeping React and pointer interactions out of connectivity logic.

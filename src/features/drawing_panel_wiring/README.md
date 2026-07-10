@@ -46,6 +46,12 @@ Main public operations:
 - `getDetailedPanelDrawingContext`
 - `validatePanelDrawingContext`
 - `updateDetailedPanelDrawingContext`
+- `buildPanelDiscoveryIndex`
+- `buildPanelAssociatedAssetCatalog`
+- `buildExternalTerminationCatalog`
+- `getExternalTerminationProvenance`
+- `detectPanelDiscoveryWarnings`
+- `inspectPanelDiscovery`
 
 Commands return typed mutations. The canvas applies those mutations through
 `applyPanelWiringMutations`; callers and future AI agents do not edit raw drawing
@@ -63,8 +69,35 @@ JSON.
   traceability while suppressing field symbol placement and connection authoring.
 - Asset Manager treats the sheet context as an association and blocks deletion
   of its referenced panel without increasing physical occurrence counts.
-- Terminal import, internal-wire authoring, schedules, and connectivity QC are
+- Terminal mapping, internal-wire authoring, schedules, and connectivity QC are
   intentionally deferred to later phases.
+
+## Panel Discovery And Work Queue
+
+- The active Detailed Panel Drawing builds one memoized `PanelDiscoveryIndex`
+  from the package connectivity graph. React does not rescan package sheets while
+  selecting, dragging, or rendering table rows.
+- Associated assets are derived from physical containment and occurrence
+  relationships. The catalog excludes cables, enclosures, and non-asset layout
+  helpers and never relies on tag prefixes.
+- External terminations are derived from authoritative field connections. Their
+  provenance preserves connection, sheet, endpoint, placement, anchor, wire,
+  cable asset, cable placement, cable tag, and conductor identity.
+- The Panel Work Queue reports `available`, `represented`, `missing`,
+  `conflicting`, and `unsupported` records with deterministic disabled reasons.
+- Placing an asset creates one drawing occurrence that reuses its existing
+  `assetId`, tag, symbol/version, role, and terminal configuration. It does not
+  add an asset, allocate a tag, or copy a field connection.
+- Removing a representation returns the asset to the queue. Removal is blocked
+  while a sheet-local connection references the occurrence so connectivity is
+  never cascade-deleted by this workflow.
+- A termination becomes represented when its target physical asset is represented.
+  Phase 3 does not draw the external wire or persist a duplicate termination.
+
+The backplane-oriented `drawing_panel_asset_placement` work queue remains a
+separate physical-layout workflow. Detailed Panel discovery creates electrical
+detail occurrences on a normal Detailed Panel Drawing and does not assign items
+to a Backplane.
 
 ## Compatibility And Performance
 
@@ -88,6 +121,11 @@ instead of guessed mappings.
 npm run test -- src/features/drawing_panel_wiring/tests/panel-connectivity-graph.test.ts
 npm run test -- src/features/drawing_panel_wiring/tests/panel-wiring-compatibility.test.ts
 npm run test -- src/features/drawing_panel_wiring/tests/detailed-panel-context.test.ts
+npm run test -- src/features/drawing_panel_wiring/tests/panel-associated-asset-catalog.test.ts
+npm run test -- src/features/drawing_panel_wiring/tests/external-termination-catalog.test.ts
+npm run test -- src/features/drawing_panel_wiring/tests/panel-discovery-warnings.test.ts
+npm run test -- src/features/drawing_canvas/tests/drawing-panel-occurrence-commands.test.ts
 npm run lint
 $env:DATABASE_URL='file:./dev.db'; npm run build
+npm run test:e2e -- tests/e2e/drawing-panel-discovery.spec.ts --reporter=line
 ```
