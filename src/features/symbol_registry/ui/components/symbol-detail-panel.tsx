@@ -1,11 +1,18 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
 import type { SymbolDetail } from "../../types";
 import { ApprovalBar } from "./approval-bar";
 import { SymbolStatusBadge } from "./symbol-status-badge";
 import { SymbolWorkspaceTabs } from "./symbol-workspace-tabs";
 
-export function SymbolDetailPanel({ symbol }: { symbol: SymbolDetail }) {
+export function SymbolDetailPanel({
+  symbol,
+  bomPanel
+}: {
+  symbol: SymbolDetail;
+  bomPanel?: ReactNode;
+}) {
   const latest = symbol.latestVersion;
   const blockingIssueCount = symbol.validationIssues.filter(
     (issue) => issue.severity === "blocking"
@@ -44,7 +51,11 @@ export function SymbolDetailPanel({ symbol }: { symbol: SymbolDetail }) {
             status={symbol.status}
             blockingIssueCount={blockingIssueCount}
           />
-          <SymbolWorkspaceTabs symbol={symbol} latest={latest} />
+          <SymbolWorkspaceTabs
+            symbol={symbol}
+            latest={latest}
+            bomPanel={bomPanel}
+          />
         </>
       ) : (
         <div className="tool-panel p-6 text-sm text-slate-600">
