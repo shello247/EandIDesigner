@@ -12,6 +12,14 @@ import {
   createGeneratedBackplaneLibrarySymbol,
   isBackplanePlacement
 } from "./drawing-backplane-layouts";
+import {
+  createGeneratedWireTrayLibrarySymbol,
+  isGeneratedWireTraySymbolReference
+} from "./drawing-wire-tray-layouts";
+import {
+  createGeneratedDimensionLibrarySymbols,
+  isGeneratedLayoutDimensionSymbolReference
+} from "./drawing-layout-dimensions";
 
 export function packageSymbolKey(symbolId: string, versionId: string): string {
   return `${symbolId}:${versionId}`;
@@ -58,6 +66,25 @@ export function createGeneratedBackplaneSymbol(
     : undefined;
 }
 
+export function createGeneratedWireTraySymbol(
+  placement: DrawingPlacement
+): ApprovedDrawingSymbol | undefined {
+  return isGeneratedWireTraySymbolReference(placement)
+    ? createGeneratedWireTrayLibrarySymbol()
+    : undefined;
+}
+
+export function createGeneratedLayoutDimensionSymbol(
+  placement: DrawingPlacement
+): ApprovedDrawingSymbol | undefined {
+  return createGeneratedDimensionLibrarySymbols().find(
+    (symbol) =>
+      isGeneratedLayoutDimensionSymbolReference(placement) &&
+      symbol.symbolId === placement.symbolId &&
+      symbol.versionId === placement.versionId
+  );
+}
+
 export function getRenderableSymbolForPlacement(
   placement: DrawingPlacement | undefined,
   symbols: ApprovedDrawingSymbol[]
@@ -69,6 +96,8 @@ export function getRenderableSymbolForPlacement(
   return (
     createGeneratedTerminalBlockSymbol(placement) ??
     createGeneratedBackplaneSymbol(placement) ??
+    createGeneratedWireTraySymbol(placement) ??
+    createGeneratedLayoutDimensionSymbol(placement) ??
     symbols.find(
       (symbol) =>
         symbol.symbolId === placement.symbolId &&

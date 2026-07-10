@@ -435,7 +435,7 @@ svg {
     #eef2f6;
   background-size: 24px 24px;
   cursor: default;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
   touch-action: auto;
 }
 
@@ -534,4 +534,68 @@ svg {
   height: 100%;
   max-width: none;
   max-height: none;
+}
+
+.drawing-package-preview-panel {
+  min-height: 0;
+}
+
+.drawing-package-preview-header {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 14px;
+}
+
+.drawing-package-preview-viewport {
+  height: clamp(620px, calc(100vh - 220px), 900px);
+  overflow: auto;
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.09) 1px, transparent 1px),
+    #eef2f6;
+  background-size: 24px 24px;
+}
+
+.drawing-package-preview-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 72px;
+  padding: 48px;
+}
+
+.drawing-package-preview-page {
+  width: min(100%, 1180px);
+  content-visibility: auto;
+  contain-intrinsic-size: 1180px 840px;
+}
+
+.drawing-package-preview-paper {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.12),
+    0 18px 42px rgba(15, 23, 42, 0.16);
+}
+
+.drawing-package-preview-paper > div,
+.drawing-package-preview-paper > div > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.drawing-package-preview-placeholder {
+  display: grid;
+  min-height: 420px;
+  place-items: center;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
 }

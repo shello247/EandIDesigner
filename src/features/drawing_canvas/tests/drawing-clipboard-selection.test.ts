@@ -7,6 +7,12 @@ import {
   copySelectionToClipboard,
   pasteClipboardToSheet
 } from "../logic/services/drawing-clipboard-commands";
+import { createPanelEnclosurePlacement } from "../logic/services/drawing-asset-containment";
+import {
+  autosizeLayoutHelperToBackplane,
+  createBackplanePlacement
+} from "../logic/services/drawing-backplane-layouts";
+import { createGeneratedWireTrayLibrarySymbol } from "../logic/services/drawing-wire-tray-layouts";
 import { createTerminalBlockPlacement } from "../logic/services/drawing-terminal-blocks";
 import { moveCanvasSelection } from "../logic/services/drawing-movement";
 import {
@@ -68,6 +74,7 @@ const monitorSymbol: ApprovedDrawingSymbol = {
 };
 
 const symbols = [instrumentSymbol, cableSymbol, monitorSymbol];
+const wireTraySymbol = createGeneratedWireTrayLibrarySymbol();
 
 function placement(
   overrides: Partial<DrawingPlacement> & Pick<DrawingPlacement, "id" | "tag">
@@ -343,6 +350,85 @@ describe("drawing canvas selection and clipboard", () => {
       role: "terminal_block"
     });
     expect(pastedTerminalBlock.assetId).not.toBe("asset_tb101");
+  });
+
+  it("preserves an existing backplane parent when pasting a copied layout helper", () => {
+    const model = modelWithTwoSheets();
+    const panel = createPanelEnclosurePlacement({
+      model,
+      activeSheet: model.sheets[0],
+      assetId: "asset_jb_001",
+      tag: "JB001",
+      x: 20,
+      y: 22,
+      width: 118,
+      height: 92,
+      kind: "junction_box"
+    });
+    const backplane = createBackplanePlacement({ panelPlacement: panel });
+    const tray = autosizeLayoutHelperToBackplane({
+      backplane,
+      symbol: wireTraySymbol,
+      sheet: {
+        ...model.sheets[0].page,
+        titleBlock: model.titleBlock
+      },
+      placement: {
+        id: "wire_tray_1",
+        symbolId: wireTraySymbol.symbolId,
+        versionId: wireTraySymbol.versionId,
+        role: "other",
+        tag: wireTraySymbol.displayName,
+        x: 0,
+        y: 0,
+        rotation: 0,
+        scale: 1,
+        layoutKind: "layout_helper",
+        layoutDimensions: {
+          lengthMm: 200,
+          widthMm: 40
+        }
+      }
+    });
+    const modelWithLayoutHelper: DrawingModel = {
+      ...model,
+      sheets: [
+        {
+          ...model.sheets[0],
+          placements: [panel, backplane, tray]
+        },
+        model.sheets[1]
+      ]
+    };
+    const clipboard = copySelectionToClipboard({
+      model: modelWithLayoutHelper,
+      sheetId: "sheet_1",
+      selection: {
+        placementIds: [tray.id],
+        annotationIds: []
+      }
+    });
+
+    expect(clipboard).not.toBeNull();
+
+    const result = pasteClipboardToSheet({
+      model: modelWithLayoutHelper,
+      sheetId: "sheet_1",
+      clipboard: clipboard!,
+      symbols: [wireTraySymbol],
+      idPrefix: "tray"
+    });
+    const pastedTray = result.model.sheets[0].placements.find(
+      (placement) => placement.id === "pl_tray_1"
+    );
+
+    expect(pastedTray).toMatchObject({
+      layoutKind: "layout_helper",
+      layoutParentId: backplane.id,
+      containerAssetId: "asset_jb_001",
+      layoutPosition: tray.layoutPosition,
+      layoutDimensions: tray.layoutDimensions
+    });
   });
 
   it("moves a selected placement and its custom title label together", () => {

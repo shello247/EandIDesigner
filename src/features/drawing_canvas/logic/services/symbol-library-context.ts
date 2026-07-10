@@ -4,6 +4,14 @@ import {
   createGeneratedBackplaneLibrarySymbol,
   isGeneratedBackplaneSymbolReference
 } from "./drawing-backplane-layouts";
+import {
+  createGeneratedWireTrayLibrarySymbol,
+  isGeneratedWireTraySymbolReference
+} from "./drawing-wire-tray-layouts";
+import {
+  createGeneratedDimensionLibrarySymbols,
+  isGeneratedLayoutDimensionSymbolReference
+} from "./drawing-layout-dimensions";
 
 export type SymbolLibraryContext = "wiring" | "none";
 
@@ -56,6 +64,29 @@ function isCircuitProtectionSymbol(symbol: ApprovedDrawingSymbol): boolean {
   );
 }
 
+const PANEL_LAYOUT_CATEGORIES = new Set([
+  "protection",
+  "termination",
+  "controller",
+  "power",
+  "ducting",
+  "rail",
+  "label",
+  "other"
+]);
+
+export function hasPanelLayoutPhysicalDimensions(
+  symbol: ApprovedDrawingSymbol | undefined
+): boolean {
+  return Boolean(
+    symbol &&
+      typeof symbol.metadata.physicalWidthMm === "number" &&
+      symbol.metadata.physicalWidthMm > 0 &&
+      typeof symbol.metadata.physicalHeightMm === "number" &&
+      symbol.metadata.physicalHeightMm > 0
+  );
+}
+
 export function isPanelLayoutLibrarySymbol(
   symbol: ApprovedDrawingSymbol | undefined
 ): boolean {
@@ -72,9 +103,11 @@ export function isPanelLayoutLibrarySymbol(
 
   return (
     isGeneratedBackplaneSymbolReference(symbol) ||
+    isGeneratedWireTraySymbolReference(symbol) ||
+    isGeneratedLayoutDimensionSymbolReference(symbol) ||
     ((usage === "panel_layout" || usage === "both") &&
-      (symbol.metadata.panelCategory === "rail" ||
-        symbol.metadata.panelCategory === "ducting" ||
+      hasPanelLayoutPhysicalDimensions(symbol) &&
+      (PANEL_LAYOUT_CATEGORIES.has(symbol.metadata.panelCategory ?? "other") ||
         descriptor.includes("din_rail")))
   );
 }
@@ -141,10 +174,22 @@ export function getSymbolsForLibraryContext(
   if (context === "wiring") {
     const filtered = symbols.filter(symbolSupportsWiring);
     const hasBackplane = filtered.some(isGeneratedBackplaneSymbolReference);
+    const hasWireTray = filtered.some(isGeneratedWireTraySymbolReference);
+    const generatedDimensions = createGeneratedDimensionLibrarySymbols().filter(
+      (dimensionSymbol) =>
+        !filtered.some((symbol) =>
+          isGeneratedLayoutDimensionSymbolReference(symbol) &&
+          symbol.symbolId === dimensionSymbol.symbolId &&
+          symbol.versionId === dimensionSymbol.versionId
+        )
+    );
+    const generatedSymbols = [
+      ...(hasBackplane ? [] : [createGeneratedBackplaneLibrarySymbol()]),
+      ...(hasWireTray ? [] : [createGeneratedWireTrayLibrarySymbol()]),
+      ...generatedDimensions
+    ];
 
-    return hasBackplane
-      ? filtered
-      : [...filtered, createGeneratedBackplaneLibrarySymbol()];
+    return [...filtered, ...generatedSymbols];
   }
 
   return [];

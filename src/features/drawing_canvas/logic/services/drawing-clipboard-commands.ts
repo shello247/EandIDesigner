@@ -13,6 +13,7 @@ import {
   type CopiedAssetResolutionMap
 } from "./drawing-asset-resolution";
 import { deriveWireId } from "./drawing-identification";
+import { remapLayoutDimensionAttachmentPlacementIds } from "./drawing-layout-dimensions";
 import {
   EMPTY_CANVAS_SELECTION,
   isCanvasSelectionEmpty,
@@ -132,6 +133,28 @@ function connectionCablePlacementId(
   return undefined;
 }
 
+function remapLayoutParentId(
+  placement: DrawingPlacement,
+  placementIdMap: Map<string, string>,
+  target: DrawingPackageSheet
+): string | undefined {
+  if (!placement.layoutParentId) {
+    return undefined;
+  }
+
+  const copiedParentId = placementIdMap.get(placement.layoutParentId);
+
+  if (copiedParentId) {
+    return copiedParentId;
+  }
+
+  return target.placements.some(
+    (candidate) => candidate.id === placement.layoutParentId
+  )
+    ? placement.layoutParentId
+    : undefined;
+}
+
 export function copySelectionToClipboard(params: {
   model: DrawingModel;
   sheetId: string;
@@ -209,15 +232,18 @@ export function pasteClipboardToSheet(params: {
       newPlacementId: id
     });
 
-    return {
+    return remapLayoutDimensionAttachmentPlacementIds({
       ...placement,
       id,
       assetId: assetResolution.assetId,
       tag: assetResolution.tag,
-      layoutParentId: placement.layoutParentId
-        ? placementIdMap.get(placement.layoutParentId)
-        : undefined
-    };
+      layoutParentId: remapLayoutParentId(placement, placementIdMap, target)
+    }, (placementId) =>
+      placementIdMap.get(placementId) ??
+      (target.placements.some((candidate) => candidate.id === placementId)
+        ? placementId
+        : undefined)
+    );
   });
 
   const pastedConnections = params.clipboard.connections.map(

@@ -266,6 +266,92 @@ describe("drawing sheet package commands", () => {
     expect(duplicate.annotations[0].id).not.toBe(model.sheets[0].annotations[0].id);
   });
 
+  it("remaps dimension attachment references when duplicating a sheet", () => {
+    const initial = createDefaultDrawingModel();
+    const source = initial.sheets[0];
+    const model: DrawingModel = {
+      ...initial,
+      sheets: [
+        {
+          ...source,
+          placements: [
+            {
+              id: "backplane_1",
+              symbolId: "__generated_backplane__",
+              versionId: "generated_backplane_v1",
+              role: "other",
+              tag: "Backplane",
+              x: 20,
+              y: 20,
+              rotation: 0,
+              scale: 1,
+              layoutKind: "backplane",
+              layoutDimensions: { lengthMm: 250, widthMm: 250 }
+            },
+            {
+              id: "rail_1",
+              symbolId: "rail_symbol",
+              versionId: "rail_symbol_v1",
+              role: "other",
+              tag: "DIN Rail",
+              x: 30,
+              y: 30,
+              rotation: 0,
+              scale: 1,
+              layoutKind: "layout_helper",
+              layoutParentId: "backplane_1",
+              layoutPosition: { xMm: 20, yMm: 30 },
+              layoutDimensions: { lengthMm: 100, widthMm: 20 }
+            },
+            {
+              id: "dimension_1",
+              symbolId: "__generated_horizontal_dimension__",
+              versionId: "generated_horizontal_dimension_v1",
+              role: "other",
+              tag: "Horizontal Dimension",
+              x: 30,
+              y: 25,
+              rotation: 0,
+              scale: 1,
+              layoutKind: "layout_helper",
+              layoutParentId: "backplane_1",
+              layoutPosition: { xMm: 20, yMm: 10 },
+              layoutDimensions: { lengthMm: 100, widthMm: 8 },
+              layoutDimension: {
+                orientation: "horizontal",
+                startMm: 20,
+                endMm: 120,
+                offsetMm: 10,
+                startWitnessMm: 30,
+                endWitnessMm: 30,
+                startAttachment: {
+                  targetKind: "placement",
+                  placementId: "rail_1",
+                  edge: "left",
+                  ratio: 0
+                }
+              }
+            }
+          ]
+        }
+      ]
+    };
+    const result = duplicateSheet(model, source.id);
+    const duplicate = result.model.sheets[1];
+    const duplicatedRail = duplicate.placements.find(
+      (placement) => placement.symbolId === "rail_symbol"
+    );
+    const duplicatedDimension = duplicate.placements.find(
+      (placement) =>
+        placement.symbolId === "__generated_horizontal_dimension__"
+    );
+
+    expect(duplicatedDimension?.layoutDimension?.startAttachment?.placementId)
+      .toBe(duplicatedRail?.id);
+    expect(duplicatedDimension?.layoutDimension?.startAttachment?.placementId)
+      .not.toBe("rail_1");
+  });
+
   it("duplicates generated terminal blocks as new globally numbered assets", () => {
     const base = createDefaultDrawingModel();
     const terminalBlock = createTerminalBlockPlacement({

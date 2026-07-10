@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { terminalBlockPlacementSchema } from "@/features/drawing_terminal_blocks/data/schema";
+import {
+  panelDrawingContextSchema,
+  panelWiringPackageDataSchema
+} from "@/features/drawing_panel_wiring/api/contracts";
 
 export const drawingStatusSchema = z.enum([
   "draft",
@@ -88,6 +92,63 @@ export const drawingPlacementSchema = z.object({
       widthMm: z.number().positive()
     })
     .optional(),
+  layoutScale: z
+    .object({
+      mode: z.enum(["auto", "manual"]).default("auto"),
+      value: z.number().positive().optional()
+    })
+    .optional(),
+  layoutPosition: z
+    .object({
+      xMm: z.number().finite(),
+      yMm: z.number().finite()
+    })
+    .optional(),
+  layoutLabel: z
+    .object({
+      visible: z.boolean().optional(),
+      position: z
+        .enum([
+          "center",
+          "top-left",
+          "top-center",
+          "top-right",
+          "bottom-left",
+          "bottom-center",
+          "bottom-right"
+        ])
+        .optional()
+    })
+    .optional(),
+  layoutDimension: z
+    .object({
+      orientation: z.enum(["horizontal", "vertical"]),
+      startMm: z.number().finite(),
+      endMm: z.number().finite(),
+      offsetMm: z.number().finite(),
+      startWitnessMm: z.number().finite().optional(),
+      endWitnessMm: z.number().finite().optional(),
+      labelPositionMm: z.number().finite().optional(),
+      startAttachment: z
+        .object({
+          targetKind: z.enum(["backplane", "usable", "placement"]),
+          placementId: z.string().trim().min(1).optional(),
+          edge: z.enum(["top", "right", "bottom", "left"]),
+          ratio: z.number().min(0).max(1)
+        })
+        .optional(),
+      endAttachment: z
+        .object({
+          targetKind: z.enum(["backplane", "usable", "placement"]),
+          placementId: z.string().trim().min(1).optional(),
+          edge: z.enum(["top", "right", "bottom", "left"]),
+          ratio: z.number().min(0).max(1)
+        })
+        .optional(),
+      labelOverride: z.string().trim().max(80).optional(),
+      showValue: z.boolean().optional()
+    })
+    .optional(),
   labelPosition: z
     .object({
       x: z.number().finite(),
@@ -121,6 +182,7 @@ export const drawingConnectionSchema = z.object({
   wireId: z.string().trim().max(80).optional(),
   cablePlacementId: z.string().trim().min(1).optional(),
   conductorKey: z.string().trim().max(80).optional(),
+  panelConnectionId: z.string().trim().min(1).optional(),
   route: drawingConnectionRouteSchema.optional()
 });
 
@@ -191,6 +253,7 @@ const drawingPackageSheetInputSchema = z.object({
     .default("drawing"),
   description: z.string().trim().max(400).optional(),
   sectionTitlePage: drawingSectionTitlePageSchema.optional(),
+  panelDrawingContext: panelDrawingContextSchema.optional(),
   page: drawingSheetPageSchema,
   placements: z.array(drawingPlacementSchema),
   connections: z.array(drawingConnectionSchema),
@@ -208,6 +271,7 @@ export const drawingPackageModelSchema = z.object({
   version: z.literal(2),
   titleBlock: drawingTitleBlockSchema,
   assets: z.array(drawingAssetRecordSchema).default([]),
+  panelWiring: panelWiringPackageDataSchema.optional(),
   sheets: z.array(drawingPackageSheetSchema).min(1)
 });
 
@@ -325,12 +389,21 @@ export function ensureDrawingModelAssetIds(model: DrawingModel): DrawingModel {
     ...model,
     sheets: model.sheets.map((sheet) => ({
       ...sheet,
-      placements: sheet.placements.map((placement) => ({
-        ...placement,
-        assetId:
-          placement.assetId?.trim() ||
-          createStablePlacementAssetId(placement.id)
-      }))
+      placements: sheet.placements.map((placement) => {
+        if (placement.layoutKind && placement.role === "other") {
+          return {
+            ...placement,
+            assetId: undefined
+          };
+        }
+
+        return {
+          ...placement,
+          assetId:
+            placement.assetId?.trim() ||
+            createStablePlacementAssetId(placement.id)
+        };
+      })
     }))
   };
 }
@@ -409,6 +482,10 @@ export function ensureDrawingModelAssets(model: DrawingModel): DrawingModel {
 
   for (const sheet of model.sheets) {
     for (const placement of sheet.placements) {
+      if (placement.layoutKind && placement.role === "other") {
+        continue;
+      }
+
       const assetId = placementAssetIdForSchema(placement);
 
       if (!assets.has(assetId)) {

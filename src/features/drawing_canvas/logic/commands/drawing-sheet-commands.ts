@@ -13,6 +13,7 @@ import {
   type CopiedAssetResolutionMap
 } from "../services/drawing-asset-resolution";
 import { deriveWireId } from "../services/drawing-identification";
+import { remapLayoutDimensionAttachmentPlacementIds } from "../services/drawing-layout-dimensions";
 
 function nextSheetIndex(model: DrawingModel): number {
   const usedIndexes = new Set(
@@ -382,7 +383,7 @@ export function duplicateSheet(
       newPlacementId: id
     });
 
-    return {
+    return remapLayoutDimensionAttachmentPlacementIds({
       ...placement,
       id,
       assetId: assetResolution.assetId,
@@ -390,7 +391,7 @@ export function duplicateSheet(
       layoutParentId: placement.layoutParentId
         ? placementIdMap.get(placement.layoutParentId)
         : undefined
-    };
+    }, (placementId) => placementIdMap.get(placementId));
   });
 
   const connections = source.connections.map((connection, connectionIndex) => {

@@ -161,6 +161,33 @@ export async function createE2eNmt81ToNrf81Drawing(): Promise<string> {
   return row.id;
 }
 
+export async function createE2eDetailedPanelDrawingPackage(): Promise<string> {
+  const model: DrawingModel = {
+    ...createDefaultDrawingModel(),
+    assets: [
+      {
+        id: "asset_jb_001",
+        tag: "JB001",
+        type: "junction_box",
+        title: "Field Junction Box"
+      }
+    ]
+  };
+  const row = await prisma.drawing.create({
+    data: {
+      drawingKey: `e2e_detailed_panel_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+      title: "Detailed Panel Drawing Test",
+      status: "needs_review",
+      modelJson: stringifyDrawingModel(model)
+    },
+    select: { id: true }
+  });
+
+  return row.id;
+}
+
 export async function deleteE2eDrawing(drawingId: string | undefined) {
   if (!drawingId) {
     return;

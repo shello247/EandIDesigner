@@ -484,8 +484,22 @@ export function buildDrawingAssetCatalog(
   symbols: ApprovedDrawingSymbol[]
 ): DrawingAssetCatalogItem[] {
   const catalog = new Map<string, DrawingAssetCatalogItem>();
+  const nonAssetLayoutHelperIds = new Set(
+    model.sheets.flatMap((sheet) =>
+      sheet.placements
+        .filter(
+          (placement) =>
+            placement.layoutKind !== undefined && placement.role === "other"
+        )
+        .map(placementAssetId)
+    )
+  );
 
   (model.assets ?? []).forEach((asset) => {
+    if (nonAssetLayoutHelperIds.has(asset.id)) {
+      return;
+    }
+
     const symbol = symbols.find(
       (candidate) =>
         candidate.symbolId === asset.symbolId &&
@@ -508,7 +522,7 @@ export function buildDrawingAssetCatalog(
 
   model.sheets.forEach((sheet, sheetIndex) => {
     sheet.placements.forEach((placement) => {
-      if (placement.layoutKind) {
+      if (placement.layoutKind && placement.role === "other") {
         return;
       }
 

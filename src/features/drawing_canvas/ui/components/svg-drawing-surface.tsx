@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   type Dispatch,
-  type KeyboardEvent,
   type PointerEvent,
   type SetStateAction,
   type WheelEvent
@@ -19,6 +18,7 @@ import {
   ChevronUp,
   ChevronsDown,
   Copy,
+  List,
   Save,
   Trash2
 } from "lucide-react";
@@ -47,6 +47,7 @@ import {
   clampPointToSheet,
   NOTE_NUDGE_STEP
 } from "../../logic/services/drawing-annotations";
+import { moveCanvasSelection } from "../../logic/services/drawing-movement";
 import {
   EMPTY_CANVAS_SELECTION,
   getMarqueeSelection,
@@ -64,6 +65,11 @@ import {
   type ViewportTransform
 } from "../../logic/services/viewport-transform";
 import { getRenderableSymbolForPlacement } from "../../logic/services/drawing-generated-symbols";
+import {
+  isBackplanePlacement,
+  isLayoutHelperPlacement
+} from "../../logic/services/drawing-backplane-layouts";
+import { resolveLayoutHelperDisplayPlacement } from "../../logic/services/drawing-backplane-scale";
 import { AnchorOverlay, AnchorTooltip } from "../canvas/AnchorOverlay";
 import { NoteBlockOverlay } from "../canvas/NoteBlockOverlay";
 import { PlacementOverlay } from "../canvas/PlacementOverlay";
@@ -88,12 +94,16 @@ import {
   toSvgPoint
 } from "../canvas/utils/canvasGeometry";
 import { DrawingCanvasAddMenu } from "./drawing-canvas-add-menu";
+import {
+  getDrawingSheetPresentation,
+  type DrawingWorkspaceContext
+} from "../../logic/services/drawing-sheet-presentation";
 import { DrawingViewportToolbar } from "./drawing-viewport-toolbar";
 
 const SHEET_PIXEL_SCALE = 2;
 const ZOOM_STEP = 1.2;
 
-type SheetFrame = {
+type ActiveSheetFrame = {
   sheet: DrawingPackageModel["sheets"][number];
   sheetNumber: number;
   canvasModel: DrawingSheetCanvasModel;
@@ -155,12 +165,21 @@ function zoomAnchorFromPointer(input: {
     return null;
   }
 
-  const scale = SHEET_PIXEL_SCALE * input.zoom;
+  const sheetWidth = Number(frame.dataset.sheetWidth);
+  const sheetHeight = Number(frame.dataset.sheetHeight);
+  const scaleX =
+    Number.isFinite(sheetWidth) && sheetWidth > 0
+      ? paperRect.width / sheetWidth
+      : SHEET_PIXEL_SCALE * input.zoom;
+  const scaleY =
+    Number.isFinite(sheetHeight) && sheetHeight > 0
+      ? paperRect.height / sheetHeight
+      : SHEET_PIXEL_SCALE * input.zoom;
 
   return {
     sheetId,
-    sheetX: (input.clientX - paperRect.left) / scale,
-    sheetY: (input.clientY - paperRect.top) / scale,
+    sheetX: (input.clientX - paperRect.left) / scaleX,
+    sheetY: (input.clientY - paperRect.top) / scaleY,
     clientX: input.clientX,
     clientY: input.clientY
   };
@@ -169,15 +188,17 @@ function zoomAnchorFromPointer(input: {
 export function SvgDrawingSurface({
   model: drawingModel,
   drawingTitle,
+  workspaceContext,
   activeSheetId,
   focusSheetRequestKey,
   symbols,
   selection,
   selectedPlacementId,
   viewportTransform,
+  viewportCenter,
   setViewportTransform,
   dragState,
-  onActiveSheetChange,
+  onOpenSheetLoader,
   onAddSheet,
   onAddPanel,
   onAddTerminalBlock,
@@ -219,15 +240,17 @@ export function SvgDrawingSurface({
 }: {
   model: DrawingPackageModel;
   drawingTitle: string;
+  workspaceContext: DrawingWorkspaceContext;
   activeSheetId: string;
   focusSheetRequestKey?: number;
   symbols: ApprovedDrawingSymbol[];
   selection: DrawingCanvasSelection;
   selectedPlacementId?: string;
   viewportTransform: ViewportTransform;
+  viewportCenter: { x: number; y: number };
   setViewportTransform: Dispatch<SetStateAction<ViewportTransform>>;
   dragState: DragState | null;
-  onActiveSheetChange: (sheetId: string) => void;
+  onOpenSheetLoader: () => void;
   onAddSheet: () => void;
   onAddPanel: () => void;
   onAddTerminalBlock: () => void;
@@ -298,11 +321,9 @@ export function SvgDrawingSurface({
   const viewportRef = useRef<HTMLDivElement>(null);
   const didInitialFitRef = useRef(false);
   const lastFocusSheetRequestKeyRef = useRef(focusSheetRequestKey);
-  const sheetFrameRefs = useRef(new Map<string, HTMLDivElement>());
-  const scrollAnimationFrameRef = useRef<number | null>(null);
+  const activeSheetFrameRef = useRef<HTMLDivElement | null>(null);
+  const scrollCenterSyncTimeoutRef = useRef<number | null>(null);
   const zoomAnchorAnimationFrameRef = useRef<number | null>(null);
-  const zoomSyncReleaseTimeoutRef = useRef<number | null>(null);
-  const suppressViewportSheetSyncRef = useRef(false);
   const latestZoomRef = useRef(viewportTransform.zoom);
   const pendingActiveSheetScrollRef = useRef(false);
   const pendingActiveSheetScrollBehaviorRef = useRef<ScrollBehavior>("smooth");
@@ -315,47 +336,49 @@ export function SvgDrawingSurface({
     string | null
   >(null);
   const sheetCount = drawingModel.sheets.length;
-  const sheetFrames = useMemo<SheetFrame[]>(
-    () =>
-      drawingModel.sheets.map((sheet, index) => {
-        const canvasModel = toSheetCanvasModel(drawingModel, sheet.id);
-        const sheetNumber = index + 1;
-        const sectionTitle = sheet.sectionTitlePage?.title?.trim();
-
-        return {
-          sheet,
-          sheetNumber,
-          canvasModel,
-          renderedSvg: renderDrawingToSvg({
-            model: canvasModel,
-            approvedSymbols: symbols,
-            showAnchors: false,
-            showConnections: sheet.id !== activeSheetId,
-            sheetNumber,
-            sheetCount,
-            drawingTitle,
-            sheetTitle:
-              sheet.kind === "section_title" && sectionTitle
-                ? sectionTitle
-                : sheet.name,
-            sheetKind: sheet.kind,
-            sectionTitlePage: sheet.sectionTitlePage
-          })
-        };
-      }),
-    [activeSheetId, drawingModel, drawingTitle, sheetCount, symbols]
+  const activeSheetIndex = Math.max(
+    0,
+    drawingModel.sheets.findIndex((sheet) => sheet.id === activeSheetId)
   );
-  const activeFrame =
-    sheetFrames.find((frame) => frame.sheet.id === activeSheetId) ??
-    sheetFrames[0];
-  const model =
-    activeFrame?.canvasModel ?? toSheetCanvasModel(drawingModel, activeSheetId);
-  const activeSheetNumber = activeFrame?.sheetNumber ?? 1;
-  const effectiveActiveSheetId = activeFrame?.sheet.id ?? activeSheetId;
+  const activeSheet =
+    drawingModel.sheets[activeSheetIndex] ?? drawingModel.sheets[0]!;
+  const effectiveActiveSheetId = activeSheet.id;
+  const model = useMemo(
+    () => toSheetCanvasModel(drawingModel, effectiveActiveSheetId),
+    [drawingModel, effectiveActiveSheetId]
+  );
+  const activeSheetNumber = activeSheetIndex + 1;
+  const activeFrame = useMemo<ActiveSheetFrame>(() => {
+    const sectionTitle = activeSheet?.sectionTitlePage?.title?.trim();
+
+    return {
+      sheet: activeSheet,
+      sheetNumber: activeSheetNumber,
+      canvasModel: model,
+      renderedSvg: renderDrawingToSvg({
+        model,
+        approvedSymbols: symbols,
+        showAnchors: false,
+        showConnections: false,
+        sheetNumber: activeSheetNumber,
+        sheetCount,
+        drawingTitle,
+        sheetTitle:
+          activeSheet?.kind === "section_title" && sectionTitle
+            ? sectionTitle
+            : activeSheet?.name,
+        sheetKind: activeSheet?.kind,
+        sectionTitlePage: activeSheet?.sectionTitlePage
+      })
+    };
+  }, [activeSheet, activeSheetNumber, drawingTitle, model, sheetCount, symbols]);
   const canMoveActiveSheetUp = activeSheetNumber > 1;
   const canMoveActiveSheetDown = activeSheetNumber < sheetCount;
   const canMoveActiveSheetToEnd = activeSheetNumber < sheetCount;
   const canDeleteActiveSheet = sheetCount > 1;
+  const activeSheetPresentation = activeSheet
+    ? getDrawingSheetPresentation(activeSheet)
+    : undefined;
   const selectedPlacementIds = useMemo(
     () => new Set(selection.placementIds),
     [selection.placementIds]
@@ -381,14 +404,57 @@ export function SvgDrawingSurface({
     }),
     [model.sheet.height, model.sheet.width]
   );
+  const interactiveModel = useMemo(() => {
+    if (!dragState?.previewDelta) {
+      return model;
+    }
+
+    return moveCanvasSelection({
+      model: dragState.startModel,
+      selection: {
+        placementIds: dragState.placementIds,
+        annotationIds: []
+      },
+      delta: dragState.previewDelta,
+      symbols
+    });
+  }, [dragState, model, symbols]);
+  const backplaneById = useMemo(
+    () =>
+      new Map(
+        interactiveModel.placements
+          .filter(isBackplanePlacement)
+          .map((placement) => [placement.id, placement])
+      ),
+    [interactiveModel.placements]
+  );
+  const renderPlacementForSheet = useCallback(
+    (placement: DrawingSheetCanvasModel["placements"][number]) => {
+      const parentBackplane =
+        isLayoutHelperPlacement(placement) && placement.layoutParentId
+          ? backplaneById.get(placement.layoutParentId)
+          : undefined;
+
+      return parentBackplane
+        ? resolveLayoutHelperDisplayPlacement({
+            sheet: interactiveModel.sheet,
+            placement,
+            backplane: parentBackplane
+          })
+        : placement;
+    },
+    [backplaneById, interactiveModel.sheet]
+  );
   const anchorHotspots = useMemo(
     () =>
-      model.placements.flatMap((placement) => {
+      interactiveModel.placements.flatMap((placement) => {
         const symbol = getRenderableSymbolForPlacement(placement, symbols);
 
         if (!symbol) {
           return [];
         }
+
+        const renderPlacement = renderPlacementForSheet(placement);
 
         return symbol.metadata.anchors.map((anchor) => ({
           id: `${placement.id}:${anchor.key}`,
@@ -400,16 +466,16 @@ export function SvgDrawingSurface({
           terminal: symbol.metadata.terminals.find(
             (terminal) => terminal.anchorKey === anchor.key
           ),
-          point: getAnchorWorldPoint(placement, symbol.metadata, anchor)
+          point: getAnchorWorldPoint(renderPlacement, symbol.metadata, anchor)
         }));
       }),
-    [model.placements, symbols]
+    [interactiveModel.placements, renderPlacementForSheet, symbols]
   );
   const connectionSegments: ConnectionSegment[] = useMemo(
     () =>
-      model.connections.flatMap((connection) => {
+      interactiveModel.connections.flatMap((connection) => {
         const rendered = getRenderableConnectionRoute({
-          model,
+          model: interactiveModel,
           symbols,
           connection
         });
@@ -420,26 +486,32 @@ export function SvgDrawingSurface({
 
         return [rendered];
       }),
-    [model, symbols]
+    [interactiveModel, symbols]
   );
   const placementTitleLabels: PlacementTitleLabel[] = useMemo(
     () =>
-      model.placements.flatMap((placement) => {
+      interactiveModel.placements.flatMap((placement) => {
         const symbol = getRenderableSymbolForPlacement(placement, symbols);
 
-        if (!symbol || !shouldShowPlacementTitle(placement, symbol)) {
+        if (isLayoutHelperPlacement(placement)) {
+          return [];
+        }
+
+        const renderPlacement = renderPlacementForSheet(placement);
+
+        if (!symbol || !shouldShowPlacementTitle(renderPlacement, symbol)) {
           return [];
         }
 
         return [
           {
             placementId: placement.id,
-            label: getPlacementDisplayTitle(placement, symbol),
-            point: getPlacementTitlePoint(placement)
+            label: getPlacementDisplayTitle(renderPlacement, symbol),
+            point: getPlacementTitlePoint(renderPlacement)
           }
         ];
       }),
-    [model.placements, symbols]
+    [interactiveModel.placements, renderPlacementForSheet, symbols]
   );
   const selectedConnectionSegment =
     connectionSegments.find(
@@ -465,29 +537,46 @@ export function SvgDrawingSurface({
   const anchorGlowRadius = 6.5 / anchorScreenScale;
   const anchorStrokeWidth = 0.55 / anchorScreenScale;
 
-  const setSheetFrameRef = useCallback(
-    (sheetId: string, element: HTMLDivElement | null) => {
-      if (element) {
-        sheetFrameRefs.current.set(sheetId, element);
+  const scrollActiveSheetIntoView = useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      const viewportElement = viewportRef.current;
+      const frameElement = activeSheetFrameRef.current;
+      const paperElement = frameElement?.querySelector<HTMLElement>(
+        "[data-sheet-paper]"
+      );
+
+      if (!viewportElement || !paperElement) {
+        frameElement?.scrollIntoView({
+          block: "center",
+          inline: "center",
+          behavior
+        });
         return;
       }
 
-      sheetFrameRefs.current.delete(sheetId);
-    },
-    []
-  );
+      const viewportRect = viewportElement.getBoundingClientRect();
+      const paperRect = paperElement.getBoundingClientRect();
+      const scale = SHEET_PIXEL_SCALE * viewportTransform.zoom;
+      const desiredLeft =
+        viewportElement.scrollLeft +
+        paperRect.left -
+        viewportRect.left +
+        viewportCenter.x * scale -
+        viewportRect.width / 2;
+      const desiredTop =
+        viewportElement.scrollTop +
+        paperRect.top -
+        viewportRect.top +
+        viewportCenter.y * scale -
+        viewportRect.height / 2;
 
-  const scrollActiveSheetIntoView = useCallback(
-    (behavior: ScrollBehavior = "smooth") => {
-      const activeSheetFrame = sheetFrameRefs.current.get(effectiveActiveSheetId);
-
-      activeSheetFrame?.scrollIntoView({
-        block: "center",
-        inline: "center",
+      viewportElement.scrollTo({
+        left: Math.max(0, desiredLeft),
+        top: Math.max(0, desiredTop),
         behavior
       });
     },
-    [effectiveActiveSheetId]
+    [viewportCenter.x, viewportCenter.y, viewportTransform.zoom]
   );
 
   const requestActiveSheetScroll = useCallback(
@@ -510,26 +599,6 @@ export function SvgDrawingSurface({
     requestActiveSheetScroll();
   }, [focusSheetRequestKey, requestActiveSheetScroll]);
 
-  const releaseZoomSheetSyncAfterGesture = useCallback(() => {
-    if (zoomSyncReleaseTimeoutRef.current !== null) {
-      window.clearTimeout(zoomSyncReleaseTimeoutRef.current);
-    }
-
-    zoomSyncReleaseTimeoutRef.current = window.setTimeout(() => {
-      suppressViewportSheetSyncRef.current = false;
-      zoomSyncReleaseTimeoutRef.current = null;
-    }, 180);
-  }, []);
-
-  const resumeViewportSheetSync = useCallback(() => {
-    suppressViewportSheetSyncRef.current = false;
-
-    if (zoomSyncReleaseTimeoutRef.current !== null) {
-      window.clearTimeout(zoomSyncReleaseTimeoutRef.current);
-      zoomSyncReleaseTimeoutRef.current = null;
-    }
-  }, []);
-
   const scheduleZoomAnchorCorrection = useCallback(
     (anchor: ZoomAnchor) => {
       if (zoomAnchorAnimationFrameRef.current !== null) {
@@ -538,10 +607,14 @@ export function SvgDrawingSurface({
 
       const applyAnchorCorrection = () => {
         const viewportElement = viewportRef.current;
-        const frame = sheetFrameRefs.current.get(anchor.sheetId);
+        const frame = activeSheetFrameRef.current;
         const paper = frame?.querySelector<HTMLElement>("[data-sheet-paper]");
 
-        if (!viewportElement || !paper) {
+        if (
+          !viewportElement ||
+          !paper ||
+          frame?.dataset.sheetId !== anchor.sheetId
+        ) {
           return;
         }
 
@@ -600,62 +673,20 @@ export function SvgDrawingSurface({
     viewportTransform.zoom
   ]);
 
-  const syncViewportSheetState = useCallback(() => {
-    if (
-      suppressViewportSheetSyncRef.current ||
-      pendingActiveSheetScrollRef.current
-    ) {
-      return;
-    }
-
+  const syncViewportCenterState = useCallback(() => {
     const viewportElement = viewportRef.current;
+    const frameElement = activeSheetFrameRef.current;
+    const paperElement = frameElement?.querySelector<HTMLElement>(
+      "[data-sheet-paper]"
+    );
 
-    if (!viewportElement) {
+    if (!viewportElement || !paperElement || !onViewportCenterChange) {
       return;
     }
 
     const viewportRect = viewportElement.getBoundingClientRect();
     const viewportCenterX = viewportRect.left + viewportRect.width / 2;
     const viewportCenterY = viewportRect.top + viewportRect.height / 2;
-    let closestSheetId: string | undefined;
-    let closestDistance = Number.POSITIVE_INFINITY;
-
-    for (const frame of sheetFrames) {
-      const frameElement = sheetFrameRefs.current.get(frame.sheet.id);
-
-      if (!frameElement) {
-        continue;
-      }
-
-      const frameRect = frameElement.getBoundingClientRect();
-      const frameCenterY = frameRect.top + frameRect.height / 2;
-      const distance = Math.abs(frameCenterY - viewportCenterY);
-
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestSheetId = frame.sheet.id;
-      }
-    }
-
-    if (closestSheetId && closestSheetId !== activeSheetId) {
-      onActiveSheetChange(closestSheetId);
-    }
-
-    const centerSheetId = closestSheetId ?? activeSheetId;
-    const centerFrame = sheetFrames.find(
-      (frame) => frame.sheet.id === centerSheetId
-    );
-    const centerFrameElement = centerSheetId
-      ? sheetFrameRefs.current.get(centerSheetId)
-      : undefined;
-    const paperElement = centerFrameElement?.querySelector<HTMLElement>(
-      "[data-sheet-paper]"
-    );
-
-    if (!paperElement || !centerFrame || !onViewportCenterChange) {
-      return;
-    }
-
     const paperRect = paperElement.getBoundingClientRect();
     const scale = SHEET_PIXEL_SCALE * viewportTransform.zoom;
     const x = (viewportCenterX - paperRect.left) / scale;
@@ -663,10 +694,10 @@ export function SvgDrawingSurface({
 
     const nextViewportCenter = {
       x: Number(
-        Math.max(0, Math.min(centerFrame.canvasModel.sheet.width, x)).toFixed(2)
+        Math.max(0, Math.min(model.sheet.width, x)).toFixed(2)
       ),
       y: Number(
-        Math.max(0, Math.min(centerFrame.canvasModel.sheet.height, y)).toFixed(2)
+        Math.max(0, Math.min(model.sheet.height, y)).toFixed(2)
       )
     };
     const lastViewportCenter = lastViewportCenterRef.current;
@@ -680,45 +711,31 @@ export function SvgDrawingSurface({
 
     lastViewportCenterRef.current = nextViewportCenter;
     onViewportCenterChange(nextViewportCenter);
-  }, [
-    activeSheetId,
-    onActiveSheetChange,
-    onViewportCenterChange,
-    sheetFrames,
-    viewportTransform.zoom
-  ]);
+  }, [model.sheet.height, model.sheet.width, onViewportCenterChange, viewportTransform.zoom]);
 
   const handleViewportScroll = useCallback(() => {
-    if (suppressViewportSheetSyncRef.current) {
-      return;
+    if (scrollCenterSyncTimeoutRef.current !== null) {
+      window.clearTimeout(scrollCenterSyncTimeoutRef.current);
     }
 
-    if (scrollAnimationFrameRef.current !== null) {
-      return;
-    }
-
-    scrollAnimationFrameRef.current = window.requestAnimationFrame(() => {
-      scrollAnimationFrameRef.current = null;
-      syncViewportSheetState();
-    });
-  }, [syncViewportSheetState]);
+    scrollCenterSyncTimeoutRef.current = window.setTimeout(() => {
+      scrollCenterSyncTimeoutRef.current = null;
+      syncViewportCenterState();
+    }, 120);
+  }, [syncViewportCenterState]);
 
   useEffect(() => {
-    syncViewportSheetState();
-  }, [syncViewportSheetState]);
+    syncViewportCenterState();
+  }, [syncViewportCenterState]);
 
   useEffect(
     () => () => {
-      if (scrollAnimationFrameRef.current !== null) {
-        window.cancelAnimationFrame(scrollAnimationFrameRef.current);
+      if (scrollCenterSyncTimeoutRef.current !== null) {
+        window.clearTimeout(scrollCenterSyncTimeoutRef.current);
       }
 
       if (zoomAnchorAnimationFrameRef.current !== null) {
         window.cancelAnimationFrame(zoomAnchorAnimationFrameRef.current);
-      }
-
-      if (zoomSyncReleaseTimeoutRef.current !== null) {
-        window.clearTimeout(zoomSyncReleaseTimeoutRef.current);
       }
     },
     []
@@ -765,7 +782,6 @@ export function SvgDrawingSurface({
   const handleWheel = useCallback(
     (event: WheelEvent<HTMLDivElement>) => {
       if (!event.ctrlKey) {
-        resumeViewportSheetSync();
         return;
       }
 
@@ -780,12 +796,6 @@ export function SvgDrawingSurface({
 
       latestZoomRef.current = nextZoom;
       pendingActiveSheetScrollRef.current = false;
-      suppressViewportSheetSyncRef.current = true;
-      releaseZoomSheetSyncAfterGesture();
-
-      if (anchor && anchor.sheetId !== effectiveActiveSheetId) {
-        onActiveSheetChange(anchor.sheetId);
-      }
 
       setViewportTransform((current) => ({
         ...current,
@@ -802,10 +812,6 @@ export function SvgDrawingSurface({
       }
     },
     [
-      effectiveActiveSheetId,
-      onActiveSheetChange,
-      releaseZoomSheetSyncAfterGesture,
-      resumeViewportSheetSync,
       scheduleZoomAnchorCorrection,
       setViewportTransform
     ]
@@ -958,10 +964,13 @@ export function SvgDrawingSurface({
   const {
     handlePlacementResizeStart: startPlacementResize,
     updatePlacementFromResize,
-    endPlacementResize: finishPlacementResize
+    endPlacementResize: finishPlacementResize,
+    dimensionSnapFeedback,
+    clearDimensionSnapFeedback
   } = usePlacementResize({
     model,
     symbols,
+    screenScale: anchorScreenScale,
     onPlacementChange
   });
   const {
@@ -985,6 +994,14 @@ export function SvgDrawingSurface({
     finishPlacementResize();
     onGestureEnd();
   }, [finishPlacementResize, onGestureEnd]);
+
+  useEffect(() => {
+    clearDimensionSnapFeedback();
+  }, [
+    clearDimensionSnapFeedback,
+    effectiveActiveSheetId,
+    selectedPlacementId
+  ]);
 
   const handlePlacementRotationStart = useCallback(
     (state: Parameters<typeof startPlacementRotation>[0]) => {
@@ -1221,30 +1238,6 @@ export function SvgDrawingSurface({
     [marquee, model, onSelectionChange, symbols]
   );
 
-  const activateSheet = useCallback(
-    (sheetId: string) => {
-      if (sheetId === effectiveActiveSheetId) {
-        return;
-      }
-
-      requestActiveSheetScroll();
-      onActiveSheetChange(sheetId);
-    },
-    [effectiveActiveSheetId, onActiveSheetChange, requestActiveSheetScroll]
-  );
-
-  const handleInactiveSheetKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>, sheetId: string) => {
-      if (event.key !== "Enter" && event.key !== " ") {
-        return;
-      }
-
-      event.preventDefault();
-      activateSheet(sheetId);
-    },
-    [activateSheet]
-  );
-
   const runSheetAction = useCallback(
     (action: () => void) => {
       requestActiveSheetScroll();
@@ -1252,6 +1245,14 @@ export function SvgDrawingSurface({
     },
     [requestActiveSheetScroll]
   );
+  const activeFramePixelSize = {
+    width: Number(
+      (model.sheet.width * SHEET_PIXEL_SCALE * viewportTransform.zoom).toFixed(3)
+    ),
+    height: Number(
+      (model.sheet.height * SHEET_PIXEL_SCALE * viewportTransform.zoom).toFixed(3)
+    )
+  };
 
   return (
     <section className="tool-panel drawing-canvas-panel overflow-hidden">
@@ -1268,9 +1269,7 @@ export function SvgDrawingSurface({
       <div className="drawing-canvas-header">
         <div className="min-w-0">
           <h2 className="text-sm font-bold">
-            {activeFrame?.sheet.kind === "section_title"
-              ? "Section Title Page"
-              : "Drawing Sheet"}
+            {activeSheetPresentation?.heading ?? "Drawing Sheet"}
           </h2>
           <p
             className="mt-0.5 truncate text-xs font-medium text-slate-500"
@@ -1282,6 +1281,16 @@ export function SvgDrawingSurface({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="icon-button h-8 px-3"
+              aria-label="Open sheet loader"
+              title="Open sheet loader"
+              onClick={onOpenSheetLoader}
+            >
+              <List aria-hidden="true" size={14} />
+              Sheets
+            </button>
             <button
               type="button"
               className="icon-button h-8 w-8 p-0"
@@ -1318,7 +1327,7 @@ export function SvgDrawingSurface({
             >
               <ChevronsDown aria-hidden="true" size={14} />
             </button>
-            <button
+            {workspaceContext !== "detailed_panel" ? <button
               type="button"
               className="icon-button h-8 w-8 p-0"
               aria-label="Save active sheet as template"
@@ -1326,7 +1335,7 @@ export function SvgDrawingSurface({
               onClick={onSaveSheetTemplate}
             >
               <Save aria-hidden="true" size={14} />
-            </button>
+            </button> : null}
             <button
               type="button"
               className="icon-button h-8 w-8 p-0"
@@ -1374,6 +1383,7 @@ export function SvgDrawingSurface({
           onAddPanel={onAddPanel}
           onAddTerminalBlock={onAddTerminalBlock}
           onAddSheet={() => runSheetAction(onAddSheet)}
+          showDrawingItems={workspaceContext === "field_drawing"}
         />
         <div
           ref={viewportRef}
@@ -1403,80 +1413,39 @@ export function SvgDrawingSurface({
           onKeyDown={handleCanvasKeyDown}
           tabIndex={0}
         >
-        <div className="drawing-sheet-stack" data-testid="drawing-sheet-stack">
-          {sheetFrames.map((frame) => {
-            const isActive = frame.sheet.id === effectiveActiveSheetId;
-            const framePixelSize = {
-              width: Number(
-                (
-                  frame.canvasModel.sheet.width *
-                  SHEET_PIXEL_SCALE *
-                  viewportTransform.zoom
-                ).toFixed(3)
-              ),
-              height: Number(
-                (
-                  frame.canvasModel.sheet.height *
-                  SHEET_PIXEL_SCALE *
-                  viewportTransform.zoom
-                ).toFixed(3)
-              )
-            };
-
-            return (
+          <div className="drawing-sheet-stack" data-testid="drawing-sheet-stack">
+            <div
+              ref={(element) => {
+                activeSheetFrameRef.current = element;
+              }}
+              className="drawing-sheet-frame drawing-sheet-frame-active"
+              data-testid="drawing-sheet-frame"
+              data-sheet-id={effectiveActiveSheetId}
+              data-sheet-width={model.sheet.width}
+              data-sheet-height={model.sheet.height}
+              data-active-sheet="true"
+            >
+              <div className="drawing-sheet-caption">
+                <span className="drawing-sheet-caption-index">
+                  Sheet {activeSheetNumber} of {sheetCount}
+                </span>
+                <span className="drawing-sheet-caption-name">
+                  {activeFrame.sheet.name}
+                </span>
+              </div>
               <div
-                key={frame.sheet.id}
-                ref={(element) => setSheetFrameRef(frame.sheet.id, element)}
-                className={[
-                  "drawing-sheet-frame",
-                  isActive ? "drawing-sheet-frame-active" : ""
-                ].join(" ")}
-                data-testid="drawing-sheet-frame"
-                data-sheet-id={frame.sheet.id}
-                data-active-sheet={isActive ? "true" : "false"}
-                role={isActive ? undefined : "button"}
-                tabIndex={isActive ? undefined : 0}
-                aria-label={
-                  isActive
-                    ? undefined
-                    : `Activate sheet ${frame.sheetNumber}: ${frame.sheet.name}`
-                }
-                onPointerDown={(event) => {
-                  if (isActive || event.button !== 0) {
-                    return;
-                  }
-
-                  event.preventDefault();
-                  activateSheet(frame.sheet.id);
+                className="drawing-sheet-stage"
+                data-testid="drawing-sheet-stage"
+                style={{
+                  width: `${activeFramePixelSize.width}px`,
+                  height: `${activeFramePixelSize.height}px`
                 }}
-                onKeyDown={(event) =>
-                  handleInactiveSheetKeyDown(event, frame.sheet.id)
-                }
               >
-                <div className="drawing-sheet-caption">
-                  <span className="drawing-sheet-caption-index">
-                    Sheet {frame.sheetNumber} of {sheetCount}
-                  </span>
-                  <span className="drawing-sheet-caption-name">
-                    {frame.sheet.name}
-                  </span>
-                </div>
-                <div
-                  className="drawing-sheet-stage"
-                  data-testid={
-                    isActive ? "drawing-sheet-stage" : "drawing-sheet-preview"
-                  }
-                  style={{
-                    width: `${framePixelSize.width}px`,
-                    height: `${framePixelSize.height}px`
-                  }}
-                >
-                  <div className="drawing-sheet-paper" data-sheet-paper="true">
-                    <div
-                      className="drawing-sheet-rendered"
-                      dangerouslySetInnerHTML={{ __html: frame.renderedSvg }}
-                    />
-                    {isActive ? (
+                <div className="drawing-sheet-paper" data-sheet-paper="true">
+                  <div
+                    className="drawing-sheet-rendered"
+                    dangerouslySetInnerHTML={{ __html: activeFrame.renderedSvg }}
+                  />
                       <>
                         <svg
                           className="absolute inset-0 h-full w-full"
@@ -1609,12 +1578,14 @@ export function SvgDrawingSurface({
                             />
                           ) : null}
                           <PlacementOverlay
-                            model={model}
+                            model={interactiveModel}
                             symbols={symbols}
                             selectedPlacementId={selectedPlacementId}
                             selectedPlacementIds={selectedPlacementIds}
                             connectionMode={connectionMode}
                             viewportZoom={viewportTransform.zoom}
+                            screenScale={anchorScreenScale}
+                            dimensionSnapFeedback={dimensionSnapFeedback}
                             dragState={dragState}
                             onFocusCanvas={focusCanvas}
                             onSelectPlacement={onSelectPlacement}
@@ -1687,17 +1658,14 @@ export function SvgDrawingSurface({
                             onPlacementTitlePointerEnd={endPlacementTitleDrag}
                           />
                         </svg>
-                        <AnchorTooltip
-                          hotspot={activeAnchorHotspot}
-                          sheet={model.sheet}
-                        />
+                          <AnchorTooltip
+                            hotspot={activeAnchorHotspot}
+                            sheet={interactiveModel.sheet}
+                          />
                       </>
-                    ) : null}
                   </div>
                 </div>
               </div>
-            );
-          })}
         </div>
         </div>
       </div>

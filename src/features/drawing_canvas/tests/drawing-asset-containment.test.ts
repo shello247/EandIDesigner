@@ -15,8 +15,26 @@ import {
 import {
   autosizeLayoutHelperToBackplane,
   createBackplanePlacement,
-  getBackplaneUsableBounds
+  getBackplaneUsableBounds,
+  normalizeLayoutHelperDimensionsForSymbol
 } from "../logic/services/drawing-backplane-layouts";
+import {
+  calculateWireTrayMiterEnds,
+  createGeneratedWireTrayLibrarySymbol
+} from "../logic/services/drawing-wire-tray-layouts";
+import {
+  createGeneratedDimensionLibrarySymbols,
+  createLayoutDimensionPlacement,
+  layoutDimensionValueLabel,
+  updateLayoutDimensionFromDisplayPointer,
+  updateLayoutDimensionPlacement
+} from "../logic/services/drawing-layout-dimensions";
+import {
+  getBackplaneDisplayBounds,
+  resolveBackplaneLayoutScale,
+  resolveDrawingBackplaneScaleLabel,
+  resolveLayoutHelperDisplayPlacement
+} from "../logic/services/drawing-backplane-scale";
 import { renameDrawingAssetTag } from "../logic/services/drawing-asset-identity";
 import { moveCanvasSelection } from "../logic/services/drawing-movement";
 import { renderDrawingToSvg } from "../logic/services/drawing-svg-renderer";
@@ -61,6 +79,32 @@ const dinRailSymbol: ApprovedDrawingSymbol = {
     physicalWidthMm: 300,
     physicalHeightMm: 35,
     viewBox: { x: 0, y: 0, width: 300, height: 35 },
+    anchors: [],
+    terminals: []
+  }
+};
+
+const wireTraySymbol = createGeneratedWireTrayLibrarySymbol();
+
+const terminalBlockLayoutSymbol: ApprovedDrawingSymbol = {
+  symbolId: "sym_terminal_block_single_scaled",
+  symbolKey: "terminal_block_single_scaled",
+  displayName: "Terminal Block Single Scaled",
+  category: "terminal_block",
+  versionId: "sym_terminal_block_single_scaled_v1",
+  versionNumber: 1,
+  svg: '<svg viewBox="0 0 20 178" xmlns="http://www.w3.org/2000/svg"><rect width="20" height="178"/></svg>',
+  metadata: {
+    symbolKey: "terminal_block_single_scaled",
+    displayName: "Terminal Block Single Scaled",
+    category: "terminal_block",
+    layoutUsage: "panel_layout",
+    panelCategory: "termination",
+    mountingType: "din_rail",
+    resizable: false,
+    physicalWidthMm: 5.2,
+    physicalHeightMm: 50,
+    viewBox: { x: 0, y: 0, width: 20, height: 178 },
     anchors: [],
     terminals: []
   }
@@ -424,9 +468,181 @@ describe("drawing asset containment", () => {
 
     expect(rail.layoutParentId).toBe(backplane.id);
     expect(rail.containerAssetId).toBe("asset_jb_001");
+    expect(rail.layoutPosition).toMatchObject({
+      xMm: usable.x,
+      yMm: usable.y + 8
+    });
     expect(rail.layoutDimensions?.lengthMm).toBe(usable.width);
     expect(rail.layoutDimensions?.widthMm).toBe(35);
-    expect(rail.x).toBe(usable.x);
+    expect(rail.x).toBe(backplane.x + usable.x);
+  });
+
+  it("autosizes a wire tray layout helper without creating an asset", () => {
+    const model = createDefaultDrawingModel();
+    const panel = createPanelEnclosurePlacement({
+      model,
+      activeSheet: model.sheets[0],
+      assetId: "asset_jb_001",
+      tag: "JB001",
+      x: 20,
+      y: 22,
+      width: 118,
+      height: 92,
+      kind: "junction_box"
+    });
+    const backplane = createBackplanePlacement({ panelPlacement: panel });
+    const tray = autosizeLayoutHelperToBackplane({
+      backplane,
+      symbol: wireTraySymbol,
+      placement: {
+        id: "wire_tray_1",
+        symbolId: wireTraySymbol.symbolId,
+        versionId: wireTraySymbol.versionId,
+        role: "other",
+        tag: wireTraySymbol.displayName,
+        x: 0,
+        y: 0,
+        rotation: 0,
+        scale: 1,
+        layoutKind: "layout_helper",
+        layoutDimensions: {
+          lengthMm: 200,
+          widthMm: 40
+        }
+      }
+    });
+    const usable = getBackplaneUsableBounds(backplane);
+
+    expect(tray.assetId).toBeUndefined();
+    expect(tray.layoutParentId).toBe(backplane.id);
+    expect(tray.containerAssetId).toBe("asset_jb_001");
+    expect(tray.layoutDimensions).toMatchObject({
+      lengthMm: usable.width,
+      widthMm: 40
+    });
+  });
+
+  it("keeps fixed panel layout symbols at their physical dimensions", () => {
+    const model = createDefaultDrawingModel();
+    const panel = createPanelEnclosurePlacement({
+      model,
+      activeSheet: model.sheets[0],
+      assetId: "asset_jb_001",
+      tag: "JB001",
+      x: 20,
+      y: 22,
+      width: 118,
+      height: 92,
+      kind: "junction_box"
+    });
+    const backplane = {
+      ...createBackplanePlacement({ panelPlacement: panel }),
+      layoutDimensions: {
+        lengthMm: 250,
+        widthMm: 250
+      }
+    };
+    const terminalBlock = autosizeLayoutHelperToBackplane({
+      backplane,
+      symbol: terminalBlockLayoutSymbol,
+      placement: {
+        id: "tb_101",
+        assetId: "asset_tb_101",
+        symbolId: terminalBlockLayoutSymbol.symbolId,
+        versionId: terminalBlockLayoutSymbol.versionId,
+        role: "terminal_block",
+        tag: "TB-101",
+        x: 0,
+        y: 0,
+        rotation: 0,
+        scale: 1,
+        layoutKind: "layout_helper",
+        layoutDimensions: {
+          lengthMm: 5.2,
+          widthMm: 50
+        }
+      }
+    });
+    const usable = getBackplaneUsableBounds(backplane);
+
+    expect(terminalBlock.layoutParentId).toBe(backplane.id);
+    expect(terminalBlock.layoutDimensions).toMatchObject({
+      lengthMm: 5.2,
+      widthMm: 50
+    });
+    expect(terminalBlock.layoutPosition).toMatchObject({
+      xMm: usable.x + 8,
+      yMm: usable.y + 8
+    });
+    expect(terminalBlock.x).toBe(backplane.x + usable.x + 8);
+  });
+
+  it("normalizes stale fixed panel layout dimensions from symbol metadata", () => {
+    const staleTerminalBlock = normalizeLayoutHelperDimensionsForSymbol(
+      {
+        id: "tb_101",
+        assetId: "asset_tb_101",
+        symbolId: terminalBlockLayoutSymbol.symbolId,
+        versionId: terminalBlockLayoutSymbol.versionId,
+        role: "terminal_block",
+        tag: "TB-101",
+        x: 0,
+        y: 0,
+        rotation: 0,
+        scale: 1,
+        layoutKind: "layout_helper",
+        layoutDimensions: {
+          lengthMm: 244,
+          widthMm: 178
+        }
+      },
+      terminalBlockLayoutSymbol
+    );
+
+    expect(staleTerminalBlock.layoutDimensions).toMatchObject({
+      lengthMm: 5.2,
+      widthMm: 50
+    });
+  });
+
+  it("resolves standard auto scales for physical backplane dimensions", () => {
+    const model = createDefaultDrawingModel();
+    const sheet = {
+      ...model.sheets[0].page,
+      titleBlock: model.titleBlock
+    };
+    const panel = createPanelEnclosurePlacement({
+      model,
+      activeSheet: model.sheets[0],
+      assetId: "asset_jb_001",
+      tag: "JB001",
+      x: 20,
+      y: 22,
+      width: 118,
+      height: 92,
+      kind: "junction_box"
+    });
+    const smallBackplane = {
+      ...createBackplanePlacement({ panelPlacement: panel }),
+      layoutDimensions: {
+        lengthMm: 250,
+        widthMm: 250
+      }
+    };
+    const largeBackplane = {
+      ...smallBackplane,
+      layoutDimensions: {
+        lengthMm: 1524,
+        widthMm: 1829
+      }
+    };
+
+    expect(resolveBackplaneLayoutScale(sheet, smallBackplane).label).toBe("1:2");
+    expect(resolveBackplaneLayoutScale(sheet, largeBackplane).label).toBe("1:10");
+    expect(getBackplaneDisplayBounds(sheet, smallBackplane)).toMatchObject({
+      width: 125,
+      height: 125
+    });
   });
 
   it("moves selected backplanes with assigned layout children", () => {
@@ -440,9 +656,14 @@ describe("drawing asset containment", () => {
       y: 22
     });
     const backplane = createBackplanePlacement({ panelPlacement: panel });
+    const sheet = {
+      ...model.sheets[0].page,
+      titleBlock: model.titleBlock
+    };
     const rail = autosizeLayoutHelperToBackplane({
       backplane,
       symbol: dinRailSymbol,
+      sheet,
       placement: {
         id: "rail_1",
         symbolId: dinRailSymbol.symbolId,
@@ -461,10 +682,7 @@ describe("drawing asset containment", () => {
       }
     });
     const canvas = {
-      sheet: {
-        ...model.sheets[0].page,
-        titleBlock: model.titleBlock
-      },
+      sheet,
       placements: [panel, backplane, rail],
       connections: [],
       annotations: []
@@ -537,5 +755,437 @@ describe("drawing asset containment", () => {
     expect(svg.indexOf('data-backplane="true"')).toBeLessThan(
       svg.indexOf('data-placement-id="rail_1"')
     );
+    expect(svg).toContain(">1:1<");
+  });
+
+  it("renders a configured backplane and layout helper at drawing scale", () => {
+    const model = createDefaultDrawingModel();
+    const sheet = {
+      ...model.sheets[0].page,
+      titleBlock: model.titleBlock
+    };
+    const panel = createPanelEnclosurePlacement({
+      model,
+      activeSheet: model.sheets[0],
+      assetId: "asset_jb_001",
+      tag: "JB001",
+      x: 20,
+      y: 22,
+      width: 118,
+      height: 92,
+      kind: "junction_box"
+    });
+    const backplane = {
+      ...createBackplanePlacement({ panelPlacement: panel }),
+      layoutDimensions: {
+        lengthMm: 250,
+        widthMm: 250
+      }
+    };
+    const rail = autosizeLayoutHelperToBackplane({
+      backplane,
+      symbol: dinRailSymbol,
+      sheet,
+      placement: {
+        id: "rail_1",
+        symbolId: dinRailSymbol.symbolId,
+        versionId: dinRailSymbol.versionId,
+        role: "other",
+        tag: dinRailSymbol.displayName,
+        x: 0,
+        y: 0,
+        rotation: 0,
+        scale: 1,
+        layoutKind: "layout_helper",
+        layoutDimensions: {
+          lengthMm: 300,
+          widthMm: 35
+        }
+      }
+    });
+    const displayRail = resolveLayoutHelperDisplayPlacement({
+      sheet,
+      placement: rail,
+      backplane
+    });
+    const svg = renderDrawingToSvg({
+      model: {
+        sheet,
+        placements: [panel, backplane, rail],
+        connections: [],
+        annotations: []
+      },
+      approvedSymbols: [dinRailSymbol]
+    });
+
+    expect(resolveDrawingBackplaneScaleLabel({
+      sheet,
+      placements: [panel, backplane, rail],
+      connections: [],
+      annotations: []
+    })).toBe("1:2");
+    expect(displayRail.layoutDimensions?.lengthMm).toBe(122);
+    expect(displayRail.layoutDimensions?.widthMm).toBe(17.5);
+    expect(svg).not.toContain("250 x 250 mm | SCALE 1:2");
+    expect(svg).toContain(">1:2<");
+  });
+
+  it("renders generated wire trays and miters touching orthogonal corners", () => {
+    const model = createDefaultDrawingModel();
+    const sheet = {
+      ...model.sheets[0].page,
+      titleBlock: model.titleBlock
+    };
+    const panel = createPanelEnclosurePlacement({
+      model,
+      activeSheet: model.sheets[0],
+      assetId: "asset_jb_001",
+      tag: "JB001",
+      x: 20,
+      y: 22
+    });
+    const backplane = createBackplanePlacement({ panelPlacement: panel });
+    const horizontalTray = {
+      id: "wire_tray_horizontal",
+      symbolId: wireTraySymbol.symbolId,
+      versionId: wireTraySymbol.versionId,
+      role: "other" as const,
+      tag: wireTraySymbol.displayName,
+      x: 0,
+      y: 0,
+      rotation: 0,
+      scale: 1,
+      layoutKind: "layout_helper" as const,
+      layoutParentId: backplane.id,
+      containerAssetId: "asset_jb_001",
+      layoutPosition: {
+        xMm: 3,
+        yMm: 11
+      },
+      layoutDimensions: {
+        lengthMm: 100,
+        widthMm: 30
+      }
+    };
+    const verticalTray = {
+      ...horizontalTray,
+      id: "wire_tray_vertical",
+      rotation: 90,
+      layoutPosition: {
+        xMm: 73,
+        yMm: 41
+      },
+      layoutDimensions: {
+        lengthMm: 60,
+        widthMm: 30
+      }
+    };
+    const separatedTray = {
+      ...verticalTray,
+      id: "wire_tray_separated",
+      layoutPosition: {
+        xMm: 130,
+        yMm: 70
+      }
+    };
+    const touchingModel = {
+      sheet,
+      placements: [panel, backplane, horizontalTray, verticalTray],
+      connections: [],
+      annotations: []
+    };
+    const separatedModel = {
+      ...touchingModel,
+      placements: [panel, backplane, horizontalTray, separatedTray]
+    };
+    const svg = renderDrawingToSvg({
+      model: touchingModel,
+      approvedSymbols: []
+    });
+
+    expect(calculateWireTrayMiterEnds(horizontalTray, touchingModel)).toMatchObject({
+      start: false,
+      end: true
+    });
+    expect(calculateWireTrayMiterEnds(horizontalTray, separatedModel)).toMatchObject({
+      start: false,
+      end: false
+    });
+    expect(svg).toContain('data-generated-wire-tray="true"');
+  });
+
+  it("creates and renders horizontal and vertical backplane dimensions", () => {
+    const model = createDefaultDrawingModel();
+    const sheet = {
+      ...model.sheets[0].page,
+      titleBlock: model.titleBlock
+    };
+    const panel = createPanelEnclosurePlacement({
+      model,
+      activeSheet: model.sheets[0],
+      assetId: "asset_jb_001",
+      tag: "JB001",
+      x: 20,
+      y: 22,
+      width: 118,
+      height: 92,
+      kind: "junction_box"
+    });
+    const backplane = createBackplanePlacement({ panelPlacement: panel });
+    const horizontalDimension = createLayoutDimensionPlacement({
+      backplane,
+      sheet,
+      orientation: "horizontal",
+      id: "dim_horizontal"
+    });
+    const verticalDimension = createLayoutDimensionPlacement({
+      backplane,
+      sheet,
+      orientation: "vertical",
+      id: "dim_vertical"
+    });
+    const hiddenHorizontalDimension = updateLayoutDimensionPlacement({
+      placement: horizontalDimension,
+      backplane,
+      sheet,
+      updates: {
+        showValue: false
+      }
+    });
+    const svg = renderDrawingToSvg({
+      model: {
+        sheet,
+        placements: [panel, backplane, horizontalDimension, verticalDimension],
+        connections: [],
+        annotations: []
+      },
+      approvedSymbols: []
+    });
+    const hiddenSvg = renderDrawingToSvg({
+      model: {
+        sheet,
+        placements: [panel, backplane, hiddenHorizontalDimension],
+        connections: [],
+        annotations: []
+      },
+      approvedSymbols: []
+    });
+
+    expect(horizontalDimension.assetId).toBeUndefined();
+    expect(verticalDimension.assetId).toBeUndefined();
+    expect(horizontalDimension.layoutDimension?.orientation).toBe("horizontal");
+    expect(verticalDimension.layoutDimension?.orientation).toBe("vertical");
+    expect(
+      normalizeLayoutHelperDimensionsForSymbol(
+        horizontalDimension,
+        createGeneratedDimensionLibrarySymbols()[0]
+      ).layoutDimensions?.lengthMm
+    ).toBe(horizontalDimension.layoutDimensions?.lengthMm);
+    expect(layoutDimensionValueLabel(horizontalDimension)).toMatch(/\d+ mm/);
+    expect(svg).toContain('data-generated-dimension="horizontal"');
+    expect(svg).toContain('data-generated-dimension="vertical"');
+    expect(svg).toContain('data-dimension-part="extension-lines"');
+    expect(svg).toContain('data-dimension-part="arrows"');
+    expect(svg).toContain('data-dimension-part="dimension-line"');
+    expect(svg).toContain('data-dimension-part="label"');
+    expect(svg).toContain(layoutDimensionValueLabel(horizontalDimension));
+    expect(hiddenSvg).toContain('data-generated-dimension="horizontal"');
+    expect(hiddenSvg).not.toContain(layoutDimensionValueLabel(horizontalDimension));
+  });
+
+  it("updates dimension controls from display pointer handles", () => {
+    const model = createDefaultDrawingModel();
+    const sheet = {
+      ...model.sheets[0].page,
+      titleBlock: model.titleBlock
+    };
+    const panel = createPanelEnclosurePlacement({
+      model,
+      activeSheet: model.sheets[0],
+      assetId: "asset_jb_001",
+      tag: "JB001",
+      x: 20,
+      y: 22,
+      width: 118,
+      height: 92,
+      kind: "junction_box"
+    });
+    const backplane = {
+      ...createBackplanePlacement({ panelPlacement: panel }),
+      layoutDimensions: {
+        lengthMm: 250,
+        widthMm: 250
+      }
+    };
+    const dimension = createLayoutDimensionPlacement({
+      backplane,
+      sheet,
+      orientation: "horizontal",
+      id: "dim_horizontal"
+    });
+    const updatedStart = updateLayoutDimensionFromDisplayPointer({
+      placement: dimension,
+      backplane,
+      sheet,
+      handle: "dimension-start",
+      pointer: {
+        x: backplane.x + 20,
+        y: dimension.y
+      }
+    });
+    const updatedOffset = updateLayoutDimensionFromDisplayPointer({
+      placement: updatedStart,
+      backplane,
+      sheet,
+      handle: "dimension-offset",
+      pointer: {
+        x: updatedStart.x,
+        y: backplane.y + 30
+      }
+    });
+
+    expect(updatedStart.layoutDimension?.startMm).toBe(40);
+    expect(updatedOffset.layoutDimension?.offsetMm).toBe(60);
+  });
+
+  it("renders configurable panel layout helper labels", () => {
+    const model = createDefaultDrawingModel();
+    const sheet = {
+      ...model.sheets[0].page,
+      titleBlock: model.titleBlock
+    };
+    const panel = createPanelEnclosurePlacement({
+      model,
+      activeSheet: model.sheets[0],
+      assetId: "asset_jb_001",
+      tag: "JB001",
+      x: 20,
+      y: 22,
+      width: 118,
+      height: 92,
+      kind: "junction_box"
+    });
+    const backplane = createBackplanePlacement({ panelPlacement: panel });
+    const rail = autosizeLayoutHelperToBackplane({
+      backplane,
+      symbol: dinRailSymbol,
+      sheet,
+      placement: {
+        id: "rail_1",
+        symbolId: dinRailSymbol.symbolId,
+        versionId: dinRailSymbol.versionId,
+        role: "other",
+        tag: dinRailSymbol.displayName,
+        x: 0,
+        y: 0,
+        rotation: 0,
+        scale: 1,
+        layoutKind: "layout_helper",
+        layoutDimensions: {
+          lengthMm: 300,
+          widthMm: 35
+        }
+      }
+    });
+    const tray = autosizeLayoutHelperToBackplane({
+      backplane,
+      symbol: wireTraySymbol,
+      sheet,
+      placement: {
+        id: "tray_1",
+        symbolId: wireTraySymbol.symbolId,
+        versionId: wireTraySymbol.versionId,
+        role: "other",
+        tag: wireTraySymbol.displayName,
+        x: 0,
+        y: 0,
+        rotation: 0,
+        scale: 1,
+        layoutKind: "layout_helper",
+        layoutDimensions: {
+          lengthMm: 200,
+          widthMm: 40
+        }
+      }
+    });
+    const terminalBlock = autosizeLayoutHelperToBackplane({
+      backplane,
+      symbol: terminalBlockLayoutSymbol,
+      sheet,
+      placement: {
+        id: "tb_101",
+        assetId: "asset_tb_101",
+        symbolId: terminalBlockLayoutSymbol.symbolId,
+        versionId: terminalBlockLayoutSymbol.versionId,
+        role: "terminal_block",
+        tag: "TB-101",
+        title: "Terminal Block",
+        x: 0,
+        y: 0,
+        rotation: 0,
+        scale: 1,
+        layoutKind: "layout_helper",
+        layoutDimensions: {
+          lengthMm: 5.2,
+          widthMm: 50
+        }
+      }
+    });
+    const hiddenTerminalBlock = {
+      ...terminalBlock,
+      id: "tb_102",
+      tag: "TB-102",
+      assetId: "asset_tb_102",
+      x: terminalBlock.x + 10,
+      layoutLabel: {
+        visible: false,
+        position: "bottom-right" as const
+      }
+    };
+    const customRail = {
+      ...rail,
+      layoutLabel: {
+        visible: true,
+        position: "top-left" as const
+      }
+    };
+    const parsedModel = drawingPackageModelSchema.parse({
+      ...model,
+      sheets: [
+        {
+          ...model.sheets[0],
+          placements: [customRail]
+        }
+      ]
+    });
+    const svg = renderDrawingToSvg({
+      model: {
+        sheet,
+        placements: [
+          panel,
+          backplane,
+          customRail,
+          tray,
+          terminalBlock,
+          hiddenTerminalBlock
+        ],
+        connections: [],
+        annotations: []
+      },
+      approvedSymbols: [dinRailSymbol, terminalBlockLayoutSymbol]
+    });
+
+    expect(parsedModel.sheets[0].placements[0].layoutLabel).toMatchObject({
+      visible: true,
+      position: "top-left"
+    });
+    expect(svg).toContain('data-layout-helper-label-id="tb_101"');
+    expect(svg).toContain(">TB-101<");
+    expect(svg).toContain('data-layout-helper-label-id="rail_1"');
+    expect(svg).toContain(">Standard TH35 DIN Rail<");
+    expect(svg).toContain('data-layout-helper-label-id="tray_1"');
+    expect(svg).toContain(">Wire Tray / Duct<");
+    expect(svg).not.toContain('data-layout-helper-label-id="tb_102"');
+    expect(svg).not.toContain(">TB-102<");
   });
 });

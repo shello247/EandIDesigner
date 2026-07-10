@@ -5,17 +5,32 @@ import type {
 } from "react";
 import type { DrawingSheetCanvasModel as DrawingModel } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
+import { NOTE_NUDGE_STEP } from "../../logic/services/drawing-annotations";
 import { getPlacementBounds } from "../../logic/services/drawing-geometry";
 import {
   getPanelEnclosureBounds,
   getPanelEnclosureTitle,
   isGeneratedPanelEnclosurePlacement
 } from "../../logic/services/drawing-asset-containment";
-import { isBackplanePlacement } from "../../logic/services/drawing-backplane-layouts";
+import {
+  isBackplanePlacement,
+  isLayoutHelperPlacement,
+  normalizeLayoutHelperDimensionsForSymbol
+} from "../../logic/services/drawing-backplane-layouts";
+import {
+  getBackplaneDisplayBounds,
+  resolveLayoutHelperDisplayPlacement
+} from "../../logic/services/drawing-backplane-scale";
 import { getRenderableSymbolForPlacement } from "../../logic/services/drawing-generated-symbols";
+import {
+  getLayoutDimensionDisplayGeometry,
+  isLayoutDimensionPlacement,
+  type LayoutDimensionDisplayGeometry
+} from "../../logic/services/drawing-layout-dimensions";
 import type { DrawingCanvasSelection } from "../../logic/services/drawing-selection";
 import type {
   DragState,
+  DimensionSnapFeedback,
   PlacementRotationState,
   PlacementResizeState,
   ResizeHandle
@@ -145,6 +160,34 @@ function formatRotation(rotation: number): string {
   return `${Math.round(normalizeRotation(rotation))}\u00b0`;
 }
 
+function getDimensionControlHandles(
+  geometry: LayoutDimensionDisplayGeometry
+) {
+  const offsetCursor =
+    geometry.orientation === "horizontal" ? "ns-resize" : "ew-resize";
+  const labelCursor =
+    geometry.orientation === "horizontal" ? "ew-resize" : "ns-resize";
+
+  return {
+    start: {
+      ...geometry.startWitness,
+      cursor: "move"
+    },
+    end: {
+      ...geometry.endWitness,
+      cursor: "move"
+    },
+    offset: {
+      ...geometry.dimensionEnd,
+      cursor: offsetCursor
+    },
+    label: {
+      ...geometry.label,
+      cursor: labelCursor
+    }
+  };
+}
+
 function panelHeaderHeight(bounds: { height: number }): number {
   return Math.min(12, Math.max(8, bounds.height * 0.12));
 }
@@ -156,6 +199,8 @@ export function PlacementOverlay({
   selectedPlacementIds,
   connectionMode,
   viewportZoom,
+  screenScale,
+  dimensionSnapFeedback,
   dragState,
   onFocusCanvas,
   onSelectPlacement,
@@ -177,6 +222,8 @@ export function PlacementOverlay({
   selectedPlacementIds: ReadonlySet<string>;
   connectionMode: "idle" | "connecting";
   viewportZoom: number;
+  screenScale: number;
+  dimensionSnapFeedback: DimensionSnapFeedback | null;
   dragState: DragState | null;
   onFocusCanvas: () => void;
   onSelectPlacement: (
@@ -193,7 +240,7 @@ export function PlacementOverlay({
   onDragEnd: () => void;
   onPlacementRemove: (placementId: string) => void;
   onResizeStart: (state: PlacementResizeState) => void;
-  onResizeMove: (event: PointerEvent<SVGRectElement>) => void;
+  onResizeMove: (event: PointerEvent<SVGElement>) => void;
   onResizeEnd: () => void;
   onRotationStart: (state: PlacementRotationState) => void;
   onRotationMove: (event: PointerEvent<SVGElement>) => void;
@@ -202,12 +249,77 @@ export function PlacementOverlay({
   const panelPlacements = model.placements.filter(
     isGeneratedPanelEnclosurePlacement
   );
+  const backplaneById = new Map(
+    model.placements
+      .filter(isBackplanePlacement)
+      .map((placement) => [placement.id, placement])
+  );
+  const renderPlacementForSheet = (
+    placement: DrawingModel["placements"][number],
+    symbol: ApprovedDrawingSymbol
+  ) => {
+    const parentBackplane =
+      isLayoutHelperPlacement(placement) && placement.layoutParentId
+        ? backplaneById.get(placement.layoutParentId)
+        : undefined;
+    const normalizedPlacement = normalizeLayoutHelperDimensionsForSymbol(
+      placement,
+      symbol
+    );
+
+    return parentBackplane
+      ? resolveLayoutHelperDisplayPlacement({
+          sheet: model.sheet,
+          placement: normalizedPlacement,
+          backplane: parentBackplane
+        })
+      : normalizedPlacement;
+  };
   const normalPlacements = model.placements.filter(
     (placement) => !isGeneratedPanelEnclosurePlacement(placement)
   );
+  const snapGuideBackplane = dimensionSnapFeedback
+    ? backplaneById.get(dimensionSnapFeedback.backplaneId)
+    : undefined;
+  const snapGuideBounds = snapGuideBackplane
+    ? getBackplaneDisplayBounds(model.sheet, snapGuideBackplane)
+    : undefined;
 
   return (
     <>
+      {dimensionSnapFeedback && snapGuideBounds ? (
+        <g
+          data-testid="dimension-snap-guide"
+          data-snap-kind={dimensionSnapFeedback.target.kind}
+          className="pointer-events-none stroke-cyan-500"
+        >
+          <line
+            x1={dimensionSnapFeedback.guideSheetPoint.x}
+            y1={snapGuideBounds.y}
+            x2={dimensionSnapFeedback.guideSheetPoint.x}
+            y2={snapGuideBounds.y + snapGuideBounds.height}
+            strokeWidth={0.8 / screenScale}
+            strokeDasharray={`${3 / screenScale} ${3 / screenScale}`}
+          />
+          <line
+            x1={snapGuideBounds.x}
+            y1={dimensionSnapFeedback.guideSheetPoint.y}
+            x2={snapGuideBounds.x + snapGuideBounds.width}
+            y2={dimensionSnapFeedback.guideSheetPoint.y}
+            strokeWidth={0.8 / screenScale}
+            strokeDasharray={`${3 / screenScale} ${3 / screenScale}`}
+          />
+          <circle
+            cx={dimensionSnapFeedback.guideSheetPoint.x}
+            cy={dimensionSnapFeedback.guideSheetPoint.y}
+            r={4 / screenScale}
+            fill="#ecfeff"
+            strokeWidth={1.1 / screenScale}
+          >
+            <title>{dimensionSnapFeedback.target.label}</title>
+          </circle>
+        </g>
+      ) : null}
       {panelPlacements.map((placement) => {
         const bounds = getPanelEnclosureBounds(placement);
         const isSelected =
@@ -248,11 +360,11 @@ export function PlacementOverlay({
           const pointer = toSvgPoint(event, model.sheet);
           const nextPrimaryX = snap(
             dragState.startPlacement.x + pointer.x - dragState.startPointer.x,
-            model.sheet.gridSize
+            NOTE_NUDGE_STEP
           );
           const nextPrimaryY = snap(
             dragState.startPlacement.y + pointer.y - dragState.startPointer.y,
-            model.sheet.gridSize
+            NOTE_NUDGE_STEP
           );
 
           onDragMove({
@@ -423,20 +535,53 @@ export function PlacementOverlay({
           return null;
         }
 
-        const bounds = getPlacementBounds(placement, symbol.metadata);
+        const renderPlacement = renderPlacementForSheet(placement, symbol);
+        const isDimension = isLayoutDimensionPlacement(placement);
+        const parentBackplane =
+          isDimension && placement.layoutParentId
+            ? backplaneById.get(placement.layoutParentId)
+            : undefined;
+        const dimensionGeometry =
+          isDimension && parentBackplane
+            ? getLayoutDimensionDisplayGeometry({
+                model,
+                placement,
+                backplane: parentBackplane
+              })
+            : undefined;
+        const bounds = dimensionGeometry
+          ? dimensionGeometry.bounds
+          : isBackplanePlacement(placement)
+            ? getBackplaneDisplayBounds(model.sheet, placement)
+            : getPlacementBounds(renderPlacement, symbol.metadata);
         const isSelected =
           selectedPlacementId === placement.id ||
           selectedPlacementIds.has(placement.id);
-        const handleSize = Math.max(3, Math.min(6, 5 / viewportZoom));
+        const isLayoutHelper = isLayoutHelperPlacement(placement);
+        const handleSize = isLayoutHelper
+          ? Math.max(2.2, Math.min(4.2, 3.6 / viewportZoom))
+          : Math.max(2.8, Math.min(5, 4.4 / viewportZoom));
         const rotation = normalizeRotation(placement.rotation);
-        const canRotate = !isBackplanePlacement(placement);
-        const handles = getPlacementHandles(bounds, rotation);
+        const canRotate = !isBackplanePlacement(placement) && !isDimension;
+        const canResize =
+          !isDimension &&
+          (!isLayoutHelperPlacement(placement) ||
+            symbol.metadata.resizable === true ||
+            isBackplanePlacement(placement));
+        const handles = canResize ? getPlacementHandles(bounds, rotation) : [];
+        const dimensionHandles = dimensionGeometry
+          ? getDimensionControlHandles(dimensionGeometry)
+          : undefined;
         const rotationControl = getRotationControl(
           bounds,
           rotation,
           viewportZoom
         );
         const rotationLabel = formatRotation(rotation);
+        const deleteButtonWidth = isDimension ? 12 / screenScale : 16;
+        const deleteButtonHeight = isDimension ? 8 / screenScale : 8;
+        const deleteButtonOffsetX = isDimension ? 5 / screenScale : 3;
+        const deleteButtonOffsetY = isDimension ? 11 / screenScale : 10;
 
         return (
           <g key={placement.id}>
@@ -453,11 +598,19 @@ export function PlacementOverlay({
               }
               className={[
                 "cursor-move fill-transparent",
-                isSelected ? "stroke-sky-600" : "stroke-transparent"
+                isSelected && !isDimension
+                  ? "stroke-sky-500"
+                  : "stroke-transparent"
               ].join(" ")}
               pointerEvents="all"
-              strokeDasharray={isSelected ? "3 2" : undefined}
-              strokeWidth={isSelected ? 1 : 0}
+              strokeDasharray={isSelected && !isDimension ? "2 2.8" : undefined}
+              strokeWidth={
+                isSelected && !isDimension
+                  ? isLayoutHelper
+                    ? 0.45
+                    : 0.55
+                  : 0
+              }
               onPointerDown={(event) => {
                 if (event.button !== 0) {
                   return;
@@ -504,13 +657,13 @@ export function PlacementOverlay({
                   dragState.startPlacement.x +
                     pointer.x -
                     dragState.startPointer.x,
-                  model.sheet.gridSize
+                  NOTE_NUDGE_STEP
                 );
                 const nextPrimaryY = snap(
                   dragState.startPlacement.y +
                     pointer.y -
                     dragState.startPointer.y,
-                  model.sheet.gridSize
+                  NOTE_NUDGE_STEP
                 );
 
                 onDragMove({
@@ -534,6 +687,130 @@ export function PlacementOverlay({
             />
             {isSelected ? (
               <g>
+                {dimensionHandles ? (
+                  <>
+                    <line
+                      data-testid="dimension-selection-line"
+                      x1={dimensionGeometry?.dimensionStart.x}
+                      y1={dimensionGeometry?.dimensionStart.y}
+                      x2={dimensionGeometry?.dimensionEnd.x}
+                      y2={dimensionGeometry?.dimensionEnd.y}
+                      className="pointer-events-none stroke-sky-500"
+                      strokeWidth={0.8 / screenScale}
+                      opacity={0.64}
+                    />
+                    {([
+                      ["dimension-start", dimensionHandles.start, "Dimension start"],
+                      ["dimension-end", dimensionHandles.end, "Dimension end"]
+                    ] as const).map(([handleKey, handle, title]) => (
+                      <circle
+                        key={handleKey}
+                        data-dimension-handle={handleKey}
+                        cx={handle.x}
+                        cy={handle.y}
+                        r={3.4 / screenScale}
+                        className={
+                          dimensionSnapFeedback?.placementId === placement.id &&
+                          dimensionSnapFeedback.handle === handleKey
+                            ? "fill-cyan-50 stroke-cyan-600"
+                            : "fill-white stroke-slate-500"
+                        }
+                        strokeWidth={1.1 / screenScale}
+                        style={{ cursor: handle.cursor }}
+                        onPointerDown={(event) => {
+                          if (event.button !== 0) {
+                            return;
+                          }
+
+                          event.stopPropagation();
+                          event.currentTarget.setPointerCapture(event.pointerId);
+                          onFocusCanvas();
+                          onSelectPlacement(placement.id);
+                          onResizeStart({
+                            placementId: placement.id,
+                            handle: handleKey,
+                            fixedPoint: handle,
+                            baseSize: {
+                              width: bounds.width,
+                              height: bounds.height
+                            }
+                          });
+                        }}
+                        onPointerMove={onResizeMove}
+                        onPointerUp={onResizeEnd}
+                        onPointerCancel={onResizeEnd}
+                      >
+                        <title>{title} witness point</title>
+                      </circle>
+                    ))}
+                    <circle
+                      data-dimension-handle="dimension-offset"
+                      cx={dimensionHandles.offset.x}
+                      cy={dimensionHandles.offset.y}
+                      r={3.5 / screenScale}
+                      className="fill-amber-100 stroke-amber-500"
+                      strokeWidth={1.15 / screenScale}
+                      style={{ cursor: dimensionHandles.offset.cursor }}
+                      onPointerDown={(event) => {
+                        if (event.button !== 0) {
+                          return;
+                        }
+
+                        event.stopPropagation();
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                        onFocusCanvas();
+                        onSelectPlacement(placement.id);
+                        onResizeStart({
+                          placementId: placement.id,
+                          handle: "dimension-offset",
+                          fixedPoint: dimensionHandles.offset,
+                          baseSize: {
+                            width: bounds.width,
+                            height: bounds.height
+                          }
+                        });
+                      }}
+                      onPointerMove={onResizeMove}
+                      onPointerUp={onResizeEnd}
+                      onPointerCancel={onResizeEnd}
+                    >
+                      <title>Move dimension line</title>
+                    </circle>
+                    <circle
+                      data-dimension-handle="dimension-label"
+                      cx={dimensionHandles.label.x}
+                      cy={dimensionHandles.label.y}
+                      r={3.2 / screenScale}
+                      className="fill-amber-100 stroke-amber-500"
+                      strokeWidth={1.05 / screenScale}
+                      style={{ cursor: dimensionHandles.label.cursor }}
+                      onPointerDown={(event) => {
+                        if (event.button !== 0) {
+                          return;
+                        }
+
+                        event.stopPropagation();
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                        onFocusCanvas();
+                        onSelectPlacement(placement.id);
+                        onResizeStart({
+                          placementId: placement.id,
+                          handle: "dimension-label",
+                          fixedPoint: dimensionHandles.label,
+                          baseSize: {
+                            width: bounds.width,
+                            height: bounds.height
+                          }
+                        });
+                      }}
+                      onPointerMove={onResizeMove}
+                      onPointerUp={onResizeEnd}
+                      onPointerCancel={onResizeEnd}
+                    >
+                      <title>Move dimension label</title>
+                    </circle>
+                  </>
+                ) : null}
                 {handles.map((handle) => (
                   <rect
                     key={handle.key}
@@ -542,9 +819,9 @@ export function PlacementOverlay({
                     y={handle.y - handleSize / 2}
                     width={handleSize}
                     height={handleSize}
-                    rx={handleSize * 0.2}
-                    className="fill-white stroke-sky-600"
-                    strokeWidth={0.8}
+                    rx={handleSize * 0.25}
+                    className="fill-white stroke-sky-500"
+                    strokeWidth={isLayoutHelper ? 0.45 : 0.6}
                     style={{ cursor: handle.cursor }}
                     onPointerDown={(event) => {
                       if (event.button !== 0) {
@@ -655,7 +932,7 @@ export function PlacementOverlay({
                   role="button"
                   aria-label={`Delete ${placement.tag}`}
                   tabIndex={0}
-                  transform={`translate(${bounds.x + bounds.width + 3} ${bounds.y - 10})`}
+                  transform={`translate(${bounds.x + bounds.width + deleteButtonOffsetX} ${bounds.y - deleteButtonOffsetY})`}
                   className="cursor-pointer"
                   onPointerDown={(event) => {
                     if (event.button !== 0) {
@@ -675,17 +952,17 @@ export function PlacementOverlay({
                   <rect
                     x="0"
                     y="0"
-                    width="16"
-                    height="8"
-                    rx="2"
+                    width={deleteButtonWidth}
+                    height={deleteButtonHeight}
+                    rx={isDimension ? 2 / screenScale : 2}
                     className="fill-white stroke-red-500"
-                    strokeWidth="0.6"
+                    strokeWidth={isDimension ? 1 / screenScale : 0.6}
                   />
                   <text
-                    x="8"
-                    y="5.7"
+                    x={deleteButtonWidth / 2}
+                    y={isDimension ? 5.8 / screenScale : 5.7}
                     textAnchor="middle"
-                    fontSize="5"
+                    fontSize={isDimension ? 6 / screenScale : 5}
                     fontWeight="700"
                     fill="#dc2626"
                   >

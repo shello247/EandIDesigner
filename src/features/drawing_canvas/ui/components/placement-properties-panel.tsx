@@ -40,14 +40,28 @@ import {
   getLayoutChildrenForBackplane,
   isBackplanePlacement,
   isLayoutHelperPlacement,
-  resizeBackplane
+  normalizeLayoutHelperDimensionsForSymbol,
+  shouldAutosizeLayoutSymbolToBackplane
 } from "../../logic/services/drawing-backplane-layouts";
+import { resolveBackplaneLayoutScale } from "../../logic/services/drawing-backplane-scale";
 import { getAnnotationSize } from "../../logic/services/drawing-annotations";
 import {
   getConnectionLabel,
   getSymbolForPlacement
 } from "../../logic/services/drawing-connections";
 import { isPanelLayoutLibrarySymbol } from "../../logic/services/symbol-library-context";
+import {
+  layoutLabelPositionLabels,
+  layoutLabelPositions,
+  resolveLayoutLabel,
+  type LayoutLabelPosition
+} from "../../logic/services/drawing-layout-labels";
+import {
+  isLayoutDimensionPlacement,
+  layoutDimensionValueLabel,
+  resolveAssociatedLayoutDimensionPlacement,
+  updateLayoutDimensionPlacement
+} from "../../logic/services/drawing-layout-dimensions";
 import { getConnectionTransitionGroups } from "../../logic/services/drawing-connection-groups";
 import {
   deriveWireId,
@@ -116,6 +130,7 @@ export function PlacementPropertiesPanel({
   onConnectionChange,
   onConnectionRemove,
   onConnectionRouteReset,
+  showConnections = true,
   onAnnotationChange,
   onAnnotationRemove
 }: {
@@ -167,6 +182,7 @@ export function PlacementPropertiesPanel({
   ) => void;
   onConnectionRemove: (connectionId: string) => void;
   onConnectionRouteReset: (connectionId: string) => void;
+  showConnections?: boolean;
   onAnnotationChange: (
     annotationId: string,
     updates: Partial<DrawingAnnotation>
@@ -259,7 +275,7 @@ export function PlacementPropertiesPanel({
         onAnnotationRemove={onAnnotationRemove}
       />
 
-      <ConnectionEditor
+      {showConnections ? <ConnectionEditor
         model={model}
         symbols={symbols}
         selectedConnectionId={selectedConnectionId}
@@ -267,7 +283,7 @@ export function PlacementPropertiesPanel({
         onConnectionChange={onConnectionChange}
         onConnectionRemove={onConnectionRemove}
         onConnectionRouteReset={onConnectionRouteReset}
-      />
+      /> : null}
     </div>
   );
 }
@@ -960,6 +976,13 @@ function SelectedPlacementLayoutEditor({
   ) => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [dimensionDraft, setDimensionDraft] = useState<{
+    placementId: string;
+    values: {
+      lengthMm: string;
+      widthMm: string;
+    };
+  } | null>(null);
   const symbol = getSymbolForPlacement(placement, symbols);
   const containers = useMemo(() => getVisibleSheetContainers(model), [model]);
   const backplanes = useMemo(() => getBackplanesForSheet(model), [model]);
@@ -970,28 +993,60 @@ function SelectedPlacementLayoutEditor({
 
   if (isBackplanePlacement(placement)) {
     const layoutDimensions = placement.layoutDimensions;
+    const activeDraft =
+      dimensionDraft?.placementId === placement.id ? dimensionDraft : null;
+    const draftValues = activeDraft?.values ?? {
+      lengthMm: String(layoutDimensions.lengthMm),
+      widthMm: String(layoutDimensions.widthMm)
+    };
     const parentPanel = containers.find(
       (container) => container.assetId === placement.containerAssetId
     );
+    const resolvedScale = resolveBackplaneLayoutScale(model.sheet, placement);
     const childCount = getLayoutChildrenForBackplane(model, placement.id).length;
-    const updateDimension = (
+    const updateDimensionDraft = (
       key: "lengthMm" | "widthMm",
       value: string
     ) => {
-      const parsed = Number(value);
+      setDimensionDraft((current) => {
+        const base =
+          current?.placementId === placement.id
+            ? current.values
+            : {
+                lengthMm: String(layoutDimensions.lengthMm),
+                widthMm: String(layoutDimensions.widthMm)
+              };
 
-      if (!Number.isFinite(parsed) || parsed <= 0) {
+        return {
+          placementId: placement.id,
+          values: {
+            ...base,
+            [key]: value
+          }
+        };
+      });
+    };
+    const commitDimensionDraft = () => {
+      const width = Number(draftValues.lengthMm);
+      const height = Number(draftValues.widthMm);
+
+      if (
+        !Number.isFinite(width) ||
+        width <= 0 ||
+        !Number.isFinite(height) ||
+        height <= 0
+      ) {
+        setDimensionDraft(null);
         return;
       }
 
-      const resized = resizeBackplane(model, placement, {
-        x: placement.x,
-        y: placement.y,
-        width: key === "lengthMm" ? parsed : layoutDimensions.lengthMm,
-        height: key === "widthMm" ? parsed : layoutDimensions.widthMm
+      setDimensionDraft(null);
+      onPlacementChange(placement.id, {
+        layoutDimensions: {
+          lengthMm: Number(width.toFixed(2)),
+          widthMm: Number(height.toFixed(2))
+        }
       });
-
-      onPlacementChange(placement.id, resized);
     };
 
     return (
@@ -1030,6 +1085,10 @@ function SelectedPlacementLayoutEditor({
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
             {childCount} layout item{childCount === 1 ? "" : "s"} assigned.
           </div>
+          <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500">
+            Scale: {resolvedScale.mode === "auto" ? "Auto " : ""}
+            {resolvedScale.label}
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="field-label" htmlFor="backplane-length">
@@ -1039,10 +1098,19 @@ function SelectedPlacementLayoutEditor({
                 id="backplane-length"
                 className="field-input"
                 inputMode="decimal"
-                value={layoutDimensions.lengthMm}
+                value={draftValues.lengthMm}
                 onChange={(event) =>
-                  updateDimension("lengthMm", event.currentTarget.value)
+                  updateDimensionDraft("lengthMm", event.currentTarget.value)
                 }
+                onBlur={commitDimensionDraft}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                  if (event.key === "Escape") {
+                    setDimensionDraft(null);
+                  }
+                }}
               />
             </div>
             <div>
@@ -1053,12 +1121,237 @@ function SelectedPlacementLayoutEditor({
                 id="backplane-width"
                 className="field-input"
                 inputMode="decimal"
-                value={layoutDimensions.widthMm}
+                value={draftValues.widthMm}
                 onChange={(event) =>
-                  updateDimension("widthMm", event.currentTarget.value)
+                  updateDimensionDraft("widthMm", event.currentTarget.value)
+                }
+                onBlur={commitDimensionDraft}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                  if (event.key === "Escape") {
+                    setDimensionDraft(null);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (isLayoutDimensionPlacement(placement)) {
+    const currentBackplane = backplanes.find(
+      (candidate) => candidate.id === placement.layoutParentId
+    );
+    const resolvedPlacement = currentBackplane
+      ? resolveAssociatedLayoutDimensionPlacement({
+          model,
+          placement,
+          backplane: currentBackplane
+        })
+      : placement;
+    const dimension = resolvedPlacement.layoutDimension!;
+    const updateDimension = (
+      updates: Partial<NonNullable<typeof placement.layoutDimension>>
+    ) => {
+      if (!currentBackplane) {
+        onPlacementChange(placement.id, {
+          layoutDimension: {
+            ...dimension,
+            ...updates
+          }
+        });
+        return;
+      }
+
+      const updated = updateLayoutDimensionPlacement({
+        placement: resolvedPlacement,
+        backplane: currentBackplane,
+        sheet: model.sheet,
+        updates
+      });
+
+      onPlacementChange(placement.id, {
+        x: updated.x,
+        y: updated.y,
+        layoutPosition: updated.layoutPosition,
+        layoutDimensions: updated.layoutDimensions,
+        layoutDimension: updated.layoutDimension
+      });
+    };
+    const updateNumericDimension = (
+      key: "startMm" | "endMm" | "offsetMm" | "labelPositionMm",
+      value: string
+    ) => {
+      const parsed = Number(value);
+
+      if (!Number.isFinite(parsed)) {
+        return;
+      }
+
+      updateDimension({ [key]: Number(parsed.toFixed(2)) });
+    };
+
+    return (
+      <section className="tool-panel overflow-hidden">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 text-left transition hover:bg-slate-50"
+          aria-expanded={isExpanded}
+          aria-controls="selected-placement-dimension-editor"
+          onClick={() => setIsExpanded((current) => !current)}
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-bold text-slate-950">
+              Dimension
+            </span>
+            <span className="mt-0.5 block truncate text-xs text-slate-500">
+              {dimension.orientation === "horizontal"
+                ? "Horizontal"
+                : "Vertical"}{" "}
+              / {layoutDimensionValueLabel(resolvedPlacement)}
+            </span>
+          </span>
+          <ChevronRight
+            aria-hidden="true"
+            size={16}
+            className={[
+              "shrink-0 text-slate-400 transition-transform",
+              isExpanded ? "rotate-90" : ""
+            ].join(" ")}
+          />
+        </button>
+
+        <div
+          id="selected-placement-dimension-editor"
+          className={isExpanded ? "space-y-3 p-4" : "hidden"}
+        >
+          {!currentBackplane ? (
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+              <AlertTriangle
+                aria-hidden="true"
+                size={14}
+                className="mt-0.5 shrink-0"
+              />
+              <span>This dimension is not assigned to a backplane.</span>
+            </div>
+          ) : null}
+          <div>
+            <label className="field-label" htmlFor="layout-dimension-orientation">
+              Orientation
+            </label>
+            <input
+              id="layout-dimension-orientation"
+              className="field-input"
+              value={
+                dimension.orientation === "horizontal"
+                  ? "Horizontal"
+                  : "Vertical"
+              }
+              readOnly
+            />
+          </div>
+          <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-800">
+            Drag the grey witness grips onto measured edges. The yellow end
+            grip moves the dimension line; the yellow centre grip moves its
+            label. Numeric values remain exact.
+          </div>
+          <div>
+            <label
+              className="field-label"
+              htmlFor="layout-dimension-label-position"
+            >
+              Label position mm
+            </label>
+            <input
+              id="layout-dimension-label-position"
+              className="field-input"
+              inputMode="decimal"
+              value={
+                dimension.labelPositionMm ??
+                Number(((dimension.startMm + dimension.endMm) / 2).toFixed(2))
+              }
+              onChange={(event) =>
+                updateNumericDimension(
+                  "labelPositionMm",
+                  event.currentTarget.value
+                )
+              }
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="field-label" htmlFor="layout-dimension-start">
+                Start mm
+              </label>
+              <input
+                id="layout-dimension-start"
+                className="field-input"
+                inputMode="decimal"
+                value={dimension.startMm}
+                onChange={(event) =>
+                  updateNumericDimension("startMm", event.currentTarget.value)
                 }
               />
             </div>
+            <div>
+              <label className="field-label" htmlFor="layout-dimension-end">
+                End mm
+              </label>
+              <input
+                id="layout-dimension-end"
+                className="field-input"
+                inputMode="decimal"
+                value={dimension.endMm}
+                onChange={(event) =>
+                  updateNumericDimension("endMm", event.currentTarget.value)
+                }
+              />
+            </div>
+            <div>
+              <label className="field-label" htmlFor="layout-dimension-offset">
+                Offset mm
+              </label>
+              <input
+                id="layout-dimension-offset"
+                className="field-input"
+                inputMode="decimal"
+                value={dimension.offsetMm}
+                onChange={(event) =>
+                  updateNumericDimension("offsetMm", event.currentTarget.value)
+                }
+              />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              checked={dimension.showValue ?? true}
+              onChange={(event) =>
+                updateDimension({ showValue: event.currentTarget.checked })
+              }
+            />
+            Show value
+          </label>
+          <div>
+            <label className="field-label" htmlFor="layout-dimension-label">
+              Label override
+            </label>
+            <input
+              id="layout-dimension-label"
+              className="field-input"
+              value={dimension.labelOverride ?? ""}
+              placeholder={layoutDimensionValueLabel(resolvedPlacement)}
+              onChange={(event) =>
+                updateDimension({
+                  labelOverride: event.currentTarget.value || undefined
+                })
+              }
+            />
           </div>
         </div>
       </section>
@@ -1076,15 +1369,25 @@ function SelectedPlacementLayoutEditor({
   const currentBackplane = backplanes.find(
     (candidate) => candidate.id === placement.layoutParentId
   );
-  const layoutDimensions = placement.layoutDimensions ?? {
+  const normalizedPlacement = normalizeLayoutHelperDimensionsForSymbol(
+    placement,
+    symbol
+  );
+  const layoutDimensions = normalizedPlacement.layoutDimensions ?? {
     lengthMm: symbol.metadata.physicalWidthMm ?? symbol.metadata.viewBox.width,
     widthMm: symbol.metadata.physicalHeightMm ?? symbol.metadata.viewBox.height
   };
+  const canEditDimensions = shouldAutosizeLayoutSymbolToBackplane(symbol);
+  const resolvedLabel = resolveLayoutLabel({ placement, symbol });
 
   const updateDimension = (
     key: "lengthMm" | "widthMm",
     value: string
   ) => {
+    if (!canEditDimensions) {
+      return;
+    }
+
     const parsed = Number(value);
 
     if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -1107,6 +1410,17 @@ function SelectedPlacementLayoutEditor({
     });
   };
 
+  const updateLayoutLabel = (
+    updates: Partial<NonNullable<typeof placement.layoutLabel>>
+  ) => {
+    onPlacementChange(placement.id, {
+      layoutLabel: {
+        ...(placement.layoutLabel ?? {}),
+        ...updates
+      }
+    });
+  };
+
   const updateParentBackplane = (backplaneId: string) => {
     const backplane = backplanes.find((candidate) => candidate.id === backplaneId);
 
@@ -1121,7 +1435,8 @@ function SelectedPlacementLayoutEditor({
     const updated = autosizeLayoutHelperToBackplane({
       placement,
       backplane,
-      symbol
+      symbol,
+      sheet: model.sheet
     });
 
     onPlacementChange(placement.id, {
@@ -1189,6 +1504,49 @@ function SelectedPlacementLayoutEditor({
             <span>This layout item is not assigned to a backplane.</span>
           </div>
         ) : null}
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-bold uppercase text-slate-500">
+                Label
+              </div>
+              <div className="mt-0.5 text-xs text-slate-500">
+                Generated from item tag.
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                checked={resolvedLabel.visible}
+                onChange={(event) =>
+                  updateLayoutLabel({ visible: event.currentTarget.checked })
+                }
+              />
+              Show
+            </label>
+          </div>
+          <label className="field-label" htmlFor="layout-symbol-label-position">
+            Position
+          </label>
+          <select
+            id="layout-symbol-label-position"
+            className="field-input"
+            value={resolvedLabel.position}
+            disabled={!resolvedLabel.visible}
+            onChange={(event) =>
+              updateLayoutLabel({
+                position: event.currentTarget.value as LayoutLabelPosition
+              })
+            }
+          >
+            {layoutLabelPositions.map((position) => (
+              <option key={position} value={position}>
+                {layoutLabelPositionLabels[position]}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="field-label" htmlFor="layout-symbol-length">
@@ -1199,6 +1557,8 @@ function SelectedPlacementLayoutEditor({
               className="field-input"
               inputMode="decimal"
               value={layoutDimensions.lengthMm}
+              readOnly={!canEditDimensions}
+              disabled={!canEditDimensions}
               onChange={(event) =>
                 updateDimension("lengthMm", event.currentTarget.value)
               }
@@ -1213,12 +1573,20 @@ function SelectedPlacementLayoutEditor({
               className="field-input"
               inputMode="decimal"
               value={layoutDimensions.widthMm}
+              readOnly={!canEditDimensions}
+              disabled={!canEditDimensions}
               onChange={(event) =>
                 updateDimension("widthMm", event.currentTarget.value)
               }
             />
           </div>
         </div>
+        {!canEditDimensions ? (
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
+            Fixed-size layout symbol. Dimensions come from the approved symbol
+            metadata.
+          </div>
+        ) : null}
       </div>
     </section>
   );

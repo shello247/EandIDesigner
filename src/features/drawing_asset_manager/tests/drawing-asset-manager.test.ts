@@ -283,6 +283,57 @@ describe("drawing asset manager use cases", () => {
     );
   });
 
+  it("tracks and protects panel assets referenced by detailed panel sheets", () => {
+    const base = modelWithAssets();
+    const model = reconcileDrawingAssets(
+      {
+        ...base,
+        assets: [
+          ...base.assets,
+          {
+            id: "asset_jb_001",
+            tag: "JB001",
+            type: "junction_box",
+            title: "Field Junction Box"
+          }
+        ],
+        sheets: [
+          {
+            ...base.sheets[0],
+            id: "sheet_panel_detail",
+            name: "JB001 Detailed Panel Drawing",
+            placements: [],
+            connections: [],
+            panelDrawingContext: {
+              kind: "detailed_panel_wiring",
+              panelAssetId: "asset_jb_001"
+            }
+          }
+        ]
+      },
+      symbols
+    );
+    const catalogItem = buildManagedAssetCatalog(model, symbols).find(
+      (asset) => asset.id === "asset_jb_001"
+    );
+
+    expect(catalogItem?.occurrenceCount).toBe(0);
+    expect(catalogItem?.sheetRefs).toEqual([
+      {
+        sheetId: "sheet_panel_detail",
+        sheetName: "JB001 Detailed Panel Drawing",
+        sheetNumber: 1,
+        referenceKind: "panel_context"
+      }
+    ]);
+    expect(getAssetDeletionBlockers(model, "asset_jb_001")[0]?.code).toBe(
+      "panel_context"
+    );
+    expect(() => deleteManagedAsset(model, "asset_jb_001")).toThrow(
+      /Detailed Panel Drawing/
+    );
+  });
+
   it("deletes unplaced assets and warns on duplicate tags", () => {
     const model = reconcileDrawingAssets(
       {

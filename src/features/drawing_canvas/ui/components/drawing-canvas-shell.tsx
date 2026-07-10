@@ -11,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
+  Eye,
   FileDown,
   Link2,
   PanelLeftClose,
@@ -73,12 +74,36 @@ import {
   updateSectionTitlePage,
   updateSheetMetadata
 } from "../../logic/commands/drawing-sheet-commands";
+import { createDetailedPanelDrawingSheet } from "../../logic/commands/drawing-detailed-panel-sheet-commands";
+import {
+  placePanelAssetOccurrence,
+  removePanelAssetOccurrence
+} from "../../logic/commands/drawing-panel-occurrence-commands";
+import {
+  applyPanelWiringMutations,
+  createPanelWiringSource
+} from "../../api/panel-wiring-contracts";
+import {
+  buildCompatiblePanelOptions,
+  buildPackageConnectivityGraph,
+  buildPanelDiscoveryIndex,
+  getDetailedPanelDrawingContext,
+  updateDetailedPanelDrawingContext,
+  validatePanelDrawingContext
+} from "@/features/drawing_panel_wiring/api/public";
+import {
+  PanelDrawingContextEditor,
+  PanelDiscoveryDialog,
+  PanelDrawingSummary
+} from "@/features/drawing_panel_wiring/ui/public";
 import { generateDefaultOrthogonalRoute } from "../../logic/services/connection-route-geometry";
 import {
   clampPointToSheet,
   createDefaultNoteAnnotation
 } from "../../logic/services/drawing-annotations";
 import {
+  allocateNextPackageTag,
+  createDrawingAssetId,
   defaultPlacementScale,
   placementAssetId,
   roleFromSymbol,
@@ -99,6 +124,11 @@ import {
   isBackplanePlacement,
   isGeneratedBackplaneSymbolReference
 } from "../../logic/services/drawing-backplane-layouts";
+import {
+  createLayoutDimensionPlacement,
+  isGeneratedLayoutDimensionSymbolReference,
+  layoutDimensionOrientationFromSymbol
+} from "../../logic/services/drawing-layout-dimensions";
 import { createConnectionFromEndpoints } from "../../logic/services/drawing-connections";
 import {
   copySelectionToClipboard,
@@ -139,6 +169,7 @@ import {
   AddSheetDialog,
   type AddSheetDialogSubmission
 } from "./add-sheet-dialog";
+import { SheetLoaderDialog } from "./sheet-loader-dialog";
 import {
   AssetLinkDialog,
   type AssetLinkDialogMode
@@ -149,6 +180,7 @@ import {
   AddSheetTemplateDialog
 } from "@/features/drawing_sheet_templates/ui/components/add-sheet-template-dialog";
 import {
+  allocateNextManagedAssetTag,
   createManagedAsset,
   deleteManagedAsset,
   reconcileDrawingAssets,
@@ -160,6 +192,7 @@ import type {
 } from "@/features/drawing_asset_manager/data/schema";
 import { AssetManagerDialog } from "@/features/drawing_asset_manager/ui/components/asset-manager-dialog";
 import { PlacementPropertiesPanel } from "./placement-properties-panel";
+import { PackagePreviewSurface } from "./package-preview-surface";
 import {
   SaveSheetTemplateDialog,
   type SaveSheetTemplateForm
@@ -167,9 +200,17 @@ import {
 import { SvgDrawingSurface } from "./svg-drawing-surface";
 import { SymbolLibraryPanel } from "./symbol-library-panel";
 import {
+  buildAssociatedPanelAssetCatalog,
+  placeAssociatedPanelAssetOnBackplane
+} from "@/features/drawing_panel_asset_placement/logic/services/panel-associated-assets";
+import { PanelAssociatedAssetsSection } from "@/features/drawing_panel_asset_placement/ui/components/panel-associated-assets-section";
+import {
   getSymbolLibraryContextForSheetKind,
+  hasPanelLayoutPhysicalDimensions,
   isPanelLayoutLibrarySymbol
 } from "../../logic/services/symbol-library-context";
+import { buildSheetLoaderRows } from "../../logic/services/sheet-loader-rows";
+import { getDrawingSheetPresentation } from "../../logic/services/drawing-sheet-presentation";
 import { createTerminalBlockPlacement } from "../../logic/services/drawing-terminal-blocks";
 import {
   createNewAssetFromPlacement,
@@ -188,9 +229,11 @@ type DragState = {
   startPointer: { x: number; y: number };
   startPlacement: { x: number; y: number };
   startModel: DrawingSheetCanvasModel;
+  previewDelta?: { x: number; y: number };
 };
 
 type ConnectionMode = "idle" | "connecting";
+type CanvasViewMode = "edit" | "preview";
 
 type ConnectionDraft = {
   from?: DrawingEndpoint;
@@ -221,6 +264,7 @@ export function DrawingCanvasShell({
       }
     : { ...EMPTY_CANVAS_SELECTION };
   const [title, setTitle] = useState(drawing.title);
+  const [viewMode, setViewMode] = useState<CanvasViewMode>("edit");
   const [model, setModelState] = useState<DrawingModel>(() =>
     normalizeCanvasModel(drawing.model, symbols)
   );
@@ -238,9 +282,22 @@ export function DrawingCanvasShell({
     panX: 0,
     panY: 0
   });
+  const sheetViewportTransformsRef = useRef<Record<string, ViewportTransform>>({
+    [initialSheet.id]: {
+      zoom: 1,
+      panX: 0,
+      panY: 0
+    }
+  });
   const [viewportCenter, setViewportCenter] = useState({
     x: initialSheet.page.width / 2,
     y: initialSheet.page.height / 2
+  });
+  const sheetViewportCentersRef = useRef<Record<string, { x: number; y: number }>>({
+    [initialSheet.id]: {
+      x: initialSheet.page.width / 2,
+      y: initialSheet.page.height / 2
+    }
   });
   const [sheetFocusRequestKey, setSheetFocusRequestKey] = useState(0);
   const [isSymbolsCollapsed, setIsSymbolsCollapsed] = useState(false);
@@ -250,11 +307,13 @@ export function DrawingCanvasShell({
     null
   );
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
+  const [isSheetLoaderOpen, setIsSheetLoaderOpen] = useState(false);
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
   const [isAddTerminalBlockOpen, setIsAddTerminalBlockOpen] = useState(false);
   const [isBackplanePanelPickerOpen, setIsBackplanePanelPickerOpen] =
     useState(false);
   const [isAssetManagerOpen, setIsAssetManagerOpen] = useState(false);
+  const [isPanelDiscoveryOpen, setIsPanelDiscoveryOpen] = useState(false);
   const [isSaveTemplateOpen, setIsSaveTemplateOpen] = useState(false);
   const [isTemplateLibraryOpen, setIsTemplateLibraryOpen] = useState(false);
   const [sheetDeleteCandidateId, setSheetDeleteCandidateId] = useState<
@@ -293,10 +352,67 @@ export function DrawingCanvasShell({
     () => getVisibleSheetContainers(activeSheetCanvasModel),
     [activeSheetCanvasModel]
   );
+  const sheetLoaderRows = useMemo(
+    () => buildSheetLoaderRows(model),
+    [model]
+  );
   const selectedAnnotationId = primaryAnnotationId(selection);
   const activeSheet =
     model.sheets.find((sheet) => sheet.id === resolvedActiveSheetId) ??
     model.sheets[0];
+  const activeSheetPresentation = getDrawingSheetPresentation(activeSheet);
+  const isDetailedPanelDrawing =
+    activeSheetPresentation.workspaceContext === "detailed_panel";
+  const panelWiringSource = useMemo(
+    () => createPanelWiringSource(model, symbols),
+    [model, symbols]
+  );
+  const compatiblePanelOptions = useMemo(
+    () => buildCompatiblePanelOptions(panelWiringSource),
+    [panelWiringSource]
+  );
+  const detailedPanelContext = useMemo(
+    () =>
+      isDetailedPanelDrawing
+        ? getDetailedPanelDrawingContext(
+            panelWiringSource,
+            resolvedActiveSheetId
+          )
+        : undefined,
+    [isDetailedPanelDrawing, panelWiringSource, resolvedActiveSheetId]
+  );
+  const detailedPanelContextWarning = useMemo(() => {
+    if (!isDetailedPanelDrawing) {
+      return undefined;
+    }
+
+    return validatePanelDrawingContext(
+      panelWiringSource,
+      resolvedActiveSheetId
+    )[0]?.message;
+  }, [isDetailedPanelDrawing, panelWiringSource, resolvedActiveSheetId]);
+  const panelConnectivityGraph = useMemo(
+    () =>
+      isDetailedPanelDrawing
+        ? buildPackageConnectivityGraph(panelWiringSource)
+        : undefined,
+    [isDetailedPanelDrawing, panelWiringSource]
+  );
+  const panelDiscoveryIndex = useMemo(() => {
+    if (!panelConnectivityGraph || !detailedPanelContext) {
+      return undefined;
+    }
+
+    return buildPanelDiscoveryIndex({
+      graph: panelConnectivityGraph,
+      panelAssetId: detailedPanelContext.panelAssetId,
+      detailedSheetId: resolvedActiveSheetId
+    });
+  }, [
+    detailedPanelContext,
+    panelConnectivityGraph,
+    resolvedActiveSheetId
+  ]);
   const activeSheetNumber = Math.max(
     1,
     model.sheets.findIndex((sheet) => sheet.id === activeSheet.id) + 1
@@ -505,16 +621,34 @@ export function DrawingCanvasShell({
     }
 
     const sheet = model.sheets.find((candidate) => candidate.id === sheetId);
+    const restoredViewport = sheetViewportTransformsRef.current[sheetId] ?? {
+      zoom: 1,
+      panX: 0,
+      panY: 0
+    };
+    const restoredCenter = sheetViewportCentersRef.current[sheetId] ??
+      (sheet
+        ? {
+            x: sheet.page.width / 2,
+            y: sheet.page.height / 2
+          }
+        : viewportCenter);
 
+    sheetViewportTransformsRef.current[resolvedActiveSheetId] =
+      viewportTransform;
+    sheetViewportCentersRef.current[resolvedActiveSheetId] = viewportCenter;
     setActiveSheet(sheetId);
+    setViewportTransform(restoredViewport);
+    setViewportCenter(restoredCenter);
+    setIsPanelDiscoveryOpen(false);
     clearActiveSheetSelection();
+  };
 
-    if (sheet) {
-      setViewportCenter({
-        x: sheet.page.width / 2,
-        y: sheet.page.height / 2
-      });
-    }
+  const loadSheetFromDialog = (sheetId: string) => {
+    selectSheet(sheetId);
+    setIsSheetLoaderOpen(false);
+    setSheetFocusRequestKey((current) => current + 1);
+    setMessage("Sheet loaded.");
   };
 
   const selectCanvasObject = (
@@ -621,10 +755,61 @@ export function DrawingCanvasShell({
           placement.id === selectedPlacementId && isBackplanePlacement(placement)
       )
     : undefined;
+  const activeAssociatedBackplane = useMemo(() => {
+    const backplanes = getBackplanesForSheet(activeSheetCanvasModel);
+
+    if (selectedBackplane) {
+      return selectedBackplane;
+    }
+
+    const selectedPanel = selectedPlacementId
+      ? visibleSheetContainers.find(
+          (container) => container.placement.id === selectedPlacementId
+        )
+      : undefined;
+
+    if (selectedPanel) {
+      return backplanes.find(
+        (backplane) => backplane.containerAssetId === selectedPanel.assetId
+      );
+    }
+
+    return backplanes[0];
+  }, [
+    activeSheetCanvasModel,
+    selectedBackplane,
+    selectedPlacementId,
+    visibleSheetContainers
+  ]);
+  const activeAssociatedPanel = activeAssociatedBackplane?.containerAssetId
+    ? visibleSheetContainers.find(
+        (container) =>
+          container.assetId === activeAssociatedBackplane.containerAssetId
+      )
+    : undefined;
+  const associatedPanelAssets = useMemo(
+    () =>
+      activeAssociatedBackplane?.containerAssetId
+        ? buildAssociatedPanelAssetCatalog(
+            model,
+            symbols,
+            activeAssociatedBackplane.containerAssetId,
+            activeAssociatedBackplane.id
+          )
+        : [],
+    [activeAssociatedBackplane, model, symbols]
+  );
 
   const addLayoutSymbol = (symbol: ApprovedDrawingSymbol) => {
     const backplanes = getBackplanesForSheet(activeSheetCanvasModel);
     const backplane = selectedBackplane ?? backplanes[0];
+
+    if (!hasPanelLayoutPhysicalDimensions(symbol)) {
+      setMessage(
+        `${symbol.displayName} needs physical width and height before it can be placed on a backplane.`
+      );
+      return;
+    }
 
     if (!backplane) {
       setMessage("Add a backplane before placing panel layout symbols.");
@@ -635,15 +820,29 @@ export function DrawingCanvasShell({
       symbol.metadata.physicalWidthMm ?? symbol.metadata.viewBox.width;
     const widthMm =
       symbol.metadata.physicalHeightMm ?? symbol.metadata.viewBox.height;
+    const placementId = `pl_${Date.now()}`;
+    const isTerminalBlockLayoutSymbol =
+      symbol.category === "terminal_block" &&
+      symbol.metadata.panelCategory === "termination";
+    const tag = isTerminalBlockLayoutSymbol
+      ? allocateNextPackageTag(model, symbol)
+      : symbol.displayName;
     const placement = autosizeLayoutHelperToBackplane({
       backplane,
       symbol,
+      sheet: activeSheetCanvasModel.sheet,
       placement: {
-        id: `pl_${Date.now()}`,
+        id: placementId,
+        ...(isTerminalBlockLayoutSymbol
+          ? {
+              assetId: createDrawingAssetId(placementId),
+              title: symbol.displayName
+            }
+          : {}),
         symbolId: symbol.symbolId,
         versionId: symbol.versionId,
-        role: "other",
-        tag: symbol.displayName,
+        role: isTerminalBlockLayoutSymbol ? roleFromSymbol(symbol) : "other",
+        tag,
         x: backplane.x,
         y: backplane.y,
         rotation: 0,
@@ -659,7 +858,66 @@ export function DrawingCanvasShell({
     updateActiveSheet((current) => addPlacementCommand(current, placement));
     selectPlacement(placement.id);
     setSelectedConnectionId(undefined);
+    setMessage(
+      isTerminalBlockLayoutSymbol
+        ? `${tag} terminal block added to backplane.`
+        : `${symbol.displayName} added to backplane.`
+    );
+  };
+
+  const addLayoutDimensionFromLibrary = (symbol: ApprovedDrawingSymbol) => {
+    const orientation = layoutDimensionOrientationFromSymbol(symbol);
+    const backplanes = getBackplanesForSheet(activeSheetCanvasModel);
+    const backplane = selectedBackplane ?? backplanes[0];
+
+    if (!orientation) {
+      setMessage("Dimension symbol is not configured correctly.");
+      return;
+    }
+
+    if (!backplane) {
+      setMessage("Add a backplane before placing dimensions.");
+      return;
+    }
+
+    const placement = createLayoutDimensionPlacement({
+      backplane,
+      sheet: activeSheetCanvasModel.sheet,
+      orientation
+    });
+
+    updateActiveSheet((current) => addPlacementCommand(current, placement));
+    selectPlacement(placement.id);
+    setSelectedConnectionId(undefined);
     setMessage(`${symbol.displayName} added to backplane.`);
+  };
+
+  const placeAssociatedPanelAsset = (assetId: string) => {
+    if (!activeAssociatedBackplane) {
+      setMessage("Add or select a backplane before placing panel assets.");
+      return;
+    }
+
+    try {
+      const result = placeAssociatedPanelAssetOnBackplane({
+        model,
+        sheetId: resolvedActiveSheetId,
+        backplaneId: activeAssociatedBackplane.id,
+        assetId,
+        symbols
+      });
+
+      commitModel(result.model);
+      selectPlacement(result.placement.id);
+      setSelectedConnectionId(undefined);
+      setMessage(`${result.placement.tag} placed on backplane.`);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Panel asset could not be placed."
+      );
+    }
   };
 
   const addPanel = ({ assetId, tag, title }: AddPanelEnclosureSubmission) => {
@@ -752,6 +1010,50 @@ export function DrawingCanvasShell({
         symbols
       })
     );
+  };
+
+  const previewSelectionDrag = ({
+    delta
+  }: {
+    selection: DrawingCanvasSelection;
+    delta: { x: number; y: number };
+    baseModel?: DrawingSheetCanvasModel;
+  }) => {
+    setDragState((current) =>
+      current
+        ? {
+            ...current,
+            previewDelta: delta
+          }
+        : current
+    );
+  };
+
+  const commitSelectionDrag = () => {
+    const currentDragState = dragState;
+
+    if (!currentDragState?.previewDelta) {
+      setDragState(null);
+      return;
+    }
+
+    const { previewDelta } = currentDragState;
+
+    if (previewDelta.x !== 0 || previewDelta.y !== 0) {
+      updateActiveSheet(() =>
+        moveCanvasSelection({
+          model: currentDragState.startModel,
+          selection: {
+            placementIds: currentDragState.placementIds,
+            annotationIds: []
+          },
+          delta: previewDelta,
+          symbols
+        })
+      );
+    }
+
+    setDragState(null);
   };
 
   const updatePlacementAssetTag = (assetId: string, tag: string) => {
@@ -910,6 +1212,39 @@ export function DrawingCanvasShell({
   };
 
   const removePlacement = (placementId: string) => {
+    const detailedOccurrence = isDetailedPanelDrawing
+      ? activeSheet.placements.find(
+          (placement) =>
+            placement.id === placementId &&
+            Boolean(placement.assetId) &&
+            placement.containerAssetId ===
+              activeSheet.panelDrawingContext?.panelAssetId
+        )
+      : undefined;
+
+    if (detailedOccurrence) {
+      try {
+        const result = removePanelAssetOccurrence({
+          model,
+          sheetId: resolvedActiveSheetId,
+          placementId
+        });
+
+        commitModel(result.model);
+        setSelectedConnectionId(undefined);
+        setSelection({ ...EMPTY_CANVAS_SELECTION });
+        setConnectionDraft({});
+        setMessage(`${detailedOccurrence.tag} returned to the Panel Work Queue.`);
+      } catch (error) {
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "The panel asset representation could not be removed."
+        );
+      }
+      return;
+    }
+
     updateActiveSheet((current) => deletePlacementCommand(current, placementId));
     setSelectedConnectionId(undefined);
     setSelection({
@@ -1028,6 +1363,69 @@ export function DrawingCanvasShell({
 
     const placementIds = new Set(currentSelection.placementIds);
     const annotationIds = new Set(currentSelection.annotationIds);
+
+    if (isDetailedPanelDrawing) {
+      try {
+        let nextModel = model;
+        const representationIds = activeSheet.placements
+          .filter(
+            (placement) =>
+              placementIds.has(placement.id) &&
+              Boolean(placement.assetId) &&
+              placement.containerAssetId ===
+                activeSheet.panelDrawingContext?.panelAssetId
+          )
+          .map((placement) => placement.id);
+
+        representationIds.forEach((placementId) => {
+          nextModel = removePanelAssetOccurrence({
+            model: nextModel,
+            sheetId: resolvedActiveSheetId,
+            placementId
+          }).model;
+        });
+
+        const remainingPlacementIds = new Set(
+          [...placementIds].filter((id) => !representationIds.includes(id))
+        );
+        const currentCanvasModel = toSheetCanvasModel(
+          nextModel,
+          resolvedActiveSheetId
+        );
+        const withoutPlacements = currentCanvasModel.placements.reduce(
+          (nextCanvasModel, placement) =>
+            remainingPlacementIds.has(placement.id)
+              ? deletePlacementCommand(nextCanvasModel, placement.id)
+              : nextCanvasModel,
+          currentCanvasModel
+        );
+
+        nextModel = replaceSheetFromCanvasModel(
+          nextModel,
+          resolvedActiveSheetId,
+          {
+            ...withoutPlacements,
+            annotations: withoutPlacements.annotations.filter(
+              (annotation) => !annotationIds.has(annotation.id)
+            )
+          }
+        );
+        commitModel(nextModel);
+        setSelection({ ...EMPTY_CANVAS_SELECTION });
+        setSelectedConnectionId(undefined);
+        setConnectionDraft({});
+        if (representationIds.length > 0) {
+          setMessage("Panel asset representations returned to the work queue.");
+        }
+      } catch (error) {
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "The selected panel asset representations could not be removed."
+        );
+      }
+      return;
+    }
 
     updateActiveSheet((current) => {
       const withoutPlacements = current.placements.reduce(
@@ -1228,37 +1626,47 @@ export function DrawingCanvasShell({
   };
 
   const addSheet = (submission: AddSheetDialogSubmission) => {
-    const result =
-      submission.kind === "section_title"
-        ? addSectionTitlePageCommand(model, {
-            name: submission.name,
-            title: submission.title,
-            subtitle: submission.subtitle,
-            sectionNumber: submission.sectionNumber
-          })
-        : addDrawingSheetCommand(model, submission.name);
-    const newSheet = result.model.sheets.find(
-      (sheet) => sheet.id === result.sheetId
-    );
+    try {
+      const result =
+        submission.kind === "section_title"
+          ? addSectionTitlePageCommand(model, {
+              name: submission.name,
+              title: submission.title,
+              subtitle: submission.subtitle,
+              sectionNumber: submission.sectionNumber
+            })
+          : submission.kind === "detailed_panel"
+            ? createDetailedPanelDrawingSheet(model, submission, symbols)
+            : addDrawingSheetCommand(model, submission.name);
+      const newSheet = result.model.sheets.find(
+        (sheet) => sheet.id === result.sheetId
+      );
 
-    commitModel(result.model);
-    setIsAddSheetOpen(false);
-    setActiveSheet(result.sheetId);
-    setSheetFocusRequestKey((current) => current + 1);
-    clearActiveSheetSelection();
+      commitModel(result.model);
+      setIsAddSheetOpen(false);
+      setActiveSheet(result.sheetId);
+      setSheetFocusRequestKey((current) => current + 1);
+      clearActiveSheetSelection();
 
-    if (newSheet) {
-      setViewportCenter({
-        x: newSheet.page.width / 2,
-        y: newSheet.page.height / 2
-      });
+      if (newSheet) {
+        setViewportCenter({
+          x: newSheet.page.width / 2,
+          y: newSheet.page.height / 2
+        });
+      }
+
+      setMessage(
+        submission.kind === "section_title"
+          ? "Section title page added."
+          : submission.kind === "detailed_panel"
+            ? "Detailed Panel Drawing added."
+            : "Sheet added."
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Sheet could not be added."
+      );
     }
-
-    setMessage(
-      submission.kind === "section_title"
-        ? "Section title page added."
-        : "Sheet added."
-    );
   };
 
   const requestDuplicateSheet = (sheetId: string) => {
@@ -1317,10 +1725,90 @@ export function DrawingCanvasShell({
     );
   };
 
+  const updateActiveDetailedPanelContext = (panelAssetId: string) => {
+    const result = updateDetailedPanelDrawingContext(panelWiringSource, {
+      sheetId: resolvedActiveSheetId,
+      panelAssetId
+    });
+    const blocking = result.warnings.find(
+      (warning) => warning.severity === "error"
+    );
+
+    if (blocking) {
+      setMessage(blocking.message);
+      return;
+    }
+
+    commitModel((current) =>
+      applyPanelWiringMutations(current, result.mutations)
+    );
+    clearActiveSheetSelection();
+    setMessage("Panel drawing context updated.");
+  };
+
+  const placeDetailedPanelAsset = (assetId: string) => {
+    try {
+      const result = placePanelAssetOccurrence({
+        model,
+        sheetId: resolvedActiveSheetId,
+        assetId,
+        symbols
+      });
+
+      commitModel(result.model);
+      selectPlacement(result.placement.id);
+      setMessage(`${result.placement.tag} placed from the existing panel asset.`);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "The panel asset could not be represented on this sheet."
+      );
+    }
+  };
+
+  const removeDetailedPanelAsset = (placementId: string) => {
+    const placement = activeSheet.placements.find(
+      (candidate) => candidate.id === placementId
+    );
+
+    try {
+      const result = removePanelAssetOccurrence({
+        model,
+        sheetId: resolvedActiveSheetId,
+        placementId
+      });
+
+      commitModel(result.model);
+      if (selectionRef.current.placementIds.includes(placementId)) {
+        setSelection({ ...EMPTY_CANVAS_SELECTION });
+      }
+      setMessage(
+        `${placement?.tag ?? "Panel asset"} returned to the Panel Work Queue.`
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "The panel asset representation could not be removed."
+      );
+    }
+  };
+
+  const selectDetailedPanelAsset = (placementId: string) => {
+    selectPlacement(placementId);
+    setMessage("Panel asset occurrence selected.");
+  };
+
   const addSymbolFromLibrary = (symbol: ApprovedDrawingSymbol) => {
     if (symbolLibraryContext === "wiring") {
       if (isGeneratedBackplaneSymbolReference(symbol)) {
         addBackplaneFromLibrary();
+        return;
+      }
+
+      if (isGeneratedLayoutDimensionSymbolReference(symbol)) {
+        addLayoutDimensionFromLibrary(symbol);
         return;
       }
 
@@ -1513,6 +2001,21 @@ export function DrawingCanvasShell({
     );
   };
 
+  const openPackagePreview = () => {
+    setConnectionMode("idle");
+    setConnectionDraft({});
+    setSelectedConnectionId(undefined);
+    setDragState(null);
+    setIsSheetLoaderOpen(false);
+    setIsAddSheetOpen(false);
+    setIsAddPanelOpen(false);
+    setIsAddTerminalBlockOpen(false);
+    setIsBackplanePanelPickerOpen(false);
+    setIsPanelDiscoveryOpen(false);
+    setPendingSymbol(null);
+    setViewMode("preview");
+  };
+
   return (
     <div className="space-y-5">
       {pendingSymbol ? (
@@ -1550,8 +2053,22 @@ export function DrawingCanvasShell({
       {isAddSheetOpen ? (
         <AddSheetDialog
           nextSheetNumber={model.sheets.length + 1}
+          panelOptions={compatiblePanelOptions}
+          suggestedPanelTag={allocateNextManagedAssetTag(model, "panel")}
+          suggestedJunctionBoxTag={allocateNextManagedAssetTag(
+            model,
+            "junction_box"
+          )}
           onCancel={() => setIsAddSheetOpen(false)}
           onAdd={addSheet}
+        />
+      ) : null}
+      {isSheetLoaderOpen ? (
+        <SheetLoaderDialog
+          rows={sheetLoaderRows}
+          activeSheetId={resolvedActiveSheetId}
+          onCancel={() => setIsSheetLoaderOpen(false)}
+          onLoadSheet={loadSheetFromDialog}
         />
       ) : null}
       {isSaveTemplateOpen ? (
@@ -1626,6 +2143,16 @@ export function DrawingCanvasShell({
           onDeleteAsset={deleteAssetManagerAsset}
         />
       ) : null}
+      {isPanelDiscoveryOpen && panelDiscoveryIndex && detailedPanelContext ? (
+        <PanelDiscoveryDialog
+          index={panelDiscoveryIndex}
+          panelLabel={`${detailedPanelContext.tag} / ${detailedPanelContext.title}`}
+          onCancel={() => setIsPanelDiscoveryOpen(false)}
+          onPlaceAsset={placeDetailedPanelAsset}
+          onSelectPlacement={selectDetailedPanelAsset}
+          onRemovePlacement={removeDetailedPanelAsset}
+        />
+      ) : null}
 
       <div className="tool-panel flex flex-wrap items-center justify-between gap-3 p-4">
         <div>
@@ -1635,68 +2162,119 @@ export function DrawingCanvasShell({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="icon-button"
-            disabled={isPending}
-            onClick={() => setIsAssetManagerOpen(true)}
-          >
-            <PackageSearch aria-hidden="true" size={14} />
-            Asset Manager
-          </button>
-          <button type="button" className="icon-button" disabled={isPending} onClick={save}>
-            <Save aria-hidden="true" size={14} />
-            Save
-          </button>
-          <button
-            type="button"
-            className="icon-button"
-            disabled={isPending}
-            onClick={exportPdf}
-          >
-            <FileDown aria-hidden="true" size={14} />
-            Preview PDF
-          </button>
-          <button type="button" className="icon-button" disabled={isPending} onClick={addNote}>
-            <StickyNote aria-hidden="true" size={14} />
-            Add note
-          </button>
-          <button
-            type="button"
-            className="icon-button icon-button-primary"
-            disabled={isPending}
-            onClick={approve}
-          >
-            <CheckCircle2 aria-hidden="true" size={14} />
-            Approve
-          </button>
-          <button
-            type="button"
-            className={[
-              "icon-button",
-              connectionMode === "connecting" ? "icon-button-primary" : ""
-            ].join(" ")}
-            aria-pressed={connectionMode === "connecting"}
-            disabled={isPending}
-            onClick={toggleConnectMode}
-          >
-            <Link2 aria-hidden="true" size={14} />
-            Connect
-          </button>
+          {viewMode === "preview" ? (
+            <>
+              <button
+                type="button"
+                className="icon-button"
+                disabled={isPending}
+                onClick={exportPdf}
+              >
+                <FileDown aria-hidden="true" size={14} />
+                Preview PDF
+              </button>
+              <button
+                type="button"
+                className="icon-button icon-button-primary"
+                onClick={() => setViewMode("edit")}
+              >
+                Exit preview
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="icon-button"
+                disabled={isPending}
+                onClick={() => setIsAssetManagerOpen(true)}
+              >
+                <PackageSearch aria-hidden="true" size={14} />
+                Asset Manager
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                disabled={isPending}
+                onClick={save}
+              >
+                <Save aria-hidden="true" size={14} />
+                Save
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                disabled={isPending}
+                onClick={openPackagePreview}
+              >
+                <Eye aria-hidden="true" size={14} />
+                Package Preview
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                disabled={isPending}
+                onClick={exportPdf}
+              >
+                <FileDown aria-hidden="true" size={14} />
+                Preview PDF
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                disabled={isPending}
+                onClick={addNote}
+              >
+                <StickyNote aria-hidden="true" size={14} />
+                Add note
+              </button>
+              <button
+                type="button"
+                className="icon-button icon-button-primary"
+                disabled={isPending}
+                onClick={approve}
+              >
+                <CheckCircle2 aria-hidden="true" size={14} />
+                Approve
+              </button>
+              {!isDetailedPanelDrawing ? <button
+                type="button"
+                className={[
+                  "icon-button",
+                  connectionMode === "connecting" ? "icon-button-primary" : ""
+                ].join(" ")}
+                aria-pressed={connectionMode === "connecting"}
+                disabled={isPending}
+                onClick={toggleConnectMode}
+              >
+                <Link2 aria-hidden="true" size={14} />
+                Connect
+              </button> : null}
+            </>
+          )}
         </div>
       </div>
 
-      <div
-        className={[
-          "drawing-canvas-layout",
-          isSymbolsCollapsed
-            ? "drawing-canvas-layout-symbols-collapsed"
-            : "",
-          isPropertiesCollapsed
-            ? "drawing-canvas-layout-properties-collapsed"
-            : ""
-        ].join(" ")}
-      >
+      {viewMode === "preview" ? (
+        <PackagePreviewSurface
+          model={model}
+          drawingTitle={title}
+          symbols={symbols}
+          onExitPreview={() => setViewMode("edit")}
+          onPreviewPdf={exportPdf}
+        />
+      ) : (
+        <div
+          className={[
+            "drawing-canvas-layout",
+            isSymbolsCollapsed
+              ? "drawing-canvas-layout-symbols-collapsed"
+              : "",
+            isPropertiesCollapsed
+              ? "drawing-canvas-layout-properties-collapsed"
+              : ""
+          ].join(" ")}
+        >
         <aside
           className={[
             "drawing-symbols-sidebar",
@@ -1722,37 +2300,76 @@ export function DrawingCanvasShell({
               </button>
             </div>
           ) : (
-            <SymbolLibraryPanel
-              symbols={symbols}
-              context={symbolLibraryContext}
-              headerAction={
-                <button
-                  type="button"
-                  className="sidebar-toggle"
-                  onClick={() => setIsSymbolsCollapsed(true)}
-                  aria-label="Collapse symbol library panel"
-                  title="Collapse symbol library panel"
-                >
-                  <PanelLeftClose aria-hidden="true" size={17} />
-                </button>
-              }
-              onAddSymbol={addSymbolFromLibrary}
-            />
+            <div className="space-y-4">
+              {isDetailedPanelDrawing ? (
+                <PanelDrawingSummary
+                  context={detailedPanelContext}
+                  warning={detailedPanelContextWarning}
+                  discovery={panelDiscoveryIndex}
+                  onOpenWorkQueue={
+                    panelDiscoveryIndex
+                      ? () => setIsPanelDiscoveryOpen(true)
+                      : undefined
+                  }
+                  headerAction={
+                    <button
+                      type="button"
+                      className="sidebar-toggle"
+                      onClick={() => setIsSymbolsCollapsed(true)}
+                      aria-label="Collapse panel drawing summary"
+                      title="Collapse panel drawing summary"
+                    >
+                      <PanelLeftClose aria-hidden="true" size={17} />
+                    </button>
+                  }
+                />
+              ) : (
+                <>
+                  <SymbolLibraryPanel
+                    symbols={symbols}
+                    context={symbolLibraryContext}
+                    headerAction={
+                      <button
+                        type="button"
+                        className="sidebar-toggle"
+                        onClick={() => setIsSymbolsCollapsed(true)}
+                        aria-label="Collapse symbol library panel"
+                        title="Collapse symbol library panel"
+                      >
+                        <PanelLeftClose aria-hidden="true" size={17} />
+                      </button>
+                    }
+                    onAddSymbol={addSymbolFromLibrary}
+                  />
+                  {activeAssociatedPanel ? (
+                    <PanelAssociatedAssetsSection
+                      panelLabel={`${activeAssociatedPanel.placement.tag} / ${getPanelEnclosureTitle(
+                        activeAssociatedPanel.placement
+                      )}`}
+                      items={associatedPanelAssets}
+                      onPlaceAsset={placeAssociatedPanelAsset}
+                    />
+                  ) : null}
+                </>
+              )}
+            </div>
           )}
         </aside>
         <SvgDrawingSurface
           model={model}
           drawingTitle={title}
+          workspaceContext={activeSheetPresentation.workspaceContext}
           activeSheetId={resolvedActiveSheetId}
           focusSheetRequestKey={sheetFocusRequestKey}
           symbols={symbols}
           selection={selection}
           selectedPlacementId={selectedPlacementId}
           viewportTransform={viewportTransform}
+          viewportCenter={viewportCenter}
           setViewportTransform={setViewportTransform}
           dragState={dragState}
-          onActiveSheetChange={selectSheet}
           onAddSheet={() => setIsAddSheetOpen(true)}
+          onOpenSheetLoader={() => setIsSheetLoaderOpen(true)}
           onAddPanel={() => setIsAddPanelOpen(true)}
           onAddTerminalBlock={() => setIsAddTerminalBlockOpen(true)}
           onAddSheetFromTemplate={openTemplateLibrary}
@@ -1775,8 +2392,8 @@ export function DrawingCanvasShell({
           onAnnotationChange={updateAnnotation}
           onAnnotationGroupChange={updateAnnotationGroup}
           onDragStart={setDragState}
-          onDragMove={moveSelection}
-          onDragEnd={() => setDragState(null)}
+          onDragMove={previewSelectionDrag}
+          onDragEnd={commitSelectionDrag}
           onGestureStart={beginModelHistoryTransaction}
           onGestureEnd={endModelHistoryTransaction}
           onCopySelection={copySelection}
@@ -1819,7 +2436,27 @@ export function DrawingCanvasShell({
               </button>
             </div>
           ) : (
-            <PlacementPropertiesPanel
+            <div className="space-y-4">
+              {isDetailedPanelDrawing ? (
+                <PanelDrawingContextEditor
+                  context={detailedPanelContext}
+                  options={compatiblePanelOptions}
+                  warning={detailedPanelContextWarning}
+                  headerAction={
+                    <button
+                      type="button"
+                      className="sidebar-toggle"
+                      onClick={() => setIsPropertiesCollapsed(true)}
+                      aria-label="Collapse drawing properties panel"
+                      title="Collapse drawing properties panel"
+                    >
+                      <PanelRightClose aria-hidden="true" size={17} />
+                    </button>
+                  }
+                  onPanelAssetChange={updateActiveDetailedPanelContext}
+                />
+              ) : null}
+              <PlacementPropertiesPanel
               title={title}
               model={activeSheetCanvasModel}
               packageModel={model}
@@ -1827,7 +2464,7 @@ export function DrawingCanvasShell({
               activeSheetNumber={activeSheetNumber}
               sheetCount={model.sheets.length}
               symbols={symbols}
-              headerAction={
+              headerAction={isDetailedPanelDrawing ? undefined :
                 <button
                   type="button"
                   className="sidebar-toggle"
@@ -1857,12 +2494,15 @@ export function DrawingCanvasShell({
               onConnectionChange={updateConnection}
               onConnectionRemove={removeConnection}
               onConnectionRouteReset={resetConnectionRoute}
+              showConnections={!isDetailedPanelDrawing}
               onAnnotationChange={updateAnnotation}
               onAnnotationRemove={removeAnnotation}
-            />
+              />
+            </div>
           )}
         </aside>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

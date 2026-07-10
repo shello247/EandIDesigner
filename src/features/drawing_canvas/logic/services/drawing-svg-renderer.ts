@@ -23,9 +23,30 @@ import {
 } from "./drawing-asset-containment";
 import {
   isBackplanePlacement,
+  isLayoutHelperPlacement,
+  normalizeLayoutHelperDimensionsForSymbol,
   renderBackplanePlacement
 } from "./drawing-backplane-layouts";
-import { getRenderableSymbolForPlacement } from "./drawing-generated-symbols";
+import {
+  resolveDrawingBackplaneScaleLabel,
+  resolveLayoutHelperDisplayPlacement
+} from "./drawing-backplane-scale";
+import {
+  getRenderableSymbolForPlacement,
+  isGeneratedTerminalBlockPlacement
+} from "./drawing-generated-symbols";
+import {
+  isGeneratedWireTraySymbolReference,
+  renderWireTraySvg
+} from "./drawing-wire-tray-layouts";
+import {
+  type LayoutLabelPosition,
+  resolveLayoutLabel
+} from "./drawing-layout-labels";
+import {
+  isGeneratedLayoutDimensionSymbolReference,
+  renderLayoutDimensionSvg
+} from "./drawing-layout-dimensions";
 
 function escapeXml(value: string): string {
   return value
@@ -252,6 +273,7 @@ function renderApprovalGrid(params: {
   preparedBy?: string;
   checkedBy?: string;
   date?: string;
+  scaleLabel: string;
 }): string {
   const labelWidth = 37;
   const rowHeight = params.height / 6;
@@ -260,7 +282,7 @@ function renderApprovalGrid(params: {
     { label: "DATE", value: params.date },
     { label: "CHECKED", value: nameWithInitials(params.checkedBy) },
     { label: "APPROVED", value: "" },
-    { label: "ORIGINAL SCALE", value: "NTS" },
+    { label: "ORIGINAL SCALE", value: params.scaleLabel },
     { label: "D/O MOC NO.", value: "" }
   ];
 
@@ -350,6 +372,7 @@ function renderMetadataGrid(params: {
   sheetCount: number;
   revision?: string;
   date?: string;
+  scaleLabel: string;
 }): string {
   const rowHeight = params.height / 5;
 
@@ -404,7 +427,7 @@ function renderMetadataGrid(params: {
         width: params.width,
         height: rowHeight,
         label: "SCALE",
-        value: "NTS",
+        value: params.scaleLabel,
         maxLength: 8,
         valueSize: 2.35,
         valueWeight: 700
@@ -418,7 +441,8 @@ function renderTitleBlock(
   sheetNumber: number,
   sheetCount: number,
   drawingTitle?: string,
-  sheetTitle?: string
+  sheetTitle?: string,
+  scaleLabel = "NTS"
 ): string {
   const titleBlock = model.sheet.titleBlock;
   const margin = 6;
@@ -459,7 +483,8 @@ function renderTitleBlock(
         height: blockHeight,
         preparedBy: titleBlock.preparedBy,
         checkedBy: titleBlock.checkedBy,
-        date: titleBlock.date
+        date: titleBlock.date,
+        scaleLabel
       })}
       ${renderTitleField({
         x: titleX,
@@ -477,7 +502,8 @@ function renderTitleBlock(
         sheetNumber,
         sheetCount,
         revision: titleBlock.revision,
-        date: titleBlock.date
+        date: titleBlock.date,
+        scaleLabel
       })}
     </g>
   `;
@@ -503,6 +529,123 @@ function stripSvgRoot(svg: string): string {
     .replace(/^[\s\S]*?<svg\b[^>]*>/i, "")
     .replace(/<\/svg>\s*$/i, "")
     .trim();
+}
+
+function stripSvgText(svg: string): string {
+  return svg
+    .replace(/<text\b[\s\S]*?<\/text>/gi, "")
+    .replace(/<tspan\b[\s\S]*?<\/tspan>/gi, "");
+}
+
+function labelPointForPosition({
+  placement,
+  position
+}: {
+  placement: DrawingModel["placements"][number];
+  position: LayoutLabelPosition;
+}): {
+  x: number;
+  y: number;
+  textAnchor: "start" | "middle" | "end";
+} {
+  const width = placement.layoutDimensions?.lengthMm ?? 0;
+  const height = placement.layoutDimensions?.widthMm ?? 0;
+  const left = placement.x;
+  const top = placement.y;
+  const right = placement.x + width;
+  const bottom = placement.y + height;
+  const inset = 1.2;
+  const outsideOffset = 1.35;
+  const baselineCenterOffset = 0.75;
+  const baselineBottomOffset = 3;
+
+  switch (position) {
+    case "center":
+      return {
+        x: Number((left + width / 2).toFixed(2)),
+        y: Number((top + height / 2 + baselineCenterOffset).toFixed(2)),
+        textAnchor: "middle"
+      };
+    case "top-left":
+      return {
+        x: Number((left + inset).toFixed(2)),
+        y: Number((top - outsideOffset).toFixed(2)),
+        textAnchor: "start"
+      };
+    case "top-right":
+      return {
+        x: Number((right - inset).toFixed(2)),
+        y: Number((top - outsideOffset).toFixed(2)),
+        textAnchor: "end"
+      };
+    case "bottom-left":
+      return {
+        x: Number((left + inset).toFixed(2)),
+        y: Number((bottom + baselineBottomOffset).toFixed(2)),
+        textAnchor: "start"
+      };
+    case "bottom-center":
+      return {
+        x: Number((left + width / 2).toFixed(2)),
+        y: Number((bottom + baselineBottomOffset).toFixed(2)),
+        textAnchor: "middle"
+      };
+    case "bottom-right":
+      return {
+        x: Number((right - inset).toFixed(2)),
+        y: Number((bottom + baselineBottomOffset).toFixed(2)),
+        textAnchor: "end"
+      };
+    case "top-center":
+    default:
+      return {
+        x: Number((left + width / 2).toFixed(2)),
+        y: Number((top - outsideOffset).toFixed(2)),
+        textAnchor: "middle"
+      };
+  }
+}
+
+function layoutLabelRotation(placement: DrawingModel["placements"][number]): number {
+  const normalizedRotation = ((placement.rotation % 360) + 360) % 360;
+
+  return Math.abs(normalizedRotation - 90) < 1 ||
+    Math.abs(normalizedRotation - 270) < 1
+    ? 90
+    : 0;
+}
+
+function layoutHelperTagLabel({
+  placement,
+  symbol
+}: {
+  placement: DrawingModel["placements"][number];
+  symbol: ApprovedDrawingSymbol | undefined;
+}): string {
+  if (!isLayoutHelperPlacement(placement)) {
+    return "";
+  }
+
+  const label = resolveLayoutLabel({ placement, symbol });
+
+  if (!label.visible) {
+    return "";
+  }
+
+  const labelPoint = labelPointForPosition({
+    placement,
+    position: label.position
+  });
+  const text = escapeXml(label.text);
+  const transform = label.alignWithRotation
+    ? ` transform="rotate(${layoutLabelRotation(placement)} ${labelPoint.x} ${labelPoint.y})"`
+    : "";
+
+  return `
+    <g data-layout-helper-label-id="${escapeXml(placement.id)}"${transform}>
+      <text data-placement-tag="${escapeXml(placement.id)}" x="${labelPoint.x}" y="${labelPoint.y}" text-anchor="${labelPoint.textAnchor}" font-family="Inter, Poppins, Arial, Helvetica, sans-serif" font-size="2.25" font-weight="600" letter-spacing="0.06" fill="#1f2937">${text}</text>
+    </g>
+  `;
 }
 
 const inheritedSvgAttributes = new Set([
@@ -751,6 +894,30 @@ export function renderDrawingToSvg(params: {
     isGeneratedPanelEnclosurePlacement
   );
   const backplanePlacements = model.placements.filter(isBackplanePlacement);
+  const backplaneById = new Map(
+    backplanePlacements.map((placement) => [placement.id, placement])
+  );
+  const renderPlacementForSheet = (
+    placement: DrawingModel["placements"][number],
+    symbol: ApprovedDrawingSymbol
+  ) => {
+    const parentBackplane =
+      isLayoutHelperPlacement(placement) && placement.layoutParentId
+        ? backplaneById.get(placement.layoutParentId)
+        : undefined;
+    const normalizedPlacement = normalizeLayoutHelperDimensionsForSymbol(
+      placement,
+      symbol
+    );
+
+    return parentBackplane
+      ? resolveLayoutHelperDisplayPlacement({
+          sheet: model.sheet,
+          placement: normalizedPlacement,
+          backplane: parentBackplane
+        })
+      : normalizedPlacement;
+  };
   const normalPlacements = model.placements.filter(
     (placement) =>
       !isGeneratedPanelEnclosurePlacement(placement) &&
@@ -783,7 +950,9 @@ export function renderDrawingToSvg(params: {
     : "";
 
   const panelEnclosures = panelPlacements.map(renderPanelEnclosure).join("");
-  const backplanes = backplanePlacements.map(renderBackplanePlacement).join("");
+  const backplanes = backplanePlacements
+    .map((placement) => renderBackplanePlacement(placement, model.sheet))
+    .join("");
 
   const placements = normalPlacements
         .map((placement) => {
@@ -796,11 +965,37 @@ export function renderDrawingToSvg(params: {
         return "";
       }
 
-      const transform = getPlacementTransform(placement, symbol.metadata);
+      const renderPlacement = renderPlacementForSheet(placement, symbol);
+
+      if (isGeneratedLayoutDimensionSymbolReference(placement)) {
+        const parentBackplane = placement.layoutParentId
+          ? backplaneById.get(placement.layoutParentId)
+          : undefined;
+
+        if (!parentBackplane) {
+          return "";
+        }
+
+        return `
+          <g data-placement-id="${escapeXml(placement.id)}" data-symbol-key="${escapeXml(symbol.symbolKey)}">
+            ${renderLayoutDimensionSvg({
+              model,
+              sourcePlacement: placement,
+              backplane: parentBackplane
+            })}
+          </g>
+        `;
+      }
+
+      const transform = getPlacementTransform(renderPlacement, symbol.metadata);
       const anchors = showAnchors
         ? symbol.metadata.anchors
             .map((anchor) => {
-              const point = getAnchorWorldPoint(placement, symbol.metadata, anchor);
+              const point = getAnchorWorldPoint(
+                renderPlacement,
+                symbol.metadata,
+                anchor
+              );
               return `<circle cx="${point.x}" cy="${point.y}" r="1.8" fill="#ffffff" stroke="#0f766e" stroke-width="0.45"><title>${escapeXml(anchor.key)}</title></circle>`;
             })
             .join("")
@@ -809,7 +1004,14 @@ export function renderDrawingToSvg(params: {
       return `
         <g data-placement-id="${escapeXml(placement.id)}" data-symbol-key="${escapeXml(symbol.symbolKey)}">
           <g transform="${transform}" ${extractInheritedRootAttributes(symbol.svg)}>
-            ${stripSvgRoot(symbol.svg)}
+            ${
+              isGeneratedWireTraySymbolReference(placement)
+                ? renderWireTraySvg({ placement, model })
+                : isLayoutHelperPlacement(placement) &&
+              !isGeneratedTerminalBlockPlacement(placement)
+                ? stripSvgText(stripSvgRoot(symbol.svg))
+                : stripSvgRoot(symbol.svg)
+            }
           </g>
           ${anchors}
         </g>
@@ -827,14 +1029,24 @@ export function renderDrawingToSvg(params: {
         return "";
       }
 
-      const showPlacementTitle = shouldShowPlacementTitle(placement, symbol);
+      const renderPlacement = renderPlacementForSheet(placement, symbol);
+
+      if (isGeneratedLayoutDimensionSymbolReference(placement)) {
+        return "";
+      }
+
+      if (isLayoutHelperPlacement(placement)) {
+        return layoutHelperTagLabel({ placement: renderPlacement, symbol });
+      }
+
+      const showPlacementTitle = shouldShowPlacementTitle(renderPlacement, symbol);
       const placementLabelPoints = showPlacementTitle
-        ? getPlacementLabelPoints(placement)
+        ? getPlacementLabelPoints(renderPlacement)
         : undefined;
-      const placementTitleText = getPlacementDisplayTitle(placement, symbol);
+      const placementTitleText = getPlacementDisplayTitle(renderPlacement, symbol);
       const tagPoint = placementLabelPoints?.tagPoint ?? {
-        x: placement.x,
-        y: placement.y - 3
+        x: renderPlacement.x,
+        y: renderPlacement.y - 3
       };
       const placementTitle =
         showPlacementTitle && placementLabelPoints
@@ -864,7 +1076,8 @@ export function renderDrawingToSvg(params: {
     sheetNumber,
     sheetCount,
     drawingTitle,
-    sheetTitle
+    sheetTitle,
+    resolveDrawingBackplaneScaleLabel(model)
   );
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${model.sheet.width}mm" height="${model.sheet.height}mm" viewBox="0 0 ${model.sheet.width} ${model.sheet.height}">
