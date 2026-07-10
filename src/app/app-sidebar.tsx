@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   DraftingCompass,
   LibraryBig,
+  Network,
   PanelLeftClose,
   PanelLeftOpen,
   Plus
@@ -26,6 +27,13 @@ const navItems = [
     icon: DraftingCompass,
     isActive: (pathname: string) =>
       pathname === "/drawings" || pathname.startsWith("/drawings/")
+  },
+  {
+    href: "/networking",
+    label: "Networking",
+    icon: Network,
+    isActive: (pathname: string) =>
+      pathname === "/networking" || pathname.startsWith("/networking/")
   },
   {
     href: "/symbols/new",

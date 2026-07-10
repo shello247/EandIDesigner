@@ -535,3 +535,27 @@ svg {
   max-width: none;
   max-height: none;
 }
+
+.network-map-canvas-panel {
+  min-height: 0;
+}
+
+.network-map-canvas-viewport {
+  height: clamp(620px, calc(100vh - 178px), 900px);
+  overscroll-behavior: contain;
+  scroll-behavior: auto;
+}
+
+.network-map-sheet-frame {
+  content-visibility: auto;
+  contain-intrinsic-size: 900px 650px;
+}
+
+.network-map-sheet-scale-frame {
+  position: relative;
+}
+
+.network-map-sheet-stage {
+  transform-origin: 0 0;
+  will-change: transform;
+}

@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import {
+  isNetworkSymbolCategory,
   parseMetadataJson,
   symbolCategorySchema,
   symbolStatusSchema,
@@ -227,7 +228,8 @@ export async function getSymbolVersionForExport(symbolId: string) {
 export async function listDrawingSymbolVersions() {
   const rows = await prisma.symbol.findMany({
     where: {
-      status: { not: "archived" }
+      status: { not: "archived" },
+      category: { not: "network_device" }
     },
     include: {
       versions: {
@@ -258,6 +260,52 @@ export async function listDrawingSymbolVersions() {
         versionNumber: version.versionNumber,
         svg: version.svg,
         metadata: parseMetadataJson(version.metadataJson)
+      }
+    ];
+  });
+}
+
+export async function listNetworkSymbolVersions() {
+  const rows = await prisma.symbol.findMany({
+    where: {
+      status: "approved",
+      category: "network_device"
+    },
+    include: {
+      versions: {
+        where: { status: "approved" },
+        orderBy: { versionNumber: "desc" },
+        take: 1
+      }
+    },
+    orderBy: [{ displayName: "asc" }]
+  });
+
+  return rows.flatMap((symbol) => {
+    const version = symbol.versions[0];
+
+    if (!version) {
+      return [];
+    }
+
+    const metadata = parseMetadataJson(version.metadataJson);
+
+    if (!metadata.networkProfile || !isNetworkSymbolCategory(metadata.category)) {
+      return [];
+    }
+
+    return [
+      {
+        symbolId: symbol.id,
+        symbolKey: symbol.symbolKey,
+        displayName: symbol.displayName,
+        manufacturer: symbol.manufacturer,
+        model: symbol.model,
+        category: symbolCategorySchema.parse(symbol.category),
+        versionId: version.id,
+        versionNumber: version.versionNumber,
+        svg: version.svg,
+        metadata
       }
     ];
   });

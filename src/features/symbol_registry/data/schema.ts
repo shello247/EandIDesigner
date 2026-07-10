@@ -12,12 +12,22 @@ export const symbolCategorySchema = z.enum([
   "monitor",
   "terminal_block",
   "cable_assembly",
+  "network_device",
   "gland",
   "other"
 ]);
 
+export function isDrawingSymbolCategory(category: string): boolean {
+  return category !== "network_device";
+}
+
+export function isNetworkSymbolCategory(category: string): boolean {
+  return category === "network_device";
+}
+
 export const anchorKindSchema = z.enum([
   "terminal",
+  "network_port",
   "ground",
   "shield",
   "label",
@@ -56,6 +66,27 @@ export const symbolPanelCategorySchema = z.enum([
   "other"
 ]);
 
+export const networkDeviceTypeSchema = z.enum([
+  "switch",
+  "router_firewall",
+  "controller_plc",
+  "hmi_workstation",
+  "server",
+  "wireless_radio",
+  "field_device",
+  "patch_point",
+  "media_converter"
+]);
+
+export const networkPortMediaSchema = z.enum([
+  "copper",
+  "fiber",
+  "wireless",
+  "serial",
+  "virtual",
+  "other"
+]);
+
 export const viewBoxSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
@@ -87,22 +118,77 @@ export const symbolLayoutMetadataSchema = z.object({
   resizable: z.boolean().default(false)
 });
 
-export const symbolMetadataSchema = z.object({
-  symbolKey: z.string().trim().min(1).max(120),
-  displayName: z.string().trim().min(1).max(200),
-  manufacturer: z.string().trim().max(160).optional(),
-  model: z.string().trim().max(160).optional(),
-  category: symbolCategorySchema,
-  layoutUsage: symbolLayoutUsageSchema.optional(),
-  physicalWidthMm: z.number().positive().optional(),
-  physicalHeightMm: z.number().positive().optional(),
-  mountingType: symbolPanelMountingTypeSchema.optional(),
-  panelCategory: symbolPanelCategorySchema.optional(),
-  resizable: z.boolean().optional(),
-  viewBox: viewBoxSchema,
-  terminals: z.array(symbolTerminalSchema),
-  anchors: z.array(symbolAnchorSchema)
+export const symbolNetworkPortSchema = z.object({
+  key: z.string().trim().min(1).max(80),
+  label: z.string().trim().min(1).max(120),
+  anchorKey: z.string().trim().min(1).max(80),
+  media: networkPortMediaSchema,
+  speedMbps: z.number().int().positive().optional(),
+  protocolHints: z.array(z.string().trim().min(1).max(80)).default([])
 });
+
+export const symbolNetworkProfileSchema = z.object({
+  deviceType: networkDeviceTypeSchema,
+  managed: z.boolean().optional(),
+  ports: z.array(symbolNetworkPortSchema).default([])
+});
+
+export const symbolMetadataSchema = z
+  .object({
+    symbolKey: z.string().trim().min(1).max(120),
+    displayName: z.string().trim().min(1).max(200),
+    manufacturer: z.string().trim().max(160).optional(),
+    model: z.string().trim().max(160).optional(),
+    category: symbolCategorySchema,
+    layoutUsage: symbolLayoutUsageSchema.optional(),
+    physicalWidthMm: z.number().positive().optional(),
+    physicalHeightMm: z.number().positive().optional(),
+    mountingType: symbolPanelMountingTypeSchema.optional(),
+    panelCategory: symbolPanelCategorySchema.optional(),
+    resizable: z.boolean().optional(),
+    networkProfile: symbolNetworkProfileSchema.optional(),
+    viewBox: viewBoxSchema,
+    terminals: z.array(symbolTerminalSchema),
+    anchors: z.array(symbolAnchorSchema)
+  })
+  .superRefine((metadata, context) => {
+    if (!metadata.networkProfile) {
+      return;
+    }
+
+    if (metadata.category !== "network_device") {
+      context.addIssue({
+        code: "custom",
+        message: "Network profile is only valid for network device symbols.",
+        path: ["networkProfile"]
+      });
+    }
+
+    const anchorsByKey = new Map(
+      metadata.anchors.map((anchor) => [anchor.key, anchor])
+    );
+
+    metadata.networkProfile.ports.forEach((port, index) => {
+      const anchor = anchorsByKey.get(port.anchorKey);
+
+      if (!anchor) {
+        context.addIssue({
+          code: "custom",
+          message: `Network port "${port.key}" references a missing anchor.`,
+          path: ["networkProfile", "ports", index, "anchorKey"]
+        });
+        return;
+      }
+
+      if (anchor.kind !== "network_port") {
+        context.addIssue({
+          code: "custom",
+          message: `Network port "${port.key}" must reference a network port anchor.`,
+          path: ["networkProfile", "ports", index, "anchorKey"]
+        });
+      }
+    });
+  });
 
 export const validationIssueSchema = z.object({
   severity: validationIssueSeveritySchema,
@@ -235,12 +321,16 @@ export const terminalMapVerificationJsonSchema = {
 export type SymbolStatus = z.infer<typeof symbolStatusSchema>;
 export type SymbolCategory = z.infer<typeof symbolCategorySchema>;
 export type AnchorKind = z.infer<typeof anchorKindSchema>;
+export type NetworkDeviceType = z.infer<typeof networkDeviceTypeSchema>;
+export type NetworkPortMedia = z.infer<typeof networkPortMediaSchema>;
 export type SymbolLayoutUsage = z.infer<typeof symbolLayoutUsageSchema>;
 export type SymbolPanelMountingType = z.infer<
   typeof symbolPanelMountingTypeSchema
 >;
 export type SymbolPanelCategory = z.infer<typeof symbolPanelCategorySchema>;
 export type SymbolLayoutMetadata = z.infer<typeof symbolLayoutMetadataSchema>;
+export type SymbolNetworkPort = z.infer<typeof symbolNetworkPortSchema>;
+export type SymbolNetworkProfile = z.infer<typeof symbolNetworkProfileSchema>;
 export type SymbolMetadata = z.infer<typeof symbolMetadataSchema>;
 export type SymbolAnchor = z.infer<typeof symbolAnchorSchema>;
 export type SymbolTerminal = z.infer<typeof symbolTerminalSchema>;
