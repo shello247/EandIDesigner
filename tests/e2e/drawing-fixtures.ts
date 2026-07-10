@@ -1,9 +1,11 @@
 import { prisma } from "../../src/lib/prisma";
 import {
+  createDefaultDrawingSheet,
   createDefaultDrawingModel,
   stringifyDrawingModel,
   type DrawingModel
 } from "../../src/features/drawing_canvas/data/schema";
+import { createTerminalBlockPlacement } from "../../src/features/drawing_canvas/logic/services/drawing-terminal-blocks";
 
 type FixtureSymbol = {
   symbolId: string;
@@ -179,6 +181,109 @@ export async function createE2eDetailedPanelDrawingPackage(): Promise<string> {
         .toString(36)
         .slice(2, 8)}`,
       title: "Detailed Panel Drawing Test",
+      status: "needs_review",
+      modelJson: stringifyDrawingModel(model)
+    },
+    select: { id: true }
+  });
+
+  return row.id;
+}
+
+export async function createE2ePanelDiscoveryPackage(): Promise<string> {
+  const base = createDefaultDrawingModel();
+  const fieldSheet = createDefaultDrawingSheet({
+    id: "sheet_field",
+    name: "JB001 Field Terminations"
+  });
+  const terminal = createTerminalBlockPlacement({
+    model: base,
+    activeSheet: fieldSheet,
+    assetId: "asset_tb_101",
+    tag: "TB-101",
+    x: 250,
+    y: 70
+  });
+  const cablePlacement = {
+    id: "placement_cable_101",
+    assetId: "asset_cable_101",
+    symbolId: "fixture_cable_symbol",
+    versionId: "fixture_cable_v1",
+    role: "cable_assembly" as const,
+    tag: "C-101",
+    x: 80,
+    y: 80,
+    rotation: 0,
+    scale: 1
+  };
+  const detailSheet = {
+    ...createDefaultDrawingSheet({
+      id: "sheet_detailed_panel",
+      name: "JB001 Detailed Panel Drawing"
+    }),
+    description: "Detailed electrical connectivity for JB001",
+    panelDrawingContext: {
+      kind: "detailed_panel_wiring" as const,
+      panelAssetId: "asset_jb_001"
+    }
+  };
+  const model: DrawingModel = {
+    ...base,
+    assets: [
+      {
+        id: "asset_jb_001",
+        tag: "JB001",
+        type: "junction_box",
+        title: "Field Junction Box"
+      },
+      {
+        id: "asset_tb_101",
+        tag: "TB-101",
+        type: "terminal_block",
+        title: "Terminal Strip 1",
+        symbolId: terminal.symbolId,
+        versionId: terminal.versionId
+      },
+      {
+        id: "asset_cable_101",
+        tag: "C-101",
+        type: "cable",
+        title: "Field Cable 101"
+      }
+    ],
+    sheets: [
+      {
+        ...fieldSheet,
+        placements: [
+          cablePlacement,
+          { ...terminal, containerAssetId: "asset_jb_001" }
+        ],
+        connections: [
+          {
+            id: "connection_field_tb_101_1",
+            from: {
+              placementId: cablePlacement.id,
+              anchorKey: "CH1_T1"
+            },
+            to: {
+              placementId: terminal.id,
+              anchorKey: "T1_BOTTOM"
+            },
+            wireId: "C-101-P1-WHT",
+            cablePlacementId: cablePlacement.id,
+            conductorKey: "P1-WHT"
+          }
+        ]
+      },
+      detailSheet
+    ]
+  };
+  const row = await prisma.drawing.create({
+    data: {
+      drawingKey: `e2e_panel_discovery_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+      title: "Panel Discovery Test",
       status: "needs_review",
       modelJson: stringifyDrawingModel(model)
     },
