@@ -5,6 +5,9 @@ import type {
   DrawingSheetCanvasModel as DrawingModel
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
+import type {
+  PanelConnectionPatternRecord
+} from "@/features/drawing_panel_wiring/api/public";
 import { getAnchorWorldPoint, getPlacementTransform } from "./drawing-geometry";
 import { renderConnectionRouteSvg } from "./connection-route-renderer";
 import {
@@ -47,6 +50,13 @@ import {
   isGeneratedLayoutDimensionSymbolReference,
   renderLayoutDimensionSvg
 } from "./drawing-layout-dimensions";
+import {
+  isGeneratedPanelPatternLegendPlacement
+} from "./drawing-panel-reference-symbols";
+import {
+  renderPanelConnectionPatternSvg,
+  renderPanelPatternLegendSvg
+} from "./panel-connection-pattern-renderer";
 
 function escapeXml(value: string): string {
   return value
@@ -789,6 +799,7 @@ function renderCenteredText(params: {
 function renderSectionTitlePage(params: {
   model: DrawingModel;
   sectionTitlePage?: DrawingSectionTitlePage;
+  derivedSectionNumber?: number;
   fallbackTitle?: string;
 }): string {
   const title =
@@ -796,7 +807,16 @@ function renderSectionTitlePage(params: {
     params.fallbackTitle?.trim() ||
     "SECTION TITLE";
   const subtitle = params.sectionTitlePage?.subtitle?.trim() ?? "";
-  const sectionNumber = params.sectionTitlePage?.sectionNumber?.trim() ?? "";
+  const legacySectionNumber =
+    params.sectionTitlePage?.sectionNumber?.trim() ?? "";
+  const sectionNumber =
+    params.derivedSectionNumber !== undefined
+      ? `SECTION ${params.derivedSectionNumber}`
+      : legacySectionNumber
+        ? legacySectionNumber.toUpperCase().startsWith("SECTION")
+          ? legacySectionNumber
+          : `SECTION ${legacySectionNumber}`
+        : "";
   const titleLines = wrapText(title.toUpperCase(), 28).slice(0, 3);
   const subtitleLines = subtitle ? wrapText(subtitle, 54).slice(0, 3) : [];
   const centerX = params.model.sheet.width / 2;
@@ -875,6 +895,10 @@ export function renderDrawingToSvg(params: {
   sheetTitle?: string;
   sheetKind?: DrawingPackageSheetKind;
   sectionTitlePage?: DrawingSectionTitlePage;
+  derivedSectionNumber?: number;
+  panelInternalWires?: Array<{ id: string; wireId: string }>;
+  panelConnectionPatterns?: PanelConnectionPatternRecord[];
+  connectionVisibility?: "all" | "field" | "panel_internal";
 }): string {
   const {
     model,
@@ -886,8 +910,16 @@ export function renderDrawingToSvg(params: {
     drawingTitle,
     sheetTitle,
     sheetKind = "drawing",
-    sectionTitlePage
+    sectionTitlePage,
+    derivedSectionNumber,
+    panelInternalWires = [],
+    panelConnectionPatterns = [],
+    connectionVisibility = "all"
   } = params;
+  const panelWireById = new Map(panelInternalWires.map((wire) => [wire.id, wire]));
+  const panelPatternById = new Map(
+    panelConnectionPatterns.map((pattern) => [pattern.record.id, pattern])
+  );
   const gridSize = model.sheet.gridSize;
   const isSectionTitlePage = sheetKind === "section_title";
   const panelPlacements = model.placements.filter(
@@ -938,14 +970,43 @@ export function renderDrawingToSvg(params: {
 
   const connections = showConnections
     ? model.connections
-        .map((connection) =>
-          renderConnectionRouteSvg({
-            model,
-            symbols: approvedSymbols,
-            connection,
-            escapeXml
-          })
+        .filter((connection) =>
+          connectionVisibility === "all"
+            ? true
+            : connectionVisibility === "panel_internal"
+              ? Boolean(
+                  (connection.panelConnectionId && panelWireById.has(connection.panelConnectionId)) ||
+                    (connection.panelPatternId && panelPatternById.has(connection.panelPatternId))
+                )
+              : !connection.panelConnectionId && !connection.panelPatternId
         )
+        .map((connection) => {
+          const pattern = connection.panelPatternId
+            ? panelPatternById.get(connection.panelPatternId)
+            : undefined;
+          const wire = connection.panelConnectionId
+            ? panelWireById.get(connection.panelConnectionId)
+            : undefined;
+          return pattern
+            ? renderPanelConnectionPatternSvg({
+                model,
+                symbols: approvedSymbols,
+                connection,
+                pattern,
+                wire,
+                escapeXml
+              })
+            : renderConnectionRouteSvg({
+                model,
+                symbols: approvedSymbols,
+                connection: wire
+                  ? { ...connection, wireId: wire.wireId }
+                  : connection,
+                stroke: connection.panelConnectionId ? "#1f4e79" : undefined,
+                strokeWidth: connection.panelConnectionId ? 0.52 : undefined,
+                escapeXml
+              });
+        })
         .join("")
     : "";
 
@@ -966,6 +1027,21 @@ export function renderDrawingToSvg(params: {
       }
 
       const renderPlacement = renderPlacementForSheet(placement, symbol);
+
+      if (isGeneratedPanelPatternLegendPlacement(placement)) {
+        const representedPatternIds = new Set(
+          model.connections.flatMap((connection) =>
+            connection.panelPatternId ? [connection.panelPatternId] : []
+          )
+        );
+        return renderPanelPatternLegendSvg({
+          placement,
+          patterns: panelConnectionPatterns.filter((pattern) =>
+            representedPatternIds.has(pattern.record.id)
+          ),
+          escapeXml
+        });
+      }
 
       if (isGeneratedLayoutDimensionSymbolReference(placement)) {
         const parentBackplane = placement.layoutParentId
@@ -1020,6 +1096,9 @@ export function renderDrawingToSvg(params: {
         .join("");
   const placementLabels = normalPlacements
         .map((placement) => {
+      if (isGeneratedPanelPatternLegendPlacement(placement)) {
+        return "";
+      }
       const symbol = getRenderableSymbolForPlacement(
         placement,
         approvedSymbols
@@ -1067,6 +1146,7 @@ export function renderDrawingToSvg(params: {
     ? renderSectionTitlePage({
         model,
         sectionTitlePage,
+        derivedSectionNumber,
         fallbackTitle: sheetTitle
       })
     : "";

@@ -27,6 +27,13 @@ export const drawingAssetTypeSchema = z.enum([
   "junction_box",
   "terminal_block",
   "breaker",
+  "fuse",
+  "relay",
+  "power_supply",
+  "isolator",
+  "converter",
+  "io_module",
+  "earth_bar",
   "cable",
   "other"
 ]);
@@ -77,6 +84,22 @@ export const drawingPlacementSchema = z.object({
   containerAssetId: z.string().trim().min(1).optional(),
   layoutKind: z.enum(["backplane", "layout_helper"]).optional(),
   layoutParentId: z.string().trim().min(1).optional(),
+  panelReference: z
+    .object({
+      panelAssetId: z.string().trim().min(1),
+      referenceKind: z.enum([
+        "shield",
+        "protective_earth",
+        "signal_ground"
+      ]),
+      key: z.string().trim().min(1).max(120).optional()
+    })
+    .optional(),
+  panelPatternLegend: z
+    .object({
+      visible: z.boolean().default(true)
+    })
+    .optional(),
   symbolId: z.string().trim().min(1),
   versionId: z.string().trim().min(1),
   role: placementRoleSchema,
@@ -174,6 +197,16 @@ export const drawingPlacementSchema = z.object({
   terminalBlock: terminalBlockPlacementSchema.optional()
 });
 
+export function isNonAssetDrawingPlacement(
+  placement: DrawingPlacement
+): boolean {
+  return Boolean(
+    (placement.layoutKind && placement.role === "other") ||
+      placement.panelReference ||
+      placement.panelPatternLegend
+  );
+}
+
 export const drawingConnectionSchema = z.object({
   id: z.string().trim().min(1),
   from: drawingEndpointSchema,
@@ -183,6 +216,8 @@ export const drawingConnectionSchema = z.object({
   cablePlacementId: z.string().trim().min(1).optional(),
   conductorKey: z.string().trim().max(80).optional(),
   panelConnectionId: z.string().trim().min(1).optional(),
+  panelPatternId: z.string().trim().min(1).optional(),
+  panelPatternSegmentId: z.string().trim().min(1).optional(),
   route: drawingConnectionRouteSchema.optional()
 });
 
@@ -285,7 +320,12 @@ export const createDrawingInputSchema = z.object({
 export const saveDrawingInputSchema = z.object({
   drawingId: z.string().trim().min(1),
   title: z.string().trim().min(1).max(200),
-  model: drawingPackageModelSchema
+  model: drawingPackageModelSchema,
+  expectedUpdatedAt: z
+    .string()
+    .trim()
+    .refine((value) => !Number.isNaN(Date.parse(value)), "Invalid drawing revision.")
+    .optional()
 });
 
 export type DrawingStatus = z.infer<typeof drawingStatusSchema>;
@@ -390,7 +430,7 @@ export function ensureDrawingModelAssetIds(model: DrawingModel): DrawingModel {
     sheets: model.sheets.map((sheet) => ({
       ...sheet,
       placements: sheet.placements.map((placement) => {
-        if (placement.layoutKind && placement.role === "other") {
+        if (isNonAssetDrawingPlacement(placement)) {
           return {
             ...placement,
             assetId: undefined
@@ -475,14 +515,22 @@ function placementAssetIdForSchema(placement: DrawingPlacement): string {
 
 export function ensureDrawingModelAssets(model: DrawingModel): DrawingModel {
   const assets = new Map<string, DrawingAssetRecord>();
+  const nonAssetPlacementIds = new Set(
+    model.sheets.flatMap((sheet) =>
+      sheet.placements
+        .filter(isNonAssetDrawingPlacement)
+        .map(placementAssetIdForSchema)
+    )
+  );
 
   for (const asset of model.assets ?? []) {
+    if (nonAssetPlacementIds.has(asset.id)) continue;
     assets.set(asset.id, drawingAssetRecordSchema.parse(asset));
   }
 
   for (const sheet of model.sheets) {
     for (const placement of sheet.placements) {
-      if (placement.layoutKind && placement.role === "other") {
+      if (isNonAssetDrawingPlacement(placement)) {
         continue;
       }
 

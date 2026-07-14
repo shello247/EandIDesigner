@@ -20,6 +20,12 @@ import {
   createGeneratedDimensionLibrarySymbols,
   isGeneratedLayoutDimensionSymbolReference
 } from "./drawing-layout-dimensions";
+import {
+  createGeneratedPanelPatternLegendSymbol,
+  createGeneratedPanelReferenceSymbol,
+  isGeneratedPanelPatternLegendPlacement,
+  isGeneratedPanelReferencePlacement
+} from "./drawing-panel-reference-symbols";
 
 export function packageSymbolKey(symbolId: string, versionId: string): string {
   return `${symbolId}:${versionId}`;
@@ -98,6 +104,12 @@ export function getRenderableSymbolForPlacement(
     createGeneratedBackplaneSymbol(placement) ??
     createGeneratedWireTraySymbol(placement) ??
     createGeneratedLayoutDimensionSymbol(placement) ??
+    (isGeneratedPanelReferencePlacement(placement)
+      ? createGeneratedPanelReferenceSymbol(placement.panelReference.referenceKind)
+      : undefined) ??
+    (isGeneratedPanelPatternLegendPlacement(placement)
+      ? createGeneratedPanelPatternLegendSymbol()
+      : undefined) ??
     symbols.find(
       (symbol) =>
         symbol.symbolId === placement.symbolId &&

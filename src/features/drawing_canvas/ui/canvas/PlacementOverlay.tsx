@@ -208,13 +208,16 @@ export function PlacementOverlay({
   onDragStart,
   onDragMove,
   onDragEnd,
+  onDragCancel,
   onPlacementRemove,
   onResizeStart,
   onResizeMove,
   onResizeEnd,
+  onResizeCancel,
   onRotationStart,
   onRotationMove,
-  onRotationEnd
+  onRotationEnd,
+  onRotationCancel
 }: {
   model: DrawingModel;
   symbols: ApprovedDrawingSymbol[];
@@ -238,13 +241,16 @@ export function PlacementOverlay({
     baseModel?: DrawingModel;
   }) => void;
   onDragEnd: () => void;
+  onDragCancel: () => void;
   onPlacementRemove: (placementId: string) => void;
   onResizeStart: (state: PlacementResizeState) => void;
   onResizeMove: (event: PointerEvent<SVGElement>) => void;
   onResizeEnd: () => void;
+  onResizeCancel: () => void;
   onRotationStart: (state: PlacementRotationState) => void;
   onRotationMove: (event: PointerEvent<SVGElement>) => void;
   onRotationEnd: () => void;
+  onRotationCancel: () => void;
 }) {
   const panelPlacements = model.placements.filter(
     isGeneratedPanelEnclosurePlacement
@@ -404,7 +410,7 @@ export function PlacementOverlay({
               onPointerDown={startPanelDrag}
               onPointerMove={movePanelDrag}
               onPointerUp={onDragEnd}
-              onPointerCancel={onDragEnd}
+              onPointerCancel={onDragCancel}
             >
               <title>{placement.tag} {getPanelEnclosureTitle(placement)}</title>
             </rect>
@@ -437,7 +443,7 @@ export function PlacementOverlay({
                 onPointerDown={startPanelDrag}
                 onPointerMove={movePanelDrag}
                 onPointerUp={onDragEnd}
-                onPointerCancel={onDragEnd}
+                onPointerCancel={onDragCancel}
               />
             ))}
             {isSelected ? (
@@ -475,7 +481,7 @@ export function PlacementOverlay({
                     }}
                     onPointerMove={onResizeMove}
                     onPointerUp={onResizeEnd}
-                    onPointerCancel={onResizeEnd}
+                    onPointerCancel={onResizeCancel}
                   >
                     <title>Resize panel enclosure</title>
                   </rect>
@@ -683,7 +689,7 @@ export function PlacementOverlay({
                 });
               }}
               onPointerUp={onDragEnd}
-              onPointerCancel={onDragEnd}
+              onPointerCancel={onDragCancel}
             />
             {isSelected ? (
               <g>
@@ -738,7 +744,7 @@ export function PlacementOverlay({
                         }}
                         onPointerMove={onResizeMove}
                         onPointerUp={onResizeEnd}
-                        onPointerCancel={onResizeEnd}
+                        onPointerCancel={onResizeCancel}
                       >
                         <title>{title} witness point</title>
                       </circle>
@@ -772,7 +778,7 @@ export function PlacementOverlay({
                       }}
                       onPointerMove={onResizeMove}
                       onPointerUp={onResizeEnd}
-                      onPointerCancel={onResizeEnd}
+                      onPointerCancel={onResizeCancel}
                     >
                       <title>Move dimension line</title>
                     </circle>
@@ -805,7 +811,7 @@ export function PlacementOverlay({
                       }}
                       onPointerMove={onResizeMove}
                       onPointerUp={onResizeEnd}
-                      onPointerCancel={onResizeEnd}
+                      onPointerCancel={onResizeCancel}
                     >
                       <title>Move dimension label</title>
                     </circle>
@@ -846,7 +852,7 @@ export function PlacementOverlay({
                     }}
                     onPointerMove={onResizeMove}
                     onPointerUp={onResizeEnd}
-                    onPointerCancel={onResizeEnd}
+                    onPointerCancel={onResizeCancel}
                   >
                     <title>Resize placement</title>
                   </rect>
@@ -919,7 +925,7 @@ export function PlacementOverlay({
                       }}
                       onPointerMove={onRotationMove}
                       onPointerUp={onRotationEnd}
-                      onPointerCancel={onRotationEnd}
+                      onPointerCancel={onRotationCancel}
                     >
                       <title>
                         Rotate placement. Snaps near 0, 90, 180, and 270 degrees.

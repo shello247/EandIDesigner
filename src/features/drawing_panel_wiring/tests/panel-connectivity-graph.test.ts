@@ -162,7 +162,10 @@ describe("drawing panel wiring connectivity graph", () => {
     ]);
     expect(snapshot.bridges.map((bridge) => bridge.id)).toEqual(["bridge_1"]);
     expect(snapshot.bonds.map((bond) => bond.id)).toEqual(["bond_1"]);
-    expect(snapshot.findings).toEqual([]);
+    expect(snapshot.findings.map((finding) => finding.code).sort()).toEqual([
+      "legacy_bond_definition",
+      "legacy_pattern_definition"
+    ]);
   });
 
   it("returns structured validation findings for malformed source data", () => {

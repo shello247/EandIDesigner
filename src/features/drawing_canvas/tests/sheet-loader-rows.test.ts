@@ -6,6 +6,8 @@ import {
 import { addSectionTitlePage } from "../logic/commands/drawing-sheet-commands";
 import {
   buildSheetLoaderRows,
+  buildSheetLoaderGroups,
+  filterSheetLoaderGroups,
   filterSheetLoaderRows
 } from "../logic/services/sheet-loader-rows";
 
@@ -131,6 +133,27 @@ describe("sheet loader rows", () => {
     expect(filterSheetLoaderRows(rows, "field")).toEqual([rows[0]]);
   });
 
+  it("uses the saved section subtitle for legacy rows without a sheet description", () => {
+    const model = createDefaultDrawingModel("Section Package");
+    const sectionResult = addSectionTitlePage(model, {
+      name: "Panel Details",
+      title: "Panel Details",
+      subtitle: "Detailed panel wiring drawings"
+    });
+    const legacyModel = {
+      ...sectionResult.model,
+      sheets: sectionResult.model.sheets.map((sheet) =>
+        sheet.id === sectionResult.sheetId
+          ? { ...sheet, description: undefined }
+          : sheet
+      )
+    };
+
+    expect(buildSheetLoaderRows(legacyModel)[1].description).toBe(
+      "Detailed panel wiring drawings"
+    );
+  });
+
   it("classifies detailed panel sheets and counts their context asset", () => {
     const model = createDefaultDrawingModel("Panel Package");
     const detailedSheet = {
@@ -152,5 +175,43 @@ describe("sheet loader rows", () => {
       assetCount: 1
     });
     expect(filterSheetLoaderRows(rows, "detailed panel")).toEqual(rows);
+  });
+
+  it("groups front matter and section members and preserves section context while filtering", () => {
+    let model = createDefaultDrawingModel("Grouped Package");
+    model = addSectionTitlePage(model, {
+      title: "Field Wiring",
+      subtitle: "Field connection sheets"
+    }).model;
+    model = {
+      ...model,
+      sheets: [
+        ...model.sheets,
+        {
+          ...model.sheets[0],
+          id: "field_detail",
+          name: "Tank Field Detail",
+          description: "Tank 4 wiring"
+        }
+      ]
+    };
+    const groups = buildSheetLoaderGroups(model);
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toMatchObject({
+      id: "front_matter",
+      startSheetNumber: 1,
+      endSheetNumber: 1
+    });
+    expect(groups[1]).toMatchObject({
+      kind: "section",
+      sectionNumber: 1,
+      title: "Field Wiring",
+      startSheetNumber: 2,
+      endSheetNumber: 3
+    });
+    expect(groups[1].rows.map((row) => row.sheetId)).toEqual(["field_detail"]);
+    expect(filterSheetLoaderGroups(groups, "section 1")).toEqual([groups[1]]);
+    expect(filterSheetLoaderGroups(groups, "tank 4")[0].rows).toHaveLength(1);
   });
 });

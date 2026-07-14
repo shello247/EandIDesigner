@@ -34,6 +34,9 @@ export function AssetLinkDialog({
   packageModel,
   symbols,
   initialMode,
+  allowCreate = true,
+  panelAssetId,
+  proposedTag,
   onCancel,
   onCreateNewAsset,
   onReferenceExisting
@@ -43,6 +46,9 @@ export function AssetLinkDialog({
   packageModel: DrawingModel;
   symbols: ApprovedDrawingSymbol[];
   initialMode: AssetLinkDialogMode;
+  allowCreate?: boolean;
+  panelAssetId?: string;
+  proposedTag?: string;
   onCancel: () => void;
   onCreateNewAsset: (targets: DrawingAssetPlacementTarget[], tag: string) => void;
   onReferenceExisting: (
@@ -53,10 +59,52 @@ export function AssetLinkDialog({
   const titleId = useId();
   const descriptionId = useId();
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
-  const options = useMemo(
+  const rawOptions = useMemo(
     () => buildCompatibleAssetRelinkOptions(packageModel, placement, symbols),
     [packageModel, placement, symbols]
   );
+  const options = useMemo(() => {
+    if (!panelAssetId) {
+      return rawOptions;
+    }
+    const representedOnActiveSheet = new Set(
+      packageModel.sheets
+        .find((sheet) => sheet.id === activeSheetId)
+        ?.placements.flatMap((candidate) =>
+          candidate.assetId ? [candidate.assetId] : []
+        ) ?? []
+    );
+    const associatedAssetIds = new Set(
+      packageModel.sheets.flatMap((sheet) =>
+        sheet.placements.flatMap((candidate) =>
+          candidate.containerAssetId === panelAssetId && candidate.assetId
+            ? [candidate.assetId]
+            : []
+        )
+      )
+    );
+    return {
+      ...rawOptions,
+      compatibleAssets: rawOptions.compatibleAssets.filter(
+        (asset) =>
+          associatedAssetIds.has(asset.assetId) &&
+          !representedOnActiveSheet.has(asset.assetId)
+      ),
+      linkedOccurrences: rawOptions.linkedOccurrences.filter(
+        (occurrence) =>
+          occurrence.sheetId === activeSheetId &&
+          occurrence.placementId === placement.id
+      ),
+      proposedTag: proposedTag ?? rawOptions.proposedTag
+    };
+  }, [
+    activeSheetId,
+    packageModel.sheets,
+    panelAssetId,
+    placement.id,
+    proposedTag,
+    rawOptions
+  ]);
   const currentTarget = useMemo(() => {
     const exact = options.linkedOccurrences.find(
       (reference) =>
@@ -74,7 +122,9 @@ export function AssetLinkDialog({
       }
     );
   }, [activeSheetId, options.linkedOccurrences, placement.assetId, placement.id]);
-  const [mode, setMode] = useState<AssetLinkDialogMode>(initialMode);
+  const [mode, setMode] = useState<AssetLinkDialogMode>(
+    allowCreate ? initialMode : "reference"
+  );
   const [tag, setTag] = useState(options.proposedTag);
   const [targetAssetId, setTargetAssetId] = useState(
     options.compatibleAssets[0]?.assetId ?? ""
@@ -171,8 +221,9 @@ export function AssetLinkDialog({
               Asset link
             </h2>
             <p id={descriptionId} className="mt-1 text-xs leading-5 text-slate-600">
-              Split selected occurrences into a new physical asset or reference
-              an existing compatible asset.
+              {allowCreate
+                ? "Split selected occurrences into a new physical asset or reference an existing compatible asset."
+                : "Reference an existing compatible asset from the panel inventory."}
             </p>
           </div>
           <button
@@ -186,26 +237,28 @@ export function AssetLinkDialog({
         </div>
 
         <div className="space-y-4 px-5 py-4">
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              className={[
-                "rounded-md border px-3 py-2 text-left text-xs transition",
-                mode === "create"
-                  ? "border-sky-300 bg-sky-50 text-sky-900"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              ].join(" ")}
-              aria-pressed={mode === "create"}
-              onClick={() => setMode("create")}
-            >
-              <span className="flex items-center gap-2 font-bold">
-                <GitBranch aria-hidden="true" size={14} />
-                Create new asset
-              </span>
-              <span className="mt-1 block text-slate-500">
-                Give the selected occurrences a new physical identity.
-              </span>
-            </button>
+          <div className={allowCreate ? "grid grid-cols-2 gap-2" : "grid gap-2"}>
+            {allowCreate ? (
+              <button
+                type="button"
+                className={[
+                  "rounded-md border px-3 py-2 text-left text-xs transition",
+                  mode === "create"
+                    ? "border-sky-300 bg-sky-50 text-sky-900"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                ].join(" ")}
+                aria-pressed={mode === "create"}
+                onClick={() => setMode("create")}
+              >
+                <span className="flex items-center gap-2 font-bold">
+                  <GitBranch aria-hidden="true" size={14} />
+                  Create new asset
+                </span>
+                <span className="mt-1 block text-slate-500">
+                  Give the selected occurrences a new physical identity.
+                </span>
+              </button>
+            ) : null}
             <button
               type="button"
               className={[

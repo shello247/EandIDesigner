@@ -9,6 +9,7 @@ import {
   exportSymbolPackage,
   saveSymbolDraft,
   updateSymbolLayoutMetadata,
+  updateSymbolPanelWiringCapability,
   updateSymbolTerminalMap,
   uploadSymbolDocument,
   validateSymbolVersion
@@ -21,6 +22,7 @@ import {
 import type {
   SaveSymbolDraftInput,
   SymbolLayoutMetadataUpdateInput,
+  SymbolPanelWiringCapabilityUpdateInput,
   TerminalMapUpdateInput
 } from "../data/schema";
 import { verifyTerminalMapWithAi } from "../logic/services/openai-terminal-map-verifier";
@@ -132,6 +134,22 @@ export async function updateSymbolLayoutMetadataAction(
     const updated = await updateSymbolLayoutMetadata(input);
     if (!updated) {
       return { ok: false, error: "Layout metadata could not be updated." };
+    }
+    revalidatePath("/symbols");
+    revalidatePath(`/symbols/${updated.id}`);
+    return { ok: true, data: updated };
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
+export async function updateSymbolPanelWiringCapabilityAction(
+  input: SymbolPanelWiringCapabilityUpdateInput
+): Promise<ActionResult<SymbolDetail>> {
+  try {
+    const updated = await updateSymbolPanelWiringCapability(input);
+    if (!updated) {
+      return { ok: false, error: "Detailed Panel metadata could not be updated." };
     }
     revalidatePath("/symbols");
     revalidatePath(`/symbols/${updated.id}`);

@@ -41,6 +41,13 @@ const ASSET_GROUPS: Array<{
   { type: "junction_box", title: "Junction Boxes" },
   { type: "terminal_block", title: "Terminal Blocks" },
   { type: "breaker", title: "Breakers" },
+  { type: "fuse", title: "Fuses" },
+  { type: "relay", title: "Relays" },
+  { type: "power_supply", title: "Power Supplies" },
+  { type: "isolator", title: "Isolators" },
+  { type: "converter", title: "Converters" },
+  { type: "io_module", title: "I/O Modules" },
+  { type: "earth_bar", title: "Earth Bars" },
   { type: "cable", title: "Cables" },
   { type: "other", title: "Other Assets" }
 ];
@@ -85,6 +92,7 @@ function symbolOptionLabel(symbol: ApprovedDrawingSymbol): string {
 export function AssetManagerDialog({
   model,
   symbols,
+  initialAssetId,
   onCancel,
   onCreateAsset,
   onUpdateAsset,
@@ -92,6 +100,7 @@ export function AssetManagerDialog({
 }: {
   model: DrawingModel;
   symbols: ApprovedDrawingSymbol[];
+  initialAssetId?: string;
   onCancel: () => void;
   onCreateAsset: (input: ManagedAssetCreateInput) => void;
   onUpdateAsset: (assetId: string, updates: ManagedAssetUpdateInput) => void;
@@ -105,7 +114,9 @@ export function AssetManagerDialog({
   );
   const [query, setQuery] = useState("");
   const [selectedAssetId, setSelectedAssetId] = useState(
-    catalog[0]?.id ?? ""
+    initialAssetId && catalog.some((asset) => asset.id === initialAssetId)
+      ? initialAssetId
+      : catalog[0]?.id ?? ""
   );
   const [isCreating, setIsCreating] = useState(catalog.length === 0);
   const [createType, setCreateType] = useState<DrawingAssetType>("instrument");

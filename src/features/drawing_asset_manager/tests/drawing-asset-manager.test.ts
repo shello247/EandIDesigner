@@ -366,4 +366,35 @@ describe("drawing asset manager use cases", () => {
       false
     );
   });
+
+  it("excludes generated panel references and legends from physical assets", () => {
+    const base = createDefaultDrawingModel();
+    const legend = placement({
+      id: "pattern_legend",
+      assetId: undefined,
+      symbolId: "__generated_panel_pattern_legend__",
+      versionId: "generated_panel_pattern_legend_v1",
+      role: "other",
+      tag: "Connection Pattern Legend",
+      panelPatternLegend: { visible: true }
+    });
+    const model: DrawingModel = {
+      ...base,
+      assets: [
+        {
+          id: "asset_pattern_legend",
+          tag: legend.tag,
+          type: "other",
+          title: legend.tag
+        }
+      ],
+      sheets: base.sheets.map((sheet) => ({
+        ...sheet,
+        placements: [legend]
+      }))
+    };
+
+    expect(buildManagedAssetCatalog(model, symbols)).toEqual([]);
+    expect(reconcileDrawingAssets(model, symbols).assets).toEqual([]);
+  });
 });

@@ -9,6 +9,7 @@ export function RouteHandlesOverlay({
   onRoutePointPointerDown,
   onRoutePointPointerMove,
   onRoutePointPointerEnd,
+  onRoutePointPointerCancel,
   onRoutePointDelete
 }: {
   selectedConnectionSegment: ConnectionSegment | null;
@@ -20,6 +21,7 @@ export function RouteHandlesOverlay({
   ) => void;
   onRoutePointPointerMove: (event: PointerEvent<SVGRectElement>) => void;
   onRoutePointPointerEnd: () => void;
+  onRoutePointPointerCancel: () => void;
   onRoutePointDelete: (pointId: string) => void;
 }) {
   if (!selectedConnectionSegment) {
@@ -51,7 +53,7 @@ export function RouteHandlesOverlay({
               onPointerDown={(event) => onRoutePointPointerDown(point.id, event)}
               onPointerMove={onRoutePointPointerMove}
               onPointerUp={onRoutePointPointerEnd}
-              onPointerCancel={onRoutePointPointerEnd}
+              onPointerCancel={onRoutePointPointerCancel}
             >
               <title>
                 Drag route point. Press Delete or use the red x to remove.

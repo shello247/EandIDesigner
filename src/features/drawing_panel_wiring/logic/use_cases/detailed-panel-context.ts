@@ -27,6 +27,7 @@ export type DetailedPanelDrawingContextView = CompatiblePanelOption & {
   sheetId: string;
   panelAssetId: string;
   purpose: "detailed_panel_wiring";
+  workflowFocusAssetId?: string;
 };
 
 const contextInputSchema = z.object({
@@ -190,7 +191,8 @@ export function getDetailedPanelDrawingContext(
     ...panel,
     sheetId,
     panelAssetId,
-    purpose: "detailed_panel_wiring"
+    purpose: "detailed_panel_wiring",
+    workflowFocusAssetId: sheet.panelDrawingContext?.workflowFocusAssetId
   };
 }
 

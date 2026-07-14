@@ -14,6 +14,10 @@ import type {
 } from "../../types";
 import { discoverExternalTerminations } from "./external-termination-discovery";
 import {
+  buildPanelPatternValidationIndex,
+  validatePanelConnectionPattern
+} from "./panel-pattern-validation";
+import {
   sheetConnectionKey,
   sheetPlacementKey,
   sourceEndpointKey,
@@ -97,6 +101,12 @@ function addTerminalNodes(
           label: terminal.label,
           function: terminal.function,
           supportedSides: [...terminal.supportedSides].sort(),
+          requiredSides: terminal.requiredSides
+            ? [...terminal.requiredSides].sort()
+            : undefined,
+          allowedDomains: terminal.allowedDomains
+            ? [...terminal.allowedDomains].sort()
+            : undefined,
           anchors: [...terminal.anchors].sort((first, second) =>
             first.anchorKey.localeCompare(second.anchorKey)
           ),
@@ -222,6 +232,21 @@ function addRecordFindings(
         code: "internal_wire"
       });
     }
+
+    if (
+      wire.ownerPatternId &&
+      !source.panelWiring?.bridges.some(
+        (bridge) => bridge.id === wire.ownerPatternId
+      )
+    ) {
+      findings.push({
+        id: `orphan_pattern_wire:${wire.id}`,
+        severity: "error",
+        code: "orphan_pattern_wire",
+        message: `${wire.wireId} references a connection pattern that no longer exists.`,
+        panelAssetId: wire.panelAssetId
+      });
+    }
   }
 
   for (const bridge of source.panelWiring?.bridges ?? []) {
@@ -305,10 +330,9 @@ function addRecordFindings(
   }
 }
 
-export function buildPackageConnectivityGraph(
-  input: PanelWiringSourcePackage
+export function buildPackageConnectivityGraphFromValidatedSource(
+  source: PanelWiringSourcePackage
 ): PanelConnectivityGraph {
-  const source = panelWiringSourcePackageSchema.parse(input);
   const findings: PanelConnectivityFinding[] = [];
   const assetsById = new Map(source.assets.map((asset) => [asset.id, asset]));
   const sheetsById = new Map(source.sheets.map((sheet) => [sheet.id, sheet]));
@@ -444,9 +468,38 @@ export function buildPackageConnectivityGraph(
   };
 
   addRecordFindings(source, graph, findings);
+  const patternValidationIndex = buildPanelPatternValidationIndex(graph);
+  for (const bridge of graph.bridgesById.values()) {
+    findings.push(
+      ...validatePanelConnectionPattern({
+        graph,
+        candidate: { recordType: "bridge", record: bridge },
+        index: patternValidationIndex
+      })
+    );
+  }
+  for (const bond of graph.bondsById.values()) {
+    findings.push(
+      ...validatePanelConnectionPattern({
+        graph,
+        candidate: { recordType: "bond", record: bond },
+        index: patternValidationIndex
+      })
+    );
+  }
+  const uniqueFindings = new Map(findings.map((finding) => [finding.id, finding]));
+  graph.findings.splice(0, graph.findings.length, ...uniqueFindings.values());
   graph.findings.sort((first, second) => first.id.localeCompare(second.id));
 
   return graph;
+}
+
+export function buildPackageConnectivityGraph(
+  input: PanelWiringSourcePackage
+): PanelConnectivityGraph {
+  return buildPackageConnectivityGraphFromValidatedSource(
+    panelWiringSourcePackageSchema.parse(input)
+  );
 }
 
 export function getTerminalByRef(

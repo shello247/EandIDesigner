@@ -12,9 +12,18 @@ export type {
   SymbolMetadata,
   SymbolPanelCategory,
   SymbolPanelMountingType,
-  SymbolTerminal
+  SymbolPanelWiringAssetType,
+  SymbolPanelWiringCapability,
+  SymbolTerminal,
+  SymbolTerminalPanelSide
 } from "../data/schema";
-export { symbolCategorySchema, symbolMetadataSchema } from "../data/schema";
+export {
+  symbolCategorySchema,
+  symbolMetadataSchema,
+  symbolPanelWiringAssetTypeSchema,
+  symbolPanelWiringCapabilitySchema,
+  symbolTerminalPanelSideSchema
+} from "../data/schema";
 
 export async function saveSymbolDraftToRegistry(input: SaveSymbolDraftInput) {
   return saveSymbolDraft(input);

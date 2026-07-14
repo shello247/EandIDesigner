@@ -66,7 +66,8 @@ function defaultDescription(tag: string): string {
 export function createDetailedPanelDrawingSheet(
   inputModel: DrawingModel,
   input: CreateDetailedPanelDrawingInput,
-  symbols: ApprovedDrawingSymbol[] = []
+  symbols: ApprovedDrawingSymbol[] = [],
+  options: { insertAt?: number } = {}
 ): CreateDetailedPanelDrawingResult {
   const parsed = createDetailedPanelDrawingInputSchema.parse(input);
   let model = drawingPackageModelSchema.parse(inputModel);
@@ -103,7 +104,8 @@ export function createDetailedPanelDrawingSheet(
 
   const added = addDrawingSheet(
     model,
-    parsed.name || defaultSheetName(panelTag)
+    parsed.name || defaultSheetName(panelTag),
+    options
   );
   model = updateSheetMetadata(added.model, added.sheetId, {
     description: parsed.description || defaultDescription(panelTag)

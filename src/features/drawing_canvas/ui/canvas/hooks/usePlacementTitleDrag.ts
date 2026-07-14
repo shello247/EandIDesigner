@@ -15,7 +15,8 @@ export function usePlacementTitleDrag({
   onConnectionSelect,
   onPlacementChange,
   onGestureStart,
-  onGestureEnd
+  onGestureEnd,
+  onGestureCancel
 }: {
   model: DrawingModel;
   placementTitleLabels: PlacementTitleLabel[];
@@ -29,6 +30,7 @@ export function usePlacementTitleDrag({
   ) => void;
   onGestureStart: () => void;
   onGestureEnd: () => void;
+  onGestureCancel: () => void;
 }) {
   const placementTitleDragStateRef = useRef<PlacementTitleDragState | null>(null);
 
@@ -99,9 +101,15 @@ export function usePlacementTitleDrag({
     onGestureEnd();
   }, [onGestureEnd]);
 
+  const cancelPlacementTitleDrag = useCallback(() => {
+    placementTitleDragStateRef.current = null;
+    onGestureCancel();
+  }, [onGestureCancel]);
+
   return {
     updateDraggedPlacementTitle,
     handlePlacementTitlePointerDown,
-    endPlacementTitleDrag
+    endPlacementTitleDrag,
+    cancelPlacementTitleDrag
   };
 }

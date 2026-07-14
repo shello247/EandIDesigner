@@ -138,6 +138,7 @@ export function terminalBlockSymbolTerminals(
       label: terminal.label,
       function: "Feed-through terminal",
       anchorKey: terminal.topAnchorKey,
+      panelSide: "internal" as const,
       requiredForWiring: false
     },
     {
@@ -145,6 +146,7 @@ export function terminalBlockSymbolTerminals(
       label: terminal.label,
       function: "Feed-through terminal",
       anchorKey: terminal.bottomAnchorKey,
+      panelSide: "external" as const,
       requiredForWiring: false
     }
   ]);

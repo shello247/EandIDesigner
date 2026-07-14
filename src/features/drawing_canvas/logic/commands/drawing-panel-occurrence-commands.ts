@@ -12,6 +12,11 @@ import type { ApprovedDrawingSymbol } from "../../types";
 import { createPanelWiringSource } from "../../api/panel-wiring-contracts";
 import { getPlacementBounds } from "../services/drawing-geometry";
 import { getRenderableSymbolForPlacement } from "../services/drawing-generated-symbols";
+import { moveCanvasSelection } from "../services/drawing-movement";
+import {
+  replaceSheetFromCanvasModel,
+  toSheetCanvasModel
+} from "./drawing-sheet-commands";
 
 const DRAWING_MARGIN = 20;
 const TITLE_BLOCK_CLEARANCE = 55;
@@ -33,6 +38,12 @@ export type RemovePanelAssetOccurrenceResult = {
   assetId: string;
 };
 
+export type CenterDetailedPanelEquipmentResult = {
+  model: DrawingModel;
+  placementIds: string[];
+  delta: { x: number; y: number };
+};
+
 function createOccurrencePlacementId(): string {
   const suffix =
     typeof globalThis.crypto?.randomUUID === "function"
@@ -49,6 +60,31 @@ function rectanglesOverlap(first: PlacementRect, second: PlacementRect): boolean
     first.y + first.height <= second.y ||
     second.y + second.height <= first.y
   );
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function snap(value: number, step: number): number {
+  return Math.round(value / step) * step;
+}
+
+export function getDetailedPanelUsableDrawingRect(
+  sheet: DrawingPackageSheet
+): PlacementRect {
+  const right = Math.max(DRAWING_MARGIN, sheet.page.width - DRAWING_MARGIN);
+  const bottom = Math.max(
+    DRAWING_MARGIN,
+    sheet.page.height - TITLE_BLOCK_CLEARANCE
+  );
+
+  return {
+    x: DRAWING_MARGIN,
+    y: DRAWING_MARGIN,
+    width: Math.max(0, right - DRAWING_MARGIN),
+    height: Math.max(0, bottom - DRAWING_MARGIN)
+  };
 }
 
 function placementRect(
@@ -79,27 +115,173 @@ export function findNextPanelOccurrencePosition({
   symbols: ApprovedDrawingSymbol[];
 }): { x: number; y: number } {
   const bounds = placementRect(placement, symbols);
-  const occupied = sheet.placements.map((candidate) =>
-    placementRect(candidate, symbols)
-  );
+  const usable = getDetailedPanelUsableDrawingRect(sheet);
   const step = Math.max(5, sheet.page.gridSize);
-  const maxX = Math.max(DRAWING_MARGIN, sheet.page.width - DRAWING_MARGIN - bounds.width);
-  const maxY = Math.max(
-    DRAWING_MARGIN,
-    sheet.page.height - TITLE_BLOCK_CLEARANCE - bounds.height
+  const localOffsetX = bounds.x - placement.x;
+  const localOffsetY = bounds.y - placement.y;
+  const minimumX = usable.x - localOffsetX;
+  const maximumX = Math.max(
+    minimumX,
+    usable.x + usable.width - localOffsetX - bounds.width
   );
+  const minimumY = usable.y - localOffsetY;
+  const maximumY = Math.max(
+    minimumY,
+    usable.y + usable.height - localOffsetY - bounds.height
+  );
+  const centerX = usable.x + usable.width / 2;
+  const centerY = usable.y + usable.height / 2;
+  const occupied = sheet.placements.map((candidate) => {
+    const rect = placementRect(candidate, symbols);
+    return {
+      x: rect.x - step,
+      y: rect.y - step,
+      width: rect.width + step * 2,
+      height: rect.height + step * 2
+    };
+  });
+  const candidates: Array<{
+    x: number;
+    y: number;
+    centerDistanceX: number;
+    centerDistanceY: number;
+    horizontalOrder: number;
+  }> = [];
 
-  for (let y = DRAWING_MARGIN; y <= maxY; y += step) {
-    for (let x = DRAWING_MARGIN; x <= maxX; x += step) {
-      const candidate = { x, y, width: bounds.width, height: bounds.height };
-
-      if (!occupied.some((current) => rectanglesOverlap(candidate, current))) {
-        return { x, y };
-      }
+  for (
+    let y = Math.ceil(minimumY / step) * step;
+    y <= maximumY + 0.001;
+    y += step
+  ) {
+    for (
+      let x = Math.ceil(minimumX / step) * step;
+      x <= maximumX + 0.001;
+      x += step
+    ) {
+      const candidateCenterX = x + localOffsetX + bounds.width / 2;
+      const candidateCenterY = y + localOffsetY + bounds.height / 2;
+      candidates.push({
+        x,
+        y,
+        centerDistanceX: Math.abs(candidateCenterX - centerX),
+        centerDistanceY: Math.abs(candidateCenterY - centerY),
+        horizontalOrder: candidateCenterX >= centerX ? 0 : 1
+      });
     }
   }
 
-  return { x: DRAWING_MARGIN, y: DRAWING_MARGIN };
+  candidates.sort(
+    (first, second) =>
+      first.centerDistanceY - second.centerDistanceY ||
+      first.centerDistanceX - second.centerDistanceX ||
+      first.horizontalOrder - second.horizontalOrder ||
+      first.y - second.y ||
+      first.x - second.x
+  );
+
+  const available = candidates.find((candidate) => {
+    const candidateRect = {
+      x: candidate.x + localOffsetX,
+      y: candidate.y + localOffsetY,
+      width: bounds.width,
+      height: bounds.height
+    };
+    return !occupied.some((current) => rectanglesOverlap(candidateRect, current));
+  });
+
+  if (available) {
+    return { x: available.x, y: available.y };
+  }
+
+  return {
+    x: clamp(
+      snap(centerX - localOffsetX - bounds.width / 2, step),
+      minimumX,
+      maximumX
+    ),
+    y: clamp(
+      snap(centerY - localOffsetY - bounds.height / 2, step),
+      minimumY,
+      maximumY
+    )
+  };
+}
+
+export function centerDetailedPanelEquipment({
+  model: inputModel,
+  sheetId,
+  symbols = []
+}: {
+  model: DrawingModel;
+  sheetId: string;
+  symbols?: ApprovedDrawingSymbol[];
+}): CenterDetailedPanelEquipmentResult {
+  const model = drawingPackageModelSchema.parse(inputModel);
+  const sheet = getDetailedPanelSheet(model, sheetId);
+  const panelAssetId = sheet.panelDrawingContext.panelAssetId;
+  const placements = sheet.placements.filter(
+    (placement) =>
+      Boolean(placement.assetId) &&
+      placement.containerAssetId === panelAssetId &&
+      !placement.layoutKind &&
+      !placement.panelReference &&
+      !placement.panelPatternLegend
+  );
+  const placementIds = placements.map((placement) => placement.id);
+
+  if (placements.length === 0) {
+    return { model, placementIds, delta: { x: 0, y: 0 } };
+  }
+
+  const bounds = placements.map((placement) => placementRect(placement, symbols));
+  const minimumX = Math.min(...bounds.map((rect) => rect.x));
+  const minimumY = Math.min(...bounds.map((rect) => rect.y));
+  const maximumX = Math.max(...bounds.map((rect) => rect.x + rect.width));
+  const maximumY = Math.max(...bounds.map((rect) => rect.y + rect.height));
+  const usable = getDetailedPanelUsableDrawingRect(sheet);
+  const step = Math.max(5, sheet.page.gridSize);
+  const centeredX = usable.x + usable.width / 2 - (minimumX + maximumX) / 2;
+  const centeredY = usable.y + usable.height / 2 - (minimumY + maximumY) / 2;
+  const groupWidth = maximumX - minimumX;
+  const groupHeight = maximumY - minimumY;
+  const delta = {
+    x:
+      groupWidth <= usable.width
+        ? clamp(
+            snap(centeredX, step),
+            usable.x - minimumX,
+            usable.x + usable.width - maximumX
+          )
+        : usable.x - minimumX,
+    y:
+      groupHeight <= usable.height
+        ? clamp(
+            snap(centeredY, step),
+            usable.y - minimumY,
+            usable.y + usable.height - maximumY
+          )
+        : usable.y - minimumY
+  };
+
+  if (delta.x === 0 && delta.y === 0) {
+    return { model, placementIds, delta };
+  }
+
+  const canvasModel = toSheetCanvasModel(model, sheetId);
+  const moved = moveCanvasSelection({
+    model: canvasModel,
+    selection: { placementIds, annotationIds: [] },
+    delta,
+    symbols
+  });
+
+  return {
+    model: drawingPackageModelSchema.parse(
+      replaceSheetFromCanvasModel(model, sheetId, moved)
+    ),
+    placementIds,
+    delta
+  };
 }
 
 function getDetailedPanelSheet(

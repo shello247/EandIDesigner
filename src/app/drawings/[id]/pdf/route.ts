@@ -5,6 +5,12 @@ import { getDrawingDetail } from "@/features/drawing_canvas/data/queries";
 import { buildDrawingPdfPrintHtml } from "@/features/drawing_canvas/logic/services/drawing-pdf-export";
 import { toSheetCanvasModel } from "@/features/drawing_canvas/logic/commands/drawing-sheet-commands";
 import { renderDrawingToSvg } from "@/features/drawing_canvas/logic/services/drawing-svg-renderer";
+import { buildDrawingSectionIndex } from "@/features/drawing_canvas/logic/services/drawing-sections";
+import {
+  parsePanelDeliverableSearchParams,
+  renderPanelScheduleForPrint
+} from "@/features/drawing_panel_reports/api/public";
+import { buildSavedPanelDeliverables } from "@/features/drawing_panel_reports/data/queries";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,7 +31,7 @@ function contentDisposition(fileName: string): string {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
@@ -39,9 +45,11 @@ export async function GET(
   }
 
   const sheetCount = drawing.model.sheets.length;
-  const pages = drawing.model.sheets.map((sheet, index) => {
+  const sectionIndex = buildDrawingSectionIndex(drawing.model);
+  const drawingPages = drawing.model.sheets.map((sheet, index) => {
     const sheetModel = toSheetCanvasModel(drawing.model, sheet.id);
     const sectionTitle = sheet.sectionTitlePage?.title?.trim();
+    const sectionMembership = sectionIndex.membershipBySheetId.get(sheet.id);
 
     return {
       sheet: sheetModel.sheet,
@@ -58,10 +66,51 @@ export async function GET(
             ? sectionTitle
             : sheet.name,
         sheetKind: sheet.kind,
-        sectionTitlePage: sheet.sectionTitlePage
+        sectionTitlePage: sheet.sectionTitlePage,
+        derivedSectionNumber:
+          sectionMembership?.kind === "section"
+            ? sectionMembership.sectionNumber
+            : undefined,
+        panelInternalWires: drawing.model.panelWiring?.internalWires,
+        panelConnectionPatterns: [
+          ...(drawing.model.panelWiring?.bridges ?? []).map((record) => ({
+            recordType: "bridge" as const,
+            record
+          })),
+          ...(drawing.model.panelWiring?.bonds ?? []).map((record) => ({
+            recordType: "bond" as const,
+            record
+          }))
+        ],
+        connectionVisibility: sheet.panelDrawingContext ? "panel_internal" : "field"
       })
     };
   });
+  const url = new URL(request.url);
+  const composition = url.searchParams.get("composition") ?? "drawings_only";
+  let pages = drawingPages;
+  let issueMode: "draft" | "issued" | undefined;
+
+  if (composition !== "drawings_only") {
+    try {
+      const options = parsePanelDeliverableSearchParams(url.searchParams);
+      issueMode = options.issueMode;
+      const deliverables = await buildSavedPanelDeliverables(id, options);
+      if (!deliverables) notFound();
+      const schedulePages = renderPanelScheduleForPrint(
+        deliverables.bundle,
+        options.reports
+      );
+      pages = composition === "schedules_only"
+        ? schedulePages
+        : [...drawingPages, ...schedulePages];
+    } catch (error) {
+      return new Response(
+        error instanceof Error ? error.message : "Unable to build panel schedules.",
+        { status: 400 }
+      );
+    }
+  }
   const firstPage = pages[0];
 
   if (!firstPage) {
@@ -90,7 +139,10 @@ export async function GET(
       printBackground: true,
       preferCSSPageSize: true
     });
-    const fileName = safePdfFileName(drawing.drawingKey || drawing.title);
+    const baseName = drawing.drawingKey || drawing.title;
+    const fileName = safePdfFileName(
+      `${issueMode === "draft" ? "DRAFT_" : ""}${baseName}${composition === "drawings_only" ? "" : "_panel_deliverables"}`
+    );
     const body = pdf.buffer.slice(
       pdf.byteOffset,
       pdf.byteOffset + pdf.byteLength

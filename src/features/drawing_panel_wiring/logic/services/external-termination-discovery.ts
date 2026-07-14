@@ -73,13 +73,15 @@ function defaultTerminalTarget(
     return undefined;
   }
 
-  const side = node.supportedSides.includes("external")
-    ? "external"
-    : node.supportedSides.includes("single")
-      ? "single"
+  const anchor = terminal.anchors.find(
+    (candidate) => candidate.anchorKey === anchorKey
+  );
+  const side =
+    anchor?.sideHint === "external" || anchor?.sideHint === "single"
+      ? anchor.sideHint
       : undefined;
 
-  return side
+  return side && node.supportedSides.includes(side)
     ? {
         assetId: occurrence.assetId,
         terminalKey: terminal.terminalKey,
@@ -97,17 +99,21 @@ export function discoverExternalTerminations({
 }: ExternalTerminationDiscoveryInput): ExternalTerminationDiscoveryResult {
   const findings: PanelConnectivityFinding[] = [];
   const terminations: PanelExternalTermination[] = [];
-  const mappings = new Map(
-    (source.panelWiring?.terminalMappings ?? []).map((mapping) => [
-      mappingKey(mapping),
-      mapping
-    ])
-  );
+  const mappings = new Map<string, PanelTerminalMapping>();
+
+  [...(source.panelWiring?.terminalMappings ?? [])]
+    .sort((first, second) => first.id.localeCompare(second.id))
+    .forEach((mapping) => {
+      const key = mappingKey(mapping);
+      if (!mappings.has(key)) {
+        mappings.set(key, mapping);
+      }
+    });
   const legacyInternalFindingIds = new Set<string>();
 
   for (const sheet of source.sheets) {
     for (const connection of sheet.connections) {
-      if (connection.panelConnectionId) {
+      if (connection.panelConnectionId || connection.panelPatternId) {
         continue;
       }
 
@@ -172,13 +178,12 @@ export function discoverExternalTerminations({
           const override = mappings.get(
             `${panelAssetId}:${sourceEndpointKey(sourceRef)}`
           );
-          const target =
-            override?.target ??
-            defaultTerminalTarget(
-              occurrence,
-              pair.endpoint.anchorKey,
-              terminalsById
-            );
+          const inferredTarget = defaultTerminalTarget(
+            occurrence,
+            pair.endpoint.anchorKey,
+            terminalsById
+          );
+          const target = override?.target ?? inferredTarget;
           const targetIsValid = target
             ? terminalSideIds.has(terminalSideNodeId(target))
             : false;
@@ -198,7 +203,16 @@ export function discoverExternalTerminations({
             id,
             panelAssetId,
             status: targetIsValid ? "resolved" : "unresolved",
+            mappingMode: override
+              ? "manual"
+              : inferredTarget && targetIsValid
+                ? "automatic"
+                : "unmapped",
+            mappingId: override?.id,
+            inferredTarget,
             target: targetIsValid ? target : undefined,
+            sourceAssetId: occurrence.assetId,
+            sourceAssetTag: occurrence.tag,
             source: sourceRef,
             sourceSheet: {
               id: sheet.id,

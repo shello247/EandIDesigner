@@ -14,6 +14,7 @@ import {
 } from "../services/drawing-asset-resolution";
 import { deriveWireId } from "../services/drawing-identification";
 import { remapLayoutDimensionAttachmentPlacementIds } from "../services/drawing-layout-dimensions";
+import { buildDrawingSectionIndex } from "../services/drawing-sections";
 
 function nextSheetIndex(model: DrawingModel): number {
   const usedIndexes = new Set(
@@ -171,6 +172,11 @@ export function updateSectionTitlePage(
   sheetId: string,
   updates: Partial<DrawingSectionTitlePage>
 ): DrawingModel {
+  const normalizedSubtitle =
+    updates.subtitle === undefined
+      ? undefined
+      : normalizeOptionalText(updates.subtitle, 400);
+
   return {
     ...model,
     sheets: model.sheets.map((sheet) =>
@@ -178,6 +184,10 @@ export function updateSectionTitlePage(
         ? {
             ...sheet,
             kind: "section_title",
+            description:
+              updates.subtitle === undefined
+                ? sheet.description
+                : normalizedSubtitle,
             sectionTitlePage: {
               ...(sheet.sectionTitlePage ?? {}),
               ...(updates.title === undefined
@@ -185,7 +195,7 @@ export function updateSectionTitlePage(
                 : { title: normalizeOptionalText(updates.title, 160) }),
               ...(updates.subtitle === undefined
                 ? {}
-                : { subtitle: normalizeOptionalText(updates.subtitle, 400) }),
+                : { subtitle: normalizedSubtitle }),
               ...(updates.sectionNumber === undefined
                 ? {}
                 : {
@@ -203,7 +213,8 @@ export function updateSectionTitlePage(
 
 export function addDrawingSheet(
   model: DrawingModel,
-  name?: string
+  name?: string,
+  options: { insertAt?: number } = {}
 ): { model: DrawingModel; sheetId: string } {
   const sheetId = createSheetId(model);
   const sheetNumber = model.sheets.length + 1;
@@ -212,10 +223,19 @@ export function addDrawingSheet(
     name: normalizeSheetName(name, `Sheet ${sheetNumber}`)
   });
 
+  const insertAt = Math.max(
+    0,
+    Math.min(options.insertAt ?? model.sheets.length, model.sheets.length)
+  );
+
   return {
     model: {
       ...model,
-      sheets: [...model.sheets, sheet]
+      sheets: [
+        ...model.sheets.slice(0, insertAt),
+        sheet,
+        ...model.sheets.slice(insertAt)
+      ]
     },
     sheetId
   };
@@ -228,32 +248,43 @@ export function addSectionTitlePage(
     title?: string;
     subtitle?: string;
     sectionNumber?: string;
-  } = {}
+  } = {},
+  options: { insertAt?: number } = {}
 ): { model: DrawingModel; sheetId: string } {
   const sheetId = createSheetId(model);
   const sheetNumber = model.sheets.length + 1;
   const title =
     normalizeOptionalText(input.title, 160) ?? `Section ${sheetNumber}`;
+  const subtitle = normalizeOptionalText(input.subtitle, 400);
   const sheet = {
     ...createDefaultDrawingSheet({
       id: sheetId,
       name: normalizeSheetName(input.name, `${title} Title Page`)
     }),
     kind: "section_title" as const,
+    description: subtitle,
     sectionTitlePage: {
       title,
-      subtitle: normalizeOptionalText(input.subtitle, 400),
-      sectionNumber: normalizeOptionalText(input.sectionNumber, 80)
+      subtitle
     },
     placements: [],
     connections: [],
     annotations: []
   };
 
+  const insertAt = Math.max(
+    0,
+    Math.min(options.insertAt ?? model.sheets.length, model.sheets.length)
+  );
+
   return {
     model: {
       ...model,
-      sheets: [...model.sheets, sheet]
+      sheets: [
+        ...model.sheets.slice(0, insertAt),
+        sheet,
+        ...model.sheets.slice(insertAt)
+      ]
     },
     sheetId
   };
@@ -359,6 +390,7 @@ export function duplicateSheet(
 ): { model: DrawingModel; sheetId: string } {
   const sourceIndex = model.sheets.findIndex((sheet) => sheet.id === sheetId);
   const source = sourceIndex >= 0 ? model.sheets[sourceIndex] : model.sheets[0];
+  const isSectionTitlePage = source.kind === "section_title";
   const newSheetId = createSheetId(model);
   const idPrefix = newSheetId.replace(/[^A-Za-z0-9_]+/g, "_");
   const placementIdMap = new Map<string, string>();
@@ -451,16 +483,27 @@ export function duplicateSheet(
       `Sheet ${model.sheets.length + 1}`
     ),
     page: { ...source.page },
-    placements,
-    connections,
-    annotations
+    placements: isSectionTitlePage ? [] : placements,
+    connections: isSectionTitlePage ? [] : connections,
+    annotations: isSectionTitlePage ? [] : annotations,
+    sectionTitlePage: isSectionTitlePage
+      ? {
+          title: source.sectionTitlePage?.title,
+          subtitle: source.sectionTitlePage?.subtitle
+        }
+      : source.sectionTitlePage
   };
+
+  const sourceSectionEnd = isSectionTitlePage
+    ? buildDrawingSectionIndex(model).sections.find(
+        (section) => section.id === source.id
+      )?.endIndexExclusive
+    : undefined;
 
   const insertAt =
     options.insertAt === undefined
-      ? sourceIndex >= 0
-        ? sourceIndex + 1
-        : model.sheets.length
+      ? sourceSectionEnd ??
+        (sourceIndex >= 0 ? sourceIndex + 1 : model.sheets.length)
       : Math.max(0, Math.min(options.insertAt, model.sheets.length));
 
   return {

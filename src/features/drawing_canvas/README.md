@@ -3,6 +3,10 @@
 `drawing_canvas` is the model-driven engineering drawing workspace. It is the
 current primary application module.
 
+The controlled-pilot architecture, manual scripts, performance budgets,
+recovery mode, and rollback checklist are documented in
+[`docs/DETAILED_PANEL_RELEASE.md`](../../../docs/DETAILED_PANEL_RELEASE.md).
+
 The canvas renders A3 landscape wiring sheets from registry symbols
 and a structured `DrawingModel` package. It is intentionally not a freeform
 SVG/vector editor.
@@ -24,6 +28,8 @@ Supported now:
 - Purple placement label handle that moves the tag/title pair together.
 - Active-sheet edit workspace with Fit, 100 percent, zoom in/out, Ctrl+wheel
   zoom, and Sheet Loader navigation for switching sheets.
+- Ordered drawing-package sections derived from Section Title Page boundaries.
+  Section numbers are sequential package-order values and cannot be duplicated.
 - Read-only Package Preview mode for reviewing all sheets in order without
   mounting edit overlays or sidebars.
 - Anchor hover data.
@@ -120,6 +126,22 @@ Prisma stores drawings in:
   - legacy saved `panel_layout` sheets are normalized as regular drawing sheets
     on parse so old records do not crash the canvas.
   - sheet number is derived from array order and rendered as `SHEET X OF N`.
+
+### Drawing Package Sections
+
+- A Section Title Page starts a section. Every following sheet belongs to that
+  section until the next Section Title Page.
+- Sheets before the first title page are Front Matter and remain unnumbered.
+- Section identity is the title-page sheet ID. Section number and member-sheet
+  membership are derived from `sheets[]` order and are not duplicated in new
+  persisted metadata.
+- Legacy `sectionTitlePage.sectionNumber` values still parse but do not control
+  ordering or normal rendering.
+- Moving a section moves its title page and complete contiguous member block.
+  Normal sheet move commands remain inside the current section; cross-section
+  movement is an explicit command.
+- Removing a section divider preserves its member sheets and merges them into
+  the preceding section or Front Matter.
 
 Version 1 single-sheet drawings are still accepted by `parseDrawingModelJson`.
 They are migrated in memory into a one-sheet v2 package and are written back as
@@ -256,6 +278,12 @@ Adjacent drawing features:
 - A loaded Detailed Panel Drawing replaces the field symbol library with a panel
   context summary and hides field connection authoring. The right sidebar can
   relink the sheet to another compatible package panel without changing assets.
+- Its Detailed Panel Workflow opens in Guided mode and derives progress for each
+  associated asset through representation, field termination review, terminal
+  mapping, wiring, patterns, review, and deliverables. Physical equipment is
+  defined by the panel layout and referenced here; the Detailed Panel workspace
+  does not create new panel devices.
+  Advanced Workbench preserves the complete technical catalogs and direct actions.
 - Sheet Loader and Package Preview classify context-bearing sheets as
   `Detailed Panel`. Asset Manager includes the context as a sheet association
   and prevents deletion of the referenced panel.
@@ -274,6 +302,9 @@ Adjacent drawing features:
 - Placing from the Panel Work Queue reuses the existing physical `assetId` and
   copies only the source occurrence's visual/device definition. It never creates
   a package asset, allocates a new tag, or copies source connections.
+- New Detailed Panel equipment is positioned from the usable sheet center outward.
+  Guided Step 1 can explicitly center the represented equipment group without
+  moving notes or reference helpers.
 - Removing a Detailed Panel occurrence returns its asset to the work queue.
   Removal is blocked when sheet-local wiring references that occurrence.
 - The Detailed Panel work queue is distinct from the Backplane Associated Panel
@@ -285,14 +316,26 @@ Adjacent drawing features:
 - Generated terminal anchors such as `T1_TOP` and `T1_BOTTOM` resolve to one
   logical terminal `T1`. Feed-through terminals expose external/internal sides;
   simple approved-symbol terminals expose a single side.
+- The Panel Work Queue also provides a terminal-level map. Automatic field-side
+  mappings are derived from source connections, while engineer corrections are
+  stored as canonical `{assetId, terminalKey, side}` overrides. Resetting an
+  override restores automatic resolution without changing the source connection.
+- Terminal side occupancy includes field terminations and existing panel wiring
+  records. Occupied external/single sides, internal sides, out-of-panel terminals,
+  and conflicting linked definitions are not valid field-mapping targets.
+- Guided Step 3 creates canonical internal wires from equipment and terminal
+  selectors in the workflow dialog. It uses the same validation, ID allocation,
+  orthogonal routing, history, and renderer as visual `Pick on drawing` mode.
 
 ## Interaction Notes
 
 - The rendered drawing SVG is generated by `renderDrawingToSvg`.
 - Edit mode renders only the active sheet. This keeps drag, zoom, connection
   authoring, and panel-layout interaction focused on one mounted sheet.
-- The Sheet Loader is the edit-mode navigation surface. It lists all sheets in
-  a searchable table and loads one sheet at a time into the edit workspace.
+- The Sheet Loader is the edit-mode navigation surface. It groups sheets by
+  Front Matter and sequential sections, supports explicit section reordering
+  and cross-section sheet movement, and loads one sheet at a time into the edit
+  workspace.
 - Loading a sheet clears transient edit state such as selections, connection
   drafts, and drag state. Viewport zoom/pan is remembered locally per sheet
   during the editing session.
@@ -370,8 +413,12 @@ Adjacent drawing features:
   shared by the drawing package.
 - The canvas no longer renders inline `foreignObject` note text editors.
 - Saved drawings move to `needs_review`.
-- `Approve` is a manual state change and does not run application-level drawing
-  checks.
+- `Approve` submits the current package once and runs server-side Detailed Panel
+  connectivity QC. Blocking panel findings preserve `needs_review`; warnings do
+  not block. Packages without Detailed Panel contexts retain manual approval.
+- **Panel Review** opens the active panel's deterministic engineering report with
+  severity/category/sheet filters, direct sheet-object navigation, and explicitly
+  confirmed safe repairs. Findings are derived rather than persisted.
 
 ## Boundaries
 
@@ -403,7 +450,43 @@ $env:DATABASE_URL='file:./dev.db'; npm run build
 npm run test:e2e -- --reporter=line
 ```
 
+## Panel Deliverables
+
+Packages containing Detailed Panel contexts expose a global Deliverables dialog.
+It derives read-only terminal, internal-wire, panel-asset, and BOM tables from the
+structured package graph. Active panel is the default scope; All panels
+deduplicates repeated contexts by physical panel asset ID.
+
+CSV and XLSX downloads rebuild from the saved model. Existing print/PDF URLs stay
+drawing-only unless explicit composition parameters request schedules-only or
+drawing-plus-schedules output. Draft schedule pages are marked not for issue.
+Issued downloads require an approved saved drawing and clean package-wide panel
+QC. Unsaved canvas revisions must be saved before any download.
+
 ## Next Stage Notes
+
+Detailed Panel Drawings now use a strict, capability-driven Panel Component
+Library. Approved symbols opt in through `metadata.panelWiring`, and component
+placement either creates one globally tagged package asset or references an exact
+compatible asset already associated with the active panel. Detailed Panel sheet
+duplication preserves asset identities, while clipboard guards prevent duplicate
+same-sheet or cross-panel representations.
+
+Detailed Panel Wire mode creates canonical package-level internal wires and
+sheet-local orthogonal route occurrences. Each route references its physical wire
+through `panelConnectionId`, so route-only removal preserves terminal occupancy
+and physical-wire identity. Internal and single terminal sides are eligible,
+external field sides remain protected, and Package Preview, print, and PDF use the
+same dedicated internal-wire renderer.
+
+Detailed Panel Pattern mode builds structured jumpers, bridge bars, daisy chains,
+distribution groups, fused distribution, shielding, PE, and signal-ground bonds.
+The guided canvas workflow resolves ordered canonical terminal references, shows
+generated wire IDs before commit, and writes the pattern, owned wires, route
+occurrences, generated references, and legend in one history operation. Pattern
+routes are visually distinct without relying on color alone. Removing one route
+representation preserves physical connectivity; deleting the physical pattern
+cascades only its owned wires and route occurrences.
 
 Recommended next work should build on the completed sheet model instead of
 changing the canvas foundation:
@@ -411,8 +494,8 @@ changing the canvas foundation:
 - Cable schedule page from `buildCableScheduleRows`.
 - Termination schedule page from `buildConnectionScheduleRows`.
 - Standard templates that capture specialist engineering knowledge.
-- Additional symbol imports for terminal blocks, glands, panels, and standard
-  accessories.
+- Additional symbol imports for terminal blocks, protection devices, earth bars,
+  glands, panels, and standard accessories with explicit electrical domains.
 
 ## Restart Handoff - Drawing Canvas Branch
 
@@ -447,7 +530,32 @@ As of the latest restart point:
 - Recovery source: local branch `codex/mixed-work-safety-20260710`.
 - Included domains: Drawing Canvas, Drawing Asset Manager, Drawing Sheet
   Templates, Detailed Panel Wiring, and Panel Asset Placement.
-- Excluded domains: BOM Creator and Networking routes, persistence, UI, and
-  symbol-registry changes.
-- Verification: 22 focused test files / 161 tests passed, lint passed, the
-  production build passed, and `tests/e2e/drawing-panel-sheet.spec.ts` passed.
+- Included adjacent domain: BOM Creator public projection API and panel
+  engineering reports/exports.
+- Excluded domain: Networking routes, persistence, UI, and symbol-registry
+  changes.
+- Verification: 54 unit files / 286 tests passed, lint and the production build
+  passed, eight Detailed Panel E2E scenarios passed, and four BOM Creator E2E
+  scenarios passed. Phase 10 also adds dedicated JB001 and generic-panel release
+  workflow specifications.
+
+## Phase 10 Release Hardening
+
+- Pointer-driven placement, route, label, resize, rotation, dimension, title,
+  and note gestures use transient drafts and create one model/history commit on
+  pointer-up. Escape or pointer cancellation restores the start model.
+- Package Preview keeps exact placeholders and mounts at most 12 full-sheet SVGs.
+- Panel Work Queue, Panel Review, Asset Manager, and Deliverables are dynamically
+  loaded. Large engineering tables use deferred search and 50/100/250-row pages.
+- `PanelEngineeringSnapshot` shares one validated source and graph. QC is derived
+  only for Review, approval, or Deliverables; report rows share one linear
+  `PanelReportIndex`.
+- Saves and approval use `expectedUpdatedAt`. Conflicts preserve local work and
+  offer JSON recovery download or explicit reload; no automatic merge occurs.
+- `DETAILED_PANEL_DRAWINGS_ENABLED=false` makes Detailed Panel content read-only
+  while retaining existing data, review, Package Preview, and exports. Server
+  guards prevent client bypass and unrelated field sheets remain editable.
+- Opt-in diagnostics record operation names, counts, and durations only. The
+  certified large fixture runs with `npm run test:panel-perf`.
+- Future agent calls are revision-bound, exact-identity, SHA-256-approved plans;
+  no AI model or autonomous agent UI is included.

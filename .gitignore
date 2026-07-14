@@ -4,6 +4,7 @@ out/
 coverage/
 playwright-report/
 test-results/
+artifacts/panel-performance/
 *.db
 *.db-journal
 *.db-shm

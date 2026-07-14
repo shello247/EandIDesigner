@@ -403,4 +403,95 @@ describe("drawing panel wiring compatibility", () => {
       })
     ]);
   });
+
+  it("resolves explicit approved-symbol panel sides for one logical terminal", () => {
+    const model = createCanvasFixture();
+    const base = approvedDeviceSymbol();
+    const symbol: ApprovedDrawingSymbol = {
+      ...base,
+      symbolId: "feedthrough_device_symbol",
+      symbolKey: "feedthrough_device_symbol",
+      versionId: "feedthrough_device_v1",
+      metadata: {
+        ...base.metadata,
+        symbolKey: "feedthrough_device_symbol",
+        anchors: [
+          { key: "FIELD", x: 10, y: 20, kind: "terminal" },
+          { key: "PANEL", x: 10, y: 0, kind: "terminal" }
+        ],
+        terminals: [
+          {
+            key: "1",
+            label: "1",
+            anchorKey: "FIELD",
+            panelSide: "external",
+            requiredForWiring: true
+          },
+          {
+            key: "1",
+            label: "1",
+            anchorKey: "PANEL",
+            panelSide: "internal",
+            requiredForWiring: true
+          }
+        ]
+      }
+    };
+    const assetId = "asset_feedthrough_device";
+    const next: DrawingModel = {
+      ...model,
+      assets: [
+        ...model.assets,
+        {
+          id: assetId,
+          tag: "DEV-902",
+          type: "instrument",
+          title: "Feed-through Device",
+          symbolId: symbol.symbolId,
+          versionId: symbol.versionId
+        }
+      ],
+      sheets: model.sheets.map((sheet) => ({
+        ...sheet,
+        placements: [
+          ...sheet.placements,
+          {
+            id: "feedthrough_device_occurrence",
+            assetId,
+            containerAssetId: PANEL_ASSET_ID,
+            symbolId: symbol.symbolId,
+            versionId: symbol.versionId,
+            role: "device",
+            tag: "DEV-902",
+            x: 120,
+            y: 80,
+            rotation: 0,
+            scale: 1
+          }
+        ]
+      }))
+    };
+    const source = createPanelWiringSource(next, [symbol]);
+    const occurrence = source.sheets[0].occurrences.find(
+      (candidate) => candidate.assetId === assetId
+    );
+
+    expect(occurrence?.terminalResolutionStatus).toBe("resolved");
+    expect(occurrence?.terminals).toEqual([
+      expect.objectContaining({
+        terminalKey: "1",
+        supportedSides: ["external", "internal"],
+        anchors: [
+          expect.objectContaining({
+            anchorKey: "FIELD",
+            sideHint: "external"
+          }),
+          expect.objectContaining({
+            anchorKey: "PANEL",
+            sideHint: "internal"
+          })
+        ]
+      })
+    ]);
+  });
 });

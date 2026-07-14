@@ -8,6 +8,7 @@ import {
   isGeneratedTerminalBlockReference,
   normalizeAssetTag,
   placementAssetId,
+  isNonAssetDrawingPlacement,
   renameDrawingAssetTag,
   type ApprovedDrawingSymbol,
   type DrawingAssetRecord,
@@ -53,6 +54,13 @@ const ASSET_TYPE_LABELS: Record<DrawingAssetType, string> = {
   junction_box: "Junction Box",
   terminal_block: "Terminal Block",
   breaker: "Breaker",
+  fuse: "Fuse",
+  relay: "Relay",
+  power_supply: "Power Supply",
+  isolator: "Isolator",
+  converter: "Converter",
+  io_module: "I/O Module",
+  earth_bar: "Earth Bar",
   cable: "Cable",
   other: "Asset"
 };
@@ -64,6 +72,13 @@ const ASSET_TYPE_PREFIXES: Record<DrawingAssetType, string> = {
   junction_box: "JB",
   terminal_block: "TB",
   breaker: "MCB",
+  fuse: "FU",
+  relay: "K",
+  power_supply: "PSU",
+  isolator: "ISO",
+  converter: "CV",
+  io_module: "IO",
+  earth_bar: "EB",
   cable: "C",
   other: "EQ"
 };
@@ -75,6 +90,13 @@ const ASSET_TYPE_STARTS: Record<DrawingAssetType, number> = {
   junction_box: 1,
   terminal_block: 101,
   breaker: 101,
+  fuse: 101,
+  relay: 101,
+  power_supply: 101,
+  isolator: 101,
+  converter: 101,
+  io_module: 101,
+  earth_bar: 101,
   cable: 101,
   other: 101
 };
@@ -213,7 +235,7 @@ export function buildManagedAssetCatalog(
       sheet.placements
         .filter(
           (placement) =>
-            placement.layoutKind !== undefined && placement.role === "other"
+            isNonAssetDrawingPlacement(placement)
         )
         .map(placementAssetId)
     )
@@ -238,7 +260,7 @@ export function buildManagedAssetCatalog(
 
   model.sheets.forEach((sheet, sheetIndex) => {
     sheet.placements.forEach((placement) => {
-      if (placement.layoutKind && placement.role === "other") {
+      if (isNonAssetDrawingPlacement(placement)) {
         return;
       }
 
@@ -320,7 +342,7 @@ function existingAssetTags(model: DrawingModel): Set<string> {
     ...(model.assets ?? []).map((asset) => normalizeAssetTag(asset.tag)),
     ...model.sheets.flatMap((sheet) =>
       sheet.placements
-        .filter((placement) => !placement.layoutKind)
+        .filter((placement) => !isNonAssetDrawingPlacement(placement))
         .map((placement) => normalizeAssetTag(placement.tag))
     )
   ]);

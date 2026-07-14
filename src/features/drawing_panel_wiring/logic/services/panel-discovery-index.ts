@@ -5,7 +5,9 @@ import type {
 } from "../../types";
 import { buildPanelAssociatedAssetCatalog } from "./panel-associated-asset-catalog";
 import { buildExternalTerminationCatalog } from "./external-termination-catalog";
+import { buildExternalTerminationMappingRows } from "./external-termination-mapping";
 import { detectPanelDiscoveryWarnings } from "./panel-discovery-warnings";
+import { buildPanelTerminalCatalog } from "./panel-terminal-catalog";
 
 function representedPlacementIndex(
   graph: PanelConnectivityGraph,
@@ -47,6 +49,13 @@ export function buildPanelDiscoveryIndex({
   };
   const assets = buildPanelAssociatedAssetCatalog(context);
   const terminations = buildExternalTerminationCatalog(context, assets);
+  const terminalCatalog = buildPanelTerminalCatalog({ graph, panelAssetId });
+  const mappingRows = buildExternalTerminationMappingRows({
+    graph,
+    panelAssetId,
+    terminations,
+    terminalCatalog
+  });
   const warnings = detectPanelDiscoveryWarnings(
     context,
     assets,
@@ -62,6 +71,10 @@ export function buildPanelDiscoveryIndex({
         termination.terminationId,
         termination
       ])
+    ),
+    terminalCatalog,
+    mappingRowsByTerminationId: new Map(
+      mappingRows.map((row) => [row.terminationId, row])
     ),
     representedPlacementIdByAssetId: representedPlacementIdsByAssetId,
     warnings

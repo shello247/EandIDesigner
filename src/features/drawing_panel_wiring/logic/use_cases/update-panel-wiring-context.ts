@@ -10,7 +10,9 @@ import type {
   PanelWiringCommandResult
 } from "../../types";
 import { buildPackageConnectivityGraph } from "../services/connectivity-graph";
+import { buildPanelTerminalCatalog } from "../services/panel-terminal-catalog";
 import {
+  externalTerminationId,
   sheetConnectionKey,
   sheetPlacementKey,
   terminalSideNodeId
@@ -170,6 +172,19 @@ export function upsertExternalTerminationMapping(
     );
   }
 
+  if (mapping.target.side === "internal") {
+    return commandError(
+      "invalid_field_terminal_side",
+      "Field terminations cannot be mapped to an internal terminal side.",
+      {
+        panelAssetId: mapping.panelAssetId,
+        assetId: mapping.target.assetId,
+        terminal: mapping.target,
+        source: mapping.source
+      }
+    );
+  }
+
   if (
     !graph.assetIdsByPanelAssetId
       .get(mapping.panelAssetId)
@@ -182,6 +197,53 @@ export function upsertExternalTerminationMapping(
         panelAssetId: mapping.panelAssetId,
         assetId: mapping.target.assetId,
         terminal: mapping.target
+      }
+    );
+  }
+
+  const terminalConflict = graph.findings.find(
+    (finding) =>
+      finding.assetId === mapping.target.assetId &&
+      finding.code === "linked_terminal_configuration_mismatch"
+  );
+
+  if (terminalConflict) {
+    return commandError(
+      "conflicting_target_terminal",
+      terminalConflict.message,
+      {
+        panelAssetId: mapping.panelAssetId,
+        assetId: mapping.target.assetId,
+        terminal: mapping.target,
+        source: mapping.source
+      }
+    );
+  }
+
+  const catalog = buildPanelTerminalCatalog({
+    graph,
+    panelAssetId: mapping.panelAssetId
+  });
+  const occupancy = catalog.occupancyBySideId.get(
+    terminalSideNodeId(mapping.target)
+  );
+  const currentTerminationId = externalTerminationId(
+    mapping.panelAssetId,
+    mapping.source
+  );
+  const otherOccupants = occupancy?.conductorOccupants.filter(
+    (occupant) => occupant.id !== currentTerminationId
+  );
+
+  if (otherOccupants && otherOccupants.length > 0) {
+    return commandError(
+      "terminal_side_occupied",
+      `${otherOccupants[0].label} already occupies this terminal side.`,
+      {
+        panelAssetId: mapping.panelAssetId,
+        assetId: mapping.target.assetId,
+        terminal: mapping.target,
+        source: mapping.source
       }
     );
   }

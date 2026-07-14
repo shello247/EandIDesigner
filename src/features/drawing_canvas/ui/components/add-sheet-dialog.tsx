@@ -14,7 +14,6 @@ export type AddSheetDialogSubmission =
       name: string;
       title: string;
       subtitle: string;
-      sectionNumber: string;
     }
   | {
       kind: "detailed_panel";
@@ -37,29 +36,32 @@ type SheetMode = AddSheetDialogSubmission["kind"];
 
 export function AddSheetDialog({
   nextSheetNumber,
+  nextSectionNumber,
   panelOptions,
   suggestedPanelTag,
   suggestedJunctionBoxTag,
+  allowDetailedPanel = true,
   onCancel,
   onAdd
 }: {
   nextSheetNumber: number;
+  nextSectionNumber: number;
   panelOptions: CompatiblePanelOption[];
   suggestedPanelTag: string;
   suggestedJunctionBoxTag: string;
+  allowDetailedPanel?: boolean;
   onCancel: () => void;
   onAdd: (submission: AddSheetDialogSubmission) => void;
 }) {
   const [mode, setMode] = useState<SheetMode>("drawing");
   const [drawingName, setDrawingName] = useState(`Sheet ${nextSheetNumber}`);
   const [sectionName, setSectionName] = useState(
-    `Section Title Page ${nextSheetNumber}`
+    `Section ${nextSectionNumber} Title Page`
   );
   const [sectionTitle, setSectionTitle] = useState(
-    `Section ${nextSheetNumber}`
+    `Section ${nextSectionNumber}`
   );
   const [sectionSubtitle, setSectionSubtitle] = useState("");
-  const [sectionNumber, setSectionNumber] = useState("");
   const [panelMode, setPanelMode] = useState<"reference" | "create">(
     "reference"
   );
@@ -90,8 +92,7 @@ export function AddSheetDialog({
         kind: "section_title",
         name: sectionName,
         title: sectionTitle,
-        subtitle: sectionSubtitle,
-        sectionNumber
+        subtitle: sectionSubtitle
       });
       return;
     }
@@ -166,7 +167,11 @@ export function AddSheetDialog({
         </div>
 
         <div className="space-y-4 px-5 py-4">
-          <div className="grid grid-cols-3 gap-2">
+          <div
+            className={`grid gap-2 ${
+              allowDetailedPanel ? "grid-cols-3" : "grid-cols-2"
+            }`}
+          >
             <button
               type="button"
               className={[
@@ -205,25 +210,27 @@ export function AddSheetDialog({
                 Divider page for drawing sections.
               </span>
             </button>
-            <button
-              type="button"
-              className={[
-                "rounded-md border px-3 py-2 text-left text-xs transition",
-                mode === "detailed_panel"
-                  ? "border-sky-300 bg-sky-50 text-sky-900"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              ].join(" ")}
-              aria-pressed={mode === "detailed_panel"}
-              onClick={() => setMode("detailed_panel")}
-            >
-              <span className="flex items-center gap-2 font-bold">
-                <CircuitBoard aria-hidden="true" size={14} />
-                Detailed Panel
-              </span>
-              <span className="mt-1 block text-slate-500">
-                Electrical detail for one enclosure.
-              </span>
-            </button>
+            {allowDetailedPanel ? (
+              <button
+                type="button"
+                className={[
+                  "rounded-md border px-3 py-2 text-left text-xs transition",
+                  mode === "detailed_panel"
+                    ? "border-sky-300 bg-sky-50 text-sky-900"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                ].join(" ")}
+                aria-pressed={mode === "detailed_panel"}
+                onClick={() => setMode("detailed_panel")}
+              >
+                <span className="flex items-center gap-2 font-bold">
+                  <CircuitBoard aria-hidden="true" size={14} />
+                  Detailed Panel
+                </span>
+                <span className="mt-1 block text-slate-500">
+                  Electrical detail for one enclosure.
+                </span>
+              </button>
+            ) : null}
           </div>
 
           {mode === "drawing" ? (
@@ -275,18 +282,9 @@ export function AddSheetDialog({
                   }
                 />
               </div>
-              <div>
-                <label className="field-label" htmlFor="add-section-number">
-                  Section number
-                </label>
-                <input
-                  id="add-section-number"
-                  className="field-input"
-                  value={sectionNumber}
-                  placeholder="Optional"
-                  onChange={(event) => setSectionNumber(event.currentTarget.value)}
-                />
-              </div>
+              <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-800">
+                The section number is assigned automatically from package order.
+              </p>
             </div>
           ) : (
             <div className="space-y-4">

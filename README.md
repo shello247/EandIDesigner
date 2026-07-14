@@ -65,6 +65,10 @@ freeform vector editor.
 
 ## Development Runbook
 
+For reproducing the current development environment on another Windows
+computer, including the private SQLite restore process, see
+[`docs/HOME_SETUP.md`](docs/HOME_SETUP.md).
+
 ```powershell
 npm install
 $env:DATABASE_URL='file:./dev.db'; npm run db:setup

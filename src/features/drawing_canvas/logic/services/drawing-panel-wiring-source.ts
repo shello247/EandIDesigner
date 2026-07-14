@@ -20,7 +20,11 @@ import {
 import { getConnectionWireId } from "./drawing-identification";
 
 function occurrenceAssetId(placement: DrawingPlacement): string | undefined {
-  if (placement.layoutKind && placement.role === "other") {
+  if (
+    (placement.layoutKind && placement.role === "other") ||
+    placement.panelReference ||
+    placement.panelPatternLegend
+  ) {
     return undefined;
   }
 
@@ -35,6 +39,54 @@ function occurrenceKind(
   }
 
   return placement.role === "enclosure" ? "enclosure_reference" : "wiring";
+}
+
+type PhysicalPosition = "top" | "right" | "bottom" | "left";
+
+function rotatePhysicalPosition(
+  position: PhysicalPosition,
+  rotation: number
+): PhysicalPosition | undefined {
+  const normalized = ((rotation % 360) + 360) % 360;
+  const quarterTurns = Math.round(normalized / 90) % 4;
+
+  if (Math.abs(normalized - quarterTurns * 90) > 0.001) {
+    return undefined;
+  }
+
+  const positions: PhysicalPosition[] = ["top", "right", "bottom", "left"];
+  return positions[(positions.indexOf(position) + quarterTurns) % positions.length];
+}
+
+function anchorPhysicalPosition(
+  anchor: ApprovedDrawingSymbol["metadata"]["anchors"][number],
+  symbol: ApprovedDrawingSymbol,
+  rotation: number
+): PhysicalPosition | undefined {
+  const viewBox = symbol.metadata.viewBox;
+  const tolerance = Math.max(0.5, Math.min(viewBox.width, viewBox.height) * 0.15);
+  const distances: Array<{ position: PhysicalPosition; distance: number }> = [
+    { position: "top", distance: Math.abs(anchor.y - viewBox.y) },
+    {
+      position: "right",
+      distance: Math.abs(anchor.x - (viewBox.x + viewBox.width))
+    },
+    {
+      position: "bottom",
+      distance: Math.abs(anchor.y - (viewBox.y + viewBox.height))
+    },
+    { position: "left", distance: Math.abs(anchor.x - viewBox.x) }
+  ];
+  distances.sort((first, second) => first.distance - second.distance);
+
+  if (
+    distances[0].distance > tolerance ||
+    Math.abs(distances[0].distance - distances[1].distance) < 0.001
+  ) {
+    return undefined;
+  }
+
+  return rotatePhysicalPosition(distances[0].position, rotation);
 }
 
 function generatedTerminalBlockSourceTerminals(
@@ -54,19 +106,22 @@ function generatedTerminalBlockSourceTerminals(
       {
         anchorKey: terminal.bottomAnchorKey,
         anchorKind: "terminal",
-        sideHint: "external"
+        sideHint: "external",
+        physicalPosition: rotatePhysicalPosition("bottom", placement.rotation)
       },
       {
         anchorKey: terminal.topAnchorKey,
         anchorKind: "terminal",
-        sideHint: "internal"
+        sideHint: "internal",
+        physicalPosition: rotatePhysicalPosition("top", placement.rotation)
       }
     ]
   }));
 }
 
 function approvedSymbolSourceTerminals(
-  symbol: ApprovedDrawingSymbol
+  symbol: ApprovedDrawingSymbol,
+  rotation: number
 ): PanelWiringSourceTerminal[] {
   const anchorByKey = new Map(
     symbol.metadata.anchors.map((anchor) => [anchor.key, anchor])
@@ -90,21 +145,61 @@ function approvedSymbolSourceTerminals(
               {
                 anchorKey: anchor.key,
                 anchorKind: anchor.kind,
-                sideHint: terminals.length === 1 ? ("single" as const) : undefined
+                sideHint:
+                  terminal.panelSide ??
+                  (terminals.length === 1 ? ("single" as const) : undefined),
+                physicalPosition: anchorPhysicalPosition(anchor, symbol, rotation)
               }
             ]
           : [];
       });
       const first = terminals[0];
-      const isResolved = terminals.length === 1 && anchors.length === 1;
+      const explicitSides = terminals.map((terminal) => terminal.panelSide);
+      const uniqueSides = new Set(explicitSides.filter(Boolean));
+      const uniqueAnchors = new Set(anchors.map((anchor) => anchor.anchorKey));
+      const isLegacySingle =
+        terminals.length === 1 && anchors.length === 1 && !terminals[0].panelSide;
+      const isExplicitSingle =
+        terminals.length === 1 &&
+        anchors.length === 1 &&
+        terminals[0].panelSide === "single";
+      const isExplicitSided =
+        terminals.length > 0 &&
+        terminals.every(
+          (terminal) =>
+            terminal.panelSide === "external" ||
+            terminal.panelSide === "internal"
+        ) &&
+        uniqueSides.size === terminals.length &&
+        uniqueAnchors.size === terminals.length &&
+        anchors.length === terminals.length;
+      const isResolved =
+        isLegacySingle || isExplicitSingle || isExplicitSided;
       const supportedSides: PanelWiringSourceTerminal["supportedSides"] =
-        isResolved ? ["single"] : [];
+        isLegacySingle || isExplicitSingle
+          ? ["single"]
+          : isExplicitSided
+            ? ([...uniqueSides].sort() as PanelWiringSourceTerminal["supportedSides"])
+            : [];
+      const requiredSides = [
+        ...new Set(
+          terminals.flatMap((terminal) => {
+            if (!terminal.requiredForWiring) return [];
+            if (terminal.panelSide) return [terminal.panelSide];
+            return terminals.length === 1 ? (["single"] as const) : [];
+          })
+        )
+      ].sort() as NonNullable<PanelWiringSourceTerminal["requiredSides"]>;
 
       return {
         terminalKey,
         label: first.label,
         function: first.function,
         supportedSides,
+        requiredSides: requiredSides.length > 0 ? requiredSides : undefined,
+        allowedDomains: [
+          ...new Set(terminals.flatMap((terminal) => terminal.electricalDomains ?? []))
+        ].sort(),
         anchors,
         status: isResolved ? ("resolved" as const) : ("ambiguous" as const)
       };
@@ -162,7 +257,7 @@ function terminalSourceForPlacement(
     };
   }
 
-  const terminals = approvedSymbolSourceTerminals(symbol);
+  const terminals = approvedSymbolSourceTerminals(symbol, placement.rotation);
 
   if (terminals.length === 0) {
     return {
@@ -188,6 +283,7 @@ function sourceOccurrence(
   placement: DrawingPlacement,
   symbols: ApprovedDrawingSymbol[]
 ): PanelWiringSourceOccurrence {
+  const renderableSymbol = getRenderableSymbolForPlacement(placement, symbols);
   return {
     sheetId: sheet.id,
     placementId: placement.id,
@@ -198,6 +294,9 @@ function sourceOccurrence(
     containerAssetId: placement.containerAssetId,
     symbolId: placement.symbolId,
     versionId: placement.versionId,
+    availableAnchorKeys: renderableSymbol?.metadata.anchors.map(
+      (anchor) => anchor.key
+    ),
     ...terminalSourceForPlacement(placement, symbols)
   };
 }
@@ -271,7 +370,11 @@ export function buildDrawingPanelWiringSource(
               : undefined,
             cableTag: cablePlacement?.tag,
             conductorKey: connection.conductorKey,
-            panelConnectionId: connection.panelConnectionId
+            panelConnectionId: connection.panelConnectionId,
+            panelPatternId: connection.panelPatternId,
+            panelPatternSegmentId: connection.panelPatternSegmentId,
+            routeMode: connection.route?.mode,
+            routePointCount: connection.route?.points.length
           };
         })
       };

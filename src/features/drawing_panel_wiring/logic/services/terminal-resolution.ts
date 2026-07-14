@@ -5,9 +5,17 @@ import type {
   PanelWiringSourceOccurrence,
   PanelWiringSourceTerminal
 } from "../../data/schema";
+import { panelTerminalRefSchema } from "../../data/schema";
 
 function encodePart(value: string): string {
   return encodeURIComponent(value);
+}
+
+export function createPanelTerminalRef(input: {
+  assetId: string;
+  terminalKey: string;
+}): PanelTerminalRef {
+  return panelTerminalRefSchema.parse(input);
 }
 
 export function sheetPlacementKey(sheetId: string, placementId: string): string {
@@ -62,6 +70,8 @@ export function terminalDefinitionSignature(
     label: terminal.label,
     function: terminal.function ?? "",
     supportedSides: [...terminal.supportedSides].sort(),
+    requiredSides: [...(terminal.requiredSides ?? [])].sort(),
+    allowedDomains: [...(terminal.allowedDomains ?? [])].sort(),
     anchors: terminal.anchors
       .map((anchor) => ({
         anchorKey: anchor.anchorKey,

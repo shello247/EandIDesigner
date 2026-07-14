@@ -1,28 +1,68 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, FileDown } from "lucide-react";
 import type { DrawingModel } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import { toSheetCanvasModel } from "../../logic/commands/drawing-sheet-commands";
 import { renderDrawingToSvg } from "../../logic/services/drawing-svg-renderer";
 import { getDrawingSheetPresentation } from "../../logic/services/drawing-sheet-presentation";
+import { measureDrawingOperation } from "../../logic/services/drawing-performance-diagnostics";
+import type { DrawingSectionIndex } from "../../logic/services/drawing-sections";
 
 type PackagePreviewSurfaceProps = {
   model: DrawingModel;
+  sectionIndex: DrawingSectionIndex;
   drawingTitle: string;
   symbols: ApprovedDrawingSymbol[];
   onExitPreview: () => void;
   onPreviewPdf: () => void;
 };
 
+const MAX_MOUNTED_PREVIEW_PAGES = 12;
+
 export function PackagePreviewSurface({
   model,
+  sectionIndex,
   drawingTitle,
   symbols,
   onExitPreview,
   onPreviewPdf
 }: PackagePreviewSurfaceProps) {
+  const svgCacheRef = useRef<Map<string, string>>(new Map());
+  const [mountedSheetIds, setMountedSheetIds] = useState<string[]>(() =>
+    model.sheets.slice(0, 2).map((sheet) => sheet.id)
+  );
+
+  const handlePageProximityChange = useCallback(
+    (sheetId: string, isNear: boolean) => {
+      setMountedSheetIds((current) => {
+        const withoutSheet = current.filter((candidate) => candidate !== sheetId);
+        if (!isNear) return withoutSheet;
+        return [...withoutSheet, sheetId].slice(-MAX_MOUNTED_PREVIEW_PAGES);
+      });
+    },
+    []
+  );
+
+  const getCachedSvg = useCallback((sheetId: string, render: () => string) => {
+    const svgCache = svgCacheRef.current;
+    const cached = svgCache.get(sheetId);
+    if (cached !== undefined) {
+      svgCache.delete(sheetId);
+      svgCache.set(sheetId, cached);
+      return cached;
+    }
+    const svg = render();
+    svgCache.set(sheetId, svg);
+    while (svgCache.size > MAX_MOUNTED_PREVIEW_PAGES) {
+      const oldest = svgCache.keys().next().value;
+      if (oldest === undefined) break;
+      svgCache.delete(oldest);
+    }
+    return svg;
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -69,8 +109,14 @@ export function PackagePreviewSurface({
         data-testid="drawing-package-preview"
       >
         <div className="drawing-package-preview-stack">
-          {model.sheets.map((sheet, index) => (
-            <PackagePreviewPage
+          {model.sheets.map((sheet, index) => {
+            const membership = sectionIndex.membershipBySheetId.get(sheet.id);
+            const derivedSectionNumber =
+              membership?.kind === "section"
+                ? membership.sectionNumber
+                : undefined;
+
+            return <PackagePreviewPage
               key={sheet.id}
               model={model}
               drawingTitle={drawingTitle}
@@ -78,8 +124,13 @@ export function PackagePreviewSurface({
               sheetId={sheet.id}
               sheetNumber={index + 1}
               sheetCount={model.sheets.length}
-            />
-          ))}
+              derivedSectionNumber={derivedSectionNumber}
+              cacheKey={`${sheet.id}:${index + 1}:${derivedSectionNumber ?? 0}`}
+              mounted={mountedSheetIds.includes(sheet.id)}
+              onProximityChange={handlePageProximityChange}
+              getCachedSvg={getCachedSvg}
+            />;
+          })}
         </div>
       </div>
     </section>
@@ -91,64 +142,91 @@ function PackagePreviewPage({
   drawingTitle,
   symbols,
   sheetId,
+  cacheKey,
   sheetNumber,
-  sheetCount
+  sheetCount,
+  derivedSectionNumber,
+  mounted,
+  onProximityChange,
+  getCachedSvg
 }: {
   model: DrawingModel;
   drawingTitle: string;
   symbols: ApprovedDrawingSymbol[];
   sheetId: string;
+  cacheKey: string;
   sheetNumber: number;
   sheetCount: number;
+  derivedSectionNumber?: number;
+  mounted: boolean;
+  onProximityChange: (sheetId: string, isNear: boolean) => void;
+  getCachedSvg: (sheetId: string, render: () => string) => string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [shouldRender, setShouldRender] = useState(sheetNumber <= 2);
   const sheet = model.sheets.find((candidate) => candidate.id === sheetId);
   const svg = useMemo(() => {
-    if (!shouldRender || !sheet) {
+    if (!mounted || !sheet) {
       return "";
     }
 
-    const sheetModel = toSheetCanvasModel(model, sheetId);
-    const sectionTitle = sheet.sectionTitlePage?.title?.trim();
+    return getCachedSvg(cacheKey, () => {
+      const sheetModel = toSheetCanvasModel(model, sheetId);
+      const sectionTitle = sheet.sectionTitlePage?.title?.trim();
 
-    return renderDrawingToSvg({
-      model: sheetModel,
-      approvedSymbols: symbols,
-      showAnchors: false,
-      showConnections: true,
-      sheetNumber,
-      sheetCount,
-      drawingTitle,
-      sheetTitle:
-        sheet.kind === "section_title" && sectionTitle
-          ? sectionTitle
-          : sheet.name,
-      sheetKind: sheet.kind,
-      sectionTitlePage: sheet.sectionTitlePage
+      return measureDrawingOperation("preview.svg", () => renderDrawingToSvg({
+        model: sheetModel,
+        approvedSymbols: symbols,
+        showAnchors: false,
+        showConnections: true,
+        sheetNumber,
+        sheetCount,
+        drawingTitle,
+        sheetTitle:
+          sheet.kind === "section_title" && sectionTitle
+            ? sectionTitle
+            : sheet.name,
+        sheetKind: sheet.kind,
+        sectionTitlePage: sheet.sectionTitlePage,
+        derivedSectionNumber,
+        panelInternalWires: model.panelWiring?.internalWires,
+        panelConnectionPatterns: [
+          ...(model.panelWiring?.bridges ?? []).map((record) => ({
+            recordType: "bridge" as const,
+            record
+          })),
+          ...(model.panelWiring?.bonds ?? []).map((record) => ({
+            recordType: "bond" as const,
+            record
+          }))
+        ],
+        connectionVisibility: sheet.panelDrawingContext
+          ? "panel_internal"
+          : "field"
+      }), { sheetId });
     });
-  }, [drawingTitle, model, sheet, sheetCount, sheetId, sheetNumber, shouldRender, symbols]);
+  }, [cacheKey, derivedSectionNumber, drawingTitle, getCachedSvg, model, mounted, sheet, sheetCount, sheetId, sheetNumber, symbols]);
 
   useEffect(() => {
     const element = containerRef.current;
 
-    if (!element || shouldRender) {
+    if (!element) {
       return;
     }
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setShouldRender(true);
-        }
+        onProximityChange(
+          sheetId,
+          entries.some((entry) => entry.isIntersecting)
+        );
       },
-      { rootMargin: "900px 0px" }
+      { rootMargin: "1200px 0px" }
     );
 
     observer.observe(element);
 
     return () => observer.disconnect();
-  }, [shouldRender]);
+  }, [onProximityChange, sheetId]);
 
   if (!sheet) {
     return null;
@@ -161,6 +239,7 @@ function PackagePreviewPage({
       ref={containerRef}
       className="drawing-package-preview-page"
       data-testid="drawing-package-preview-page"
+      data-preview-svg-mounted={svg ? "true" : "false"}
     >
       <div className="drawing-sheet-caption">
         <span className="drawing-sheet-caption-index">

@@ -82,6 +82,12 @@ import {
 } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-qc";
 import type { TerminalBlockPlacement } from "@/features/drawing_terminal_blocks/types";
 import type { AssetLinkDialogMode } from "./asset-link-dialog";
+import {
+  getPanelComponentPlacementSummary,
+  type PanelConnectionPatternRecord,
+  type PanelWireAttributes
+} from "@/features/drawing_panel_wiring/api/public";
+import { isGeneratedPanelPatternLegendPlacement } from "../../logic/services/drawing-panel-reference-symbols";
 
 function placementAnchorOptions(
   placementId: string,
@@ -109,12 +115,16 @@ export function PlacementPropertiesPanel({
   activeSheet,
   activeSheetNumber,
   sheetCount,
+  sectionLabel,
+  sectionMemberCount,
+  sectionMoveOptions,
   symbols,
   headerAction,
   onTitleChange,
   onTitleBlockChange,
   onSheetMetadataChange,
   onSectionTitlePageChange,
+  onMoveSheetToSection,
   selection,
   selectedPlacementId,
   onPlacementAssetTagChange,
@@ -130,6 +140,9 @@ export function PlacementPropertiesPanel({
   onConnectionChange,
   onConnectionRemove,
   onConnectionRouteReset,
+  onInternalWireChange,
+  onPanelPatternChange,
+  onPanelPatternLegendVisibilityChange,
   showConnections = true,
   onAnnotationChange,
   onAnnotationRemove
@@ -140,6 +153,9 @@ export function PlacementPropertiesPanel({
   activeSheet: DrawingPackageSheet;
   activeSheetNumber: number;
   sheetCount: number;
+  sectionLabel: string;
+  sectionMemberCount?: number;
+  sectionMoveOptions: Array<{ id: string; label: string }>;
   symbols: ApprovedDrawingSymbol[];
   headerAction?: ReactNode;
   onTitleChange: (title: string) => void;
@@ -182,6 +198,16 @@ export function PlacementPropertiesPanel({
   ) => void;
   onConnectionRemove: (connectionId: string) => void;
   onConnectionRouteReset: (connectionId: string) => void;
+  onInternalWireChange?: (
+    wireRecordId: string,
+    updates: { wireId: string; attributes?: PanelWireAttributes }
+  ) => void;
+  onMoveSheetToSection: (targetSectionId: string | "front_matter") => void;
+  onPanelPatternChange?: (
+    patternId: string,
+    updates: { label?: string; description?: string }
+  ) => void;
+  onPanelPatternLegendVisibilityChange?: (visible: boolean) => void;
   showConnections?: boolean;
   onAnnotationChange: (
     annotationId: string,
@@ -222,8 +248,12 @@ export function PlacementPropertiesPanel({
         sheet={activeSheet}
         sheetNumber={activeSheetNumber}
         sheetCount={sheetCount}
+        sectionLabel={sectionLabel}
+        sectionMemberCount={sectionMemberCount}
+        sectionMoveOptions={sectionMoveOptions}
         onSheetMetadataChange={onSheetMetadataChange}
         onSectionTitlePageChange={onSectionTitlePageChange}
+        onMoveSheetToSection={onMoveSheetToSection}
       />
 
       <MultiSelectionSummary selection={selection} />
@@ -240,9 +270,19 @@ export function PlacementPropertiesPanel({
         placement={selectedPlacement}
         packageModel={packageModel}
         symbols={symbols}
+        allowCreateAsset={
+          activeSheet.panelDrawingContext?.kind !== "detailed_panel_wiring"
+        }
         onPlacementAssetTagChange={onPlacementAssetTagChange}
         onOpenAssetLinkDialog={onOpenAssetLinkDialog}
         onPlacementTitleChange={onPlacementTitleChange}
+      />
+
+      <SelectedDetailedPanelComponentSummary
+        placement={selectedPlacement}
+        activeSheet={activeSheet}
+        packageModel={packageModel}
+        symbols={symbols}
       />
 
       <SelectedPlacementLayoutEditor
@@ -275,6 +315,25 @@ export function PlacementPropertiesPanel({
         onAnnotationRemove={onAnnotationRemove}
       />
 
+      <InternalWireEditor
+        packageModel={packageModel}
+        model={model}
+        selectedConnectionId={selectedConnectionId}
+        onInternalWireChange={onInternalWireChange}
+        onConnectionRemove={onConnectionRemove}
+        onConnectionRouteReset={onConnectionRouteReset}
+      />
+
+      <PanelPatternEditor
+        packageModel={packageModel}
+        model={model}
+        selectedConnectionId={selectedConnectionId}
+        onPanelPatternChange={onPanelPatternChange}
+        onLegendVisibilityChange={onPanelPatternLegendVisibilityChange}
+        onConnectionRemove={onConnectionRemove}
+        onConnectionRouteReset={onConnectionRouteReset}
+      />
+
       {showConnections ? <ConnectionEditor
         model={model}
         symbols={symbols}
@@ -285,6 +344,102 @@ export function PlacementPropertiesPanel({
         onConnectionRouteReset={onConnectionRouteReset}
       /> : null}
     </div>
+  );
+}
+
+function SelectedDetailedPanelComponentSummary({
+  placement,
+  activeSheet,
+  packageModel,
+  symbols
+}: {
+  placement?: DrawingModel["placements"][number];
+  activeSheet: DrawingPackageSheet;
+  packageModel: DrawingPackageModel;
+  symbols: ApprovedDrawingSymbol[];
+}) {
+  if (
+    !placement?.assetId ||
+    activeSheet.panelDrawingContext?.kind !== "detailed_panel_wiring" ||
+    placement.containerAssetId !== activeSheet.panelDrawingContext.panelAssetId
+  ) {
+    return null;
+  }
+  const symbol = symbols.find(
+    (candidate) =>
+      candidate.symbolId === placement.symbolId &&
+      candidate.versionId === placement.versionId
+  );
+  if (!symbol?.metadata.panelWiring) {
+    return null;
+  }
+  const asset = packageModel.assets?.find(
+    (candidate) => candidate.id === placement.assetId
+  );
+  const panel = packageModel.assets?.find(
+    (candidate) => candidate.id === placement.containerAssetId
+  );
+  const summary = getPanelComponentPlacementSummary({
+    symbol,
+    placement,
+    asset
+  });
+
+  return (
+    <section className="tool-panel overflow-hidden">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <h2 className="text-sm font-bold">Panel Component</h2>
+        <p className="mt-0.5 text-xs text-slate-500">
+          {summary.tag} / {summary.title ?? symbol.displayName}
+        </p>
+      </div>
+      <div className="space-y-3 p-4 text-xs">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase text-slate-500">Type</p>
+            <p className="mt-1 font-semibold text-slate-900">
+              {(summary.assetType ?? symbol.metadata.panelWiring.assetType)
+                .replace(/_/g, " ")
+                .replace(/\b\w/g, (letter) => letter.toUpperCase())}
+            </p>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase text-slate-500">Parent panel</p>
+            <p className="mt-1 font-semibold text-slate-900">{panel?.tag ?? "Missing"}</p>
+          </div>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase text-slate-500">
+            Approved symbol
+          </p>
+          <p className="mt-1 font-semibold text-slate-900">
+            {symbol.displayName} / Version {symbol.versionNumber}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase text-slate-500">
+            Terminals ({summary.terminals.length})
+          </p>
+          <div className="mt-2 space-y-1.5">
+            {summary.terminals.map((terminal) => (
+              <div key={terminal.terminalKey} className="rounded-md border border-slate-200 px-2.5 py-2">
+                <p className="font-bold text-slate-900">
+                  {terminal.terminalKey} / {terminal.label}
+                </p>
+                <p className="mt-0.5 text-[10px] text-slate-500">
+                  {terminal.function ?? "Electrical terminal"} / {terminal.supportedSides.join(", ")}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+        {summary.warnings.map((warning) => (
+          <div key={warning} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+            {warning}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -326,12 +481,19 @@ function SheetPropertiesEditor({
   sheet,
   sheetNumber,
   sheetCount,
+  sectionLabel,
+  sectionMemberCount,
+  sectionMoveOptions,
   onSheetMetadataChange,
-  onSectionTitlePageChange
+  onSectionTitlePageChange,
+  onMoveSheetToSection
 }: {
   sheet: DrawingPackageSheet;
   sheetNumber: number;
   sheetCount: number;
+  sectionLabel: string;
+  sectionMemberCount?: number;
+  sectionMoveOptions: Array<{ id: string; label: string }>;
   onSheetMetadataChange: (updates: {
     name?: string;
     description?: string;
@@ -341,6 +503,7 @@ function SheetPropertiesEditor({
       NonNullable<DrawingPackageSheet["sectionTitlePage"]>
     >
   ) => void;
+  onMoveSheetToSection: (targetSectionId: string | "front_matter") => void;
 }) {
   const isSectionTitlePage = sheet.kind === "section_title";
   const sectionTitlePage = sheet.sectionTitlePage ?? {};
@@ -372,6 +535,18 @@ function SheetPropertiesEditor({
 
         {isSectionTitlePage ? (
           <>
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-[11px] font-bold uppercase text-slate-500">
+                Package section
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {sectionLabel}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {sectionMemberCount ?? 0} member sheet
+                {(sectionMemberCount ?? 0) === 1 ? "" : "s"}
+              </p>
+            </div>
             <div>
               <label className="field-label" htmlFor="section-title-page-title">
                 Section title
@@ -407,43 +582,63 @@ function SheetPropertiesEditor({
                 }
               />
             </div>
+          </>
+        ) : (
+          <>
             <div>
-              <label
-                className="field-label"
-                htmlFor="section-title-page-number"
-              >
-                Section number
+              <label className="field-label" htmlFor="active-sheet-description">
+                Description
               </label>
-              <input
-                id="section-title-page-number"
-                className="field-input"
-                value={sectionTitlePage.sectionNumber ?? ""}
-                placeholder="Optional"
+              <textarea
+                id="active-sheet-description"
+                className="field-input min-h-24 resize-y leading-relaxed"
+                value={sheet.description ?? ""}
+                placeholder="Optional sheet description"
                 onChange={(event) =>
-                  onSectionTitlePageChange({
-                    sectionNumber: event.currentTarget.value
+                  onSheetMetadataChange({
+                    description: event.currentTarget.value
                   })
                 }
               />
             </div>
+            <div>
+              <label className="field-label" htmlFor="active-sheet-section">
+                Package section
+              </label>
+              <div
+                id="active-sheet-section"
+                className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900"
+              >
+                {sectionLabel}
+              </div>
+            </div>
+            {sectionMoveOptions.length > 0 ? (
+              <div>
+                <label
+                  className="field-label"
+                  htmlFor="move-active-sheet-section"
+                >
+                  Move to section
+                </label>
+                <select
+                  id="move-active-sheet-section"
+                  className="field-input"
+                  value=""
+                  onChange={(event) => {
+                    const target = event.currentTarget.value;
+                    if (target) onMoveSheetToSection(target);
+                  }}
+                >
+                  <option value="">Choose destination...</option>
+                  {sectionMoveOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
           </>
-        ) : (
-          <div>
-            <label className="field-label" htmlFor="active-sheet-description">
-              Description
-            </label>
-            <textarea
-              id="active-sheet-description"
-              className="field-input min-h-24 resize-y leading-relaxed"
-              value={sheet.description ?? ""}
-              placeholder="Optional sheet description"
-              onChange={(event) =>
-                onSheetMetadataChange({
-                  description: event.currentTarget.value
-                })
-              }
-            />
-          </div>
         )}
       </div>
     </section>
@@ -725,6 +920,7 @@ function SelectedPlacementAssetEditor({
   placement,
   packageModel,
   symbols,
+  allowCreateAsset,
   onPlacementAssetTagChange,
   onOpenAssetLinkDialog,
   onPlacementTitleChange
@@ -732,6 +928,7 @@ function SelectedPlacementAssetEditor({
   placement: DrawingModel["placements"][number] | undefined;
   packageModel: DrawingPackageModel;
   symbols: ApprovedDrawingSymbol[];
+  allowCreateAsset: boolean;
   onPlacementAssetTagChange: (assetId: string, tag: string) => void;
   onOpenAssetLinkDialog: (mode: AssetLinkDialogMode) => void;
   onPlacementTitleChange: (placementId: string, title: string) => void;
@@ -918,14 +1115,16 @@ function SelectedPlacementAssetEditor({
             Asset link
           </div>
           <div className="grid gap-2">
-            <button
-              type="button"
-              className="icon-button justify-start"
-              onClick={() => onOpenAssetLinkDialog("create")}
-            >
-              <GitBranch aria-hidden="true" size={14} />
-              Create new asset
-            </button>
+            {allowCreateAsset ? (
+              <button
+                type="button"
+                className="icon-button justify-start"
+                onClick={() => onOpenAssetLinkDialog("create")}
+              >
+                <GitBranch aria-hidden="true" size={14} />
+                Create new asset
+              </button>
+            ) : null}
             <button
               type="button"
               className="icon-button justify-start"
@@ -934,7 +1133,7 @@ function SelectedPlacementAssetEditor({
               <Link2 aria-hidden="true" size={14} />
               Reference existing asset
             </button>
-            {asset && asset.placementRefs.length > 1 ? (
+            {allowCreateAsset && asset && asset.placementRefs.length > 1 ? (
               <button
                 type="button"
                 className="icon-button justify-start"
@@ -1974,6 +2173,284 @@ function SelectedNoteEditor({
           >
             <Trash2 aria-hidden="true" size={14} />
             Delete note
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PanelPatternEditor({
+  packageModel,
+  model,
+  selectedConnectionId,
+  onPanelPatternChange,
+  onLegendVisibilityChange,
+  onConnectionRemove,
+  onConnectionRouteReset
+}: {
+  packageModel: DrawingPackageModel;
+  model: DrawingModel;
+  selectedConnectionId?: string;
+  onPanelPatternChange?: (
+    patternId: string,
+    updates: { label?: string; description?: string }
+  ) => void;
+  onLegendVisibilityChange?: (visible: boolean) => void;
+  onConnectionRemove: (connectionId: string) => void;
+  onConnectionRouteReset: (connectionId: string) => void;
+}) {
+  const connection = model.connections.find(
+    (candidate) => candidate.id === selectedConnectionId
+  );
+  if (!connection?.panelPatternId) return null;
+  const bridge = packageModel.panelWiring?.bridges.find(
+    (candidate) => candidate.id === connection.panelPatternId
+  );
+  const bond = packageModel.panelWiring?.bonds.find(
+    (candidate) => candidate.id === connection.panelPatternId
+  );
+  const pattern: PanelConnectionPatternRecord | undefined = bridge
+    ? { recordType: "bridge", record: bridge }
+    : bond
+      ? { recordType: "bond", record: bond }
+      : undefined;
+  if (!pattern) return null;
+  const topology = pattern.recordType === "bridge"
+    ? pattern.record.definition?.topology ?? "legacy"
+    : pattern.record.kind;
+  const domain = pattern.recordType === "bridge"
+    ? pattern.record.domain ?? "unknown"
+    : pattern.record.kind;
+  const members = pattern.recordType === "bridge"
+    ? pattern.record.members
+    : pattern.record.endpoints.flatMap((endpoint) =>
+        endpoint.kind === "terminal" ? [endpoint.terminal] : []
+      );
+  const ownedWires = packageModel.panelWiring?.internalWires.filter(
+    (wire) => wire.ownerPatternId === pattern.record.id
+  ) ?? [];
+  const assetTag = (assetId: string) =>
+    packageModel.assets.find((asset) => asset.id === assetId)?.tag ?? assetId;
+  const legendVisible = model.placements.find(
+    isGeneratedPanelPatternLegendPlacement
+  )?.panelPatternLegend.visible ?? false;
+
+  return (
+    <section className="tool-panel overflow-hidden">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <h2 className="text-sm font-bold">Connection Pattern</h2>
+        <p className="mt-1 text-[11px] text-slate-500">
+          {pattern.record.patternCode ?? pattern.record.id} / {topology.replaceAll("_", " ")}
+        </p>
+      </div>
+      <div className="space-y-4 p-4 text-xs">
+        <dl className="grid grid-cols-2 gap-2">
+          <div className="rounded border border-slate-200 bg-slate-50 p-2">
+            <dt className="text-[10px] font-bold uppercase text-slate-500">Domain</dt>
+            <dd className="mt-1 capitalize text-slate-900">{domain.replaceAll("_", " ")}</dd>
+          </div>
+          <div className="rounded border border-slate-200 bg-slate-50 p-2">
+            <dt className="text-[10px] font-bold uppercase text-slate-500">Owned wires</dt>
+            <dd className="mt-1 text-slate-900">{ownedWires.length}</dd>
+          </div>
+        </dl>
+        <div>
+          <span className="field-label">Members</span>
+          <div className="mt-1 max-h-28 space-y-1 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 font-mono text-[11px]">
+            {members.map((member, index) => (
+              <div key={`${member.assetId}:${member.terminalKey}:${member.side}:${index}`}>
+                {assetTag(member.assetId)}:{member.terminalKey}/{member.side}
+              </div>
+            ))}
+          </div>
+        </div>
+        {onPanelPatternChange ? (
+          <>
+            <label className="block">
+              <span className="field-label">Label</span>
+              <input
+                key={`${pattern.record.id}:label:${pattern.record.label ?? ""}`}
+                className="field-input mt-1"
+                defaultValue={pattern.record.label ?? ""}
+                onBlur={(event) =>
+                  onPanelPatternChange(pattern.record.id, {
+                    label: event.currentTarget.value.trim() || undefined,
+                    description: pattern.record.description
+                  })
+                }
+              />
+            </label>
+            <label className="block">
+              <span className="field-label">Description</span>
+              <textarea
+                key={`${pattern.record.id}:description:${pattern.record.description ?? ""}`}
+                className="field-input mt-1 min-h-20"
+                defaultValue={pattern.record.description ?? ""}
+                onBlur={(event) =>
+                  onPanelPatternChange(pattern.record.id, {
+                    label: pattern.record.label,
+                    description: event.currentTarget.value.trim() || undefined
+                  })
+                }
+              />
+            </label>
+          </>
+        ) : null}
+        {onLegendVisibilityChange ? (
+          <label className="flex items-center gap-2 text-slate-700">
+            <input
+              type="checkbox"
+              checked={legendVisible}
+              onChange={(event) =>
+                onLegendVisibilityChange(event.currentTarget.checked)
+              }
+            />
+            Show connection legend
+          </label>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="icon-button" onClick={() => onConnectionRouteReset(connection.id)}>
+            <RefreshCw aria-hidden="true" size={14} /> Reset route
+          </button>
+          <button type="button" className="icon-button icon-button-danger" onClick={() => onConnectionRemove(connection.id)}>
+            <Trash2 aria-hidden="true" size={14} /> Remove pattern
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function InternalWireEditor({
+  packageModel,
+  model,
+  selectedConnectionId,
+  onInternalWireChange,
+  onConnectionRemove,
+  onConnectionRouteReset
+}: {
+  packageModel: DrawingPackageModel;
+  model: DrawingModel;
+  selectedConnectionId?: string;
+  onInternalWireChange?: (
+    wireRecordId: string,
+    updates: { wireId: string; attributes?: PanelWireAttributes }
+  ) => void;
+  onConnectionRemove: (connectionId: string) => void;
+  onConnectionRouteReset: (connectionId: string) => void;
+}) {
+  const connection = model.connections.find(
+    (candidate) => candidate.id === selectedConnectionId
+  );
+  const wire = connection?.panelConnectionId
+    ? packageModel.panelWiring?.internalWires.find(
+        (candidate) => candidate.id === connection.panelConnectionId
+      )
+    : undefined;
+  if (!connection || !wire || wire.ownerPatternId || !onInternalWireChange) {
+    return null;
+  }
+  const assetTag = (assetId: string) =>
+    packageModel.assets?.find((asset) => asset.id === assetId)?.tag ?? assetId;
+  const updateAttributes = (
+    key: keyof PanelWireAttributes,
+    value: string
+  ) => {
+    onInternalWireChange(wire.id, {
+      wireId: wire.wireId,
+      attributes: {
+        ...wire.attributes,
+        [key]: value.trim() || undefined
+      }
+    });
+  };
+
+  return (
+    <section className="tool-panel overflow-hidden">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <h2 className="text-sm font-bold">Internal Wire</h2>
+        <p className="mt-1 text-[11px] text-slate-500">
+          Physical panel wire with a route occurrence on this sheet.
+        </p>
+      </div>
+      <div className="space-y-4 p-4 text-xs">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-2.5">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">From</span>
+            <span className="mt-1 block font-semibold text-slate-900">
+              {assetTag(wire.from.assetId)}:{wire.from.terminalKey}
+            </span>
+            <span className="text-slate-500">{wire.from.side}</span>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-2.5">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">To</span>
+            <span className="mt-1 block font-semibold text-slate-900">
+              {assetTag(wire.to.assetId)}:{wire.to.terminalKey}
+            </span>
+            <span className="text-slate-500">{wire.to.side}</span>
+          </div>
+        </div>
+        <div>
+          <label className="field-label" htmlFor={`internal-wire-id-${wire.id}`}>
+            Wire ID
+          </label>
+          <input
+            key={`${wire.id}:${wire.wireId}`}
+            id={`internal-wire-id-${wire.id}`}
+            className="field-input"
+            defaultValue={wire.wireId}
+            onBlur={(event) => {
+              const wireId = event.currentTarget.value.trim();
+              if (wireId && wireId !== wire.wireId) {
+                onInternalWireChange(wire.id, {
+                  wireId,
+                  attributes: wire.attributes
+                });
+              }
+            }}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {([
+            ["color", "Color"],
+            ["size", "Size"],
+            ["wireType", "Wire type"],
+            ["description", "Description"]
+          ] as const).map(([key, label]) => (
+            <div key={key}>
+              <label className="field-label" htmlFor={`internal-wire-${key}-${wire.id}`}>
+                {label}
+              </label>
+              <input
+                key={`${wire.id}:${key}:${wire.attributes?.[key] ?? ""}`}
+                id={`internal-wire-${key}-${wire.id}`}
+                className="field-input"
+                defaultValue={wire.attributes?.[key] ?? ""}
+                onBlur={(event) => updateAttributes(key, event.currentTarget.value)}
+              />
+            </div>
+          ))}
+        </div>
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-600">
+          Route mode: <strong>{connection.route?.mode ?? "auto"}</strong>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => onConnectionRouteReset(connection.id)}
+          >
+            <RefreshCw aria-hidden="true" size={14} />
+            Reset route
+          </button>
+          <button
+            type="button"
+            className="icon-button icon-button-danger"
+            onClick={() => onConnectionRemove(connection.id)}
+          >
+            <Trash2 aria-hidden="true" size={14} />
+            Remove wire
           </button>
         </div>
       </div>

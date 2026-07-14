@@ -5,6 +5,7 @@ import type {
   DrawingPlacement,
   DrawingSheetCanvasModel
 } from "../../data/schema";
+import { isNonAssetDrawingPlacement } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import {
   allocateNextPlacementTag,
@@ -176,6 +177,14 @@ export function resolveCopiedPlacementAsset({
   assetMapping: CopiedAssetResolutionMap;
   newPlacementId: string;
 }): CopiedAssetResolution {
+  if (isNonAssetDrawingPlacement(placement)) {
+    return {
+      assetId: undefined,
+      tag: placement.tag,
+      linked: true
+    };
+  }
+
   if (placement.layoutKind) {
     return {
       assetId: placement.assetId,

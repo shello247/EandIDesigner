@@ -16,7 +16,8 @@ export function useRoutePointDrag({
   onConnectionRouteChange,
   setSelectedRoutePointId,
   onGestureStart,
-  onGestureEnd
+  onGestureEnd,
+  onGestureCancel
 }: {
   model: DrawingModel;
   connectionSegments: ConnectionSegment[];
@@ -30,6 +31,7 @@ export function useRoutePointDrag({
   setSelectedRoutePointId: (pointId: string | null) => void;
   onGestureStart: () => void;
   onGestureEnd: () => void;
+  onGestureCancel: () => void;
 }) {
   const routeDragStateRef = useRef<RouteDragState | null>(null);
 
@@ -96,6 +98,11 @@ export function useRoutePointDrag({
     onGestureEnd();
   }, [onGestureEnd]);
 
+  const cancelRoutePointDrag = useCallback(() => {
+    routeDragStateRef.current = null;
+    onGestureCancel();
+  }, [onGestureCancel]);
+
   const deleteRoutePoint = useCallback(
     (pointId: string) => {
       if (!selectedConnectionSegment) {
@@ -116,6 +123,7 @@ export function useRoutePointDrag({
     updateDraggedRoutePoint,
     handleRoutePointPointerDown,
     endRoutePointDrag,
+    cancelRoutePointDrag,
     deleteRoutePoint
   };
 }

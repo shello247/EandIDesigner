@@ -1,5 +1,6 @@
 import type { SymbolCategory, SymbolMetadata } from "@/features/symbol_registry/data/schema";
 import type { DrawingModel, DrawingStatus } from "../data/schema";
+import type { PackagePanelDrawingQualityReport } from "@/features/drawing_panel_wiring/api/contracts";
 
 export type ApprovedDrawingSymbol = {
   symbolId: string;
@@ -35,6 +36,17 @@ export type DrawingDetail = {
   updatedAt: string;
 };
 
+export type DrawingApprovalOutcome = {
+  drawing: DrawingDetail;
+  quality: PackagePanelDrawingQualityReport;
+  approved: boolean;
+};
+
 export type ActionResult<T> =
   | { ok: true; data: T }
-  | { ok: false; error: string };
+  | {
+      ok: false;
+      error: string;
+      code?: "conflict" | "validation" | "unavailable";
+      latestUpdatedAt?: string;
+    };

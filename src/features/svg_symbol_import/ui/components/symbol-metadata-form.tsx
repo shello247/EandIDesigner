@@ -4,7 +4,8 @@ import type {
   SymbolCategory,
   SymbolLayoutUsage,
   SymbolPanelCategory,
-  SymbolPanelMountingType
+  SymbolPanelMountingType,
+  SymbolPanelWiringAssetType
 } from "@/features/symbol_registry/data/schema";
 
 export type SymbolMetadataFormState = {
@@ -19,7 +20,29 @@ export type SymbolMetadataFormState = {
   mountingType: SymbolPanelMountingType | "";
   panelCategory: SymbolPanelCategory | "";
   resizable: boolean;
+  panelWiringEnabled: boolean;
+  panelWiringAssetType: SymbolPanelWiringAssetType;
+  panelWiringTagPrefix: string;
+  panelWiringSchematicScale: string;
 };
+
+const panelWiringAssetTypeOptions: Array<{
+  value: SymbolPanelWiringAssetType;
+  label: string;
+}> = [
+  { value: "instrument", label: "Instrument" },
+  { value: "controller", label: "Controller" },
+  { value: "terminal_block", label: "Terminal Block" },
+  { value: "breaker", label: "Breaker" },
+  { value: "fuse", label: "Fuse" },
+  { value: "relay", label: "Relay" },
+  { value: "power_supply", label: "Power Supply" },
+  { value: "isolator", label: "Isolator" },
+  { value: "converter", label: "Converter" },
+  { value: "io_module", label: "I/O Module" },
+  { value: "earth_bar", label: "Earth Bar" },
+  { value: "other", label: "Other" }
+];
 
 const categoryOptions: Array<{ value: SymbolCategory; label: string }> = [
   { value: "instrument", label: "Instrument" },
@@ -261,6 +284,76 @@ export function SymbolMetadataForm({
           />
           Resizable in panel layouts
         </label>
+        <div className="border-t border-slate-200 pt-4 sm:col-span-2">
+          <h3 className="text-xs font-bold uppercase text-slate-500">
+            Detailed Panel Component
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Explicitly enable this approved symbol for schematic panel wiring.
+          </p>
+        </div>
+        <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={form.panelWiringEnabled}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange({ panelWiringEnabled: event.currentTarget.checked })
+            }
+          />
+          Enable Detailed Panel use
+        </label>
+        <div>
+          <label className="field-label" htmlFor="panel-wiring-asset-type-import">
+            Asset type
+          </label>
+          <select
+            id="panel-wiring-asset-type-import"
+            className="field-input"
+            value={form.panelWiringAssetType}
+            disabled={disabled || !form.panelWiringEnabled}
+            onChange={(event) =>
+              onChange({
+                panelWiringAssetType:
+                  event.currentTarget.value as SymbolPanelWiringAssetType
+              })
+            }
+          >
+            {panelWiringAssetTypeOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="field-label" htmlFor="panel-wiring-prefix-import">
+            Tag prefix
+          </label>
+          <input
+            id="panel-wiring-prefix-import"
+            className="field-input"
+            value={form.panelWiringTagPrefix}
+            disabled={disabled || !form.panelWiringEnabled}
+            onChange={(event) =>
+              onChange({ panelWiringTagPrefix: event.currentTarget.value })
+            }
+          />
+        </div>
+        <div>
+          <label className="field-label" htmlFor="panel-wiring-scale-import">
+            Schematic scale
+          </label>
+          <input
+            id="panel-wiring-scale-import"
+            className="field-input"
+            inputMode="decimal"
+            placeholder="Use normal scale"
+            value={form.panelWiringSchematicScale}
+            disabled={disabled || !form.panelWiringEnabled}
+            onChange={(event) =>
+              onChange({ panelWiringSchematicScale: event.currentTarget.value })
+            }
+          />
+        </div>
       </div>
     </section>
   );

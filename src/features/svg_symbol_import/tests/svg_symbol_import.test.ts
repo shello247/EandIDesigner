@@ -107,6 +107,28 @@ describe("SVG symbol import", () => {
     });
   });
 
+  it("strictly opts an imported symbol into Detailed Panel use", () => {
+    const preview = parseImportedSvg({ rawSvg: validSvg, sourceAsset });
+    const metadata = buildImportedSymbolMetadata({
+      symbolKey: "MCB Detail",
+      displayName: "MCB Detail",
+      category: "terminal_block",
+      panelWiringEnabled: true,
+      panelWiringAssetType: "breaker",
+      panelWiringTagPrefix: "MCB",
+      panelWiringSchematicScale: "0.45",
+      viewBox: preview.viewBox,
+      anchors: preview.anchors,
+      terminals: preview.terminals
+    });
+
+    expect(metadata.panelWiring).toEqual({
+      assetType: "breaker",
+      tagPrefix: "MCB",
+      schematicScale: 0.45
+    });
+  });
+
   it("lets registry validation catch duplicate terminal keys", () => {
     const preview = parseImportedSvg({
       rawSvg: validSvg,

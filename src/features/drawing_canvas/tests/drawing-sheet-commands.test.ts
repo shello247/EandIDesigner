@@ -231,12 +231,14 @@ describe("drawing sheet package commands", () => {
     expect(sectionSheet?.sectionTitlePage?.subtitle).toBe(
       "Panel and breaker drawings "
     );
+    expect(sectionSheet?.description).toBe("Panel and breaker drawings ");
     expect(serializedSection?.sectionTitlePage?.title).toBe(
       "Power Distribution"
     );
     expect(serializedSection?.sectionTitlePage?.subtitle).toBe(
       "Panel and breaker drawings"
     );
+    expect(serializedSection?.description).toBe("Panel and breaker drawings");
     expect(serializedSection?.sectionTitlePage?.sectionNumber).toBe("02");
   });
 

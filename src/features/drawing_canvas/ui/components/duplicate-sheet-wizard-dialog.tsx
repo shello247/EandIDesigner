@@ -63,6 +63,7 @@ export function DuplicateSheetWizardDialog({
     model.sheets.find((sheet) => sheet.id === activeSheetId) ?? model.sheets[0];
   const activeSheetNumber =
     model.sheets.findIndex((sheet) => sheet.id === activeSheet.id) + 1;
+  const isSectionTitlePage = activeSheet.kind === "section_title";
   const suggestedSourceLabel = suggestSheetDuplicateSourceLabel(activeSheet.name);
   const suggestedTargetLabel =
     suggestSheetDuplicateTargetLabel(suggestedSourceLabel);
@@ -152,8 +153,9 @@ export function DuplicateSheetWizardDialog({
         </p>
         <p className="mt-1">{activeSheet.name}</p>
         <p className="mt-3 text-slate-500">
-          The duplicate will be inserted directly after this sheet and opened for
-          review.
+          {isSectionTitlePage
+            ? "The duplicate becomes a new empty section after this complete section block. Member sheets are not copied."
+            : "The duplicate will be inserted directly after this sheet and opened for review."}
         </p>
       </div>
       <div className="space-y-3">
@@ -171,7 +173,7 @@ export function DuplicateSheetWizardDialog({
             }}
           />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
+        {!isSectionTitlePage ? <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className="field-label" htmlFor="duplicate-source-label">
               Source text
@@ -204,7 +206,7 @@ export function DuplicateSheetWizardDialog({
               }
             />
           </div>
-        </div>
+        </div> : null}
         <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs">
           <div className="font-semibold text-slate-950">Preview</div>
           <div className="mt-1 truncate text-slate-600">{plan.targetSheetName}</div>
@@ -236,6 +238,7 @@ export function DuplicateSheetWizardDialog({
       <select
         className="field-input h-10"
         value={row.action}
+        disabled={plan.preserveAssetReferences}
         onChange={(event) => {
           const action = event.currentTarget.value as SheetDuplicateAssetAction;
           const firstReference = row.compatibleAssets[0];

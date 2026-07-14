@@ -21,7 +21,8 @@ export function AnchorOverlay({
   onSelectPlacement,
   onConnectionSelect,
   onConnectionPointerMove,
-  onConnectionAnchorClick
+  onConnectionAnchorClick,
+  getConnectionAnchorState
 }: {
   anchorHotspots: AnchorHotspot[];
   activeAnchorId: string | null;
@@ -38,6 +39,10 @@ export function AnchorOverlay({
   onConnectionSelect: (connectionId: string | undefined) => void;
   onConnectionPointerMove: (pointer: { x: number; y: number }) => void;
   onConnectionAnchorClick: (endpoint: DrawingEndpoint) => void;
+  getConnectionAnchorState?: (endpoint: DrawingEndpoint) => {
+    enabled: boolean;
+    reason?: string;
+  };
 }) {
   return (
     <g data-testid="canvas-anchor-overlay">
@@ -47,11 +52,17 @@ export function AnchorOverlay({
           placementId: hotspot.placementId,
           anchorKey: hotspot.anchor.key
         };
+        const anchorState = getConnectionAnchorState?.(endpoint) ?? {
+          enabled: true
+        };
         const isConnectionSource = sourceAnchorHotspot?.id === hotspot.id;
         const isValidConnectionTarget =
           connectionMode === "connecting" &&
           Boolean(connectionDraftFrom) &&
-          !isConnectionSource;
+          !isConnectionSource &&
+          anchorState.enabled;
+        const isInvalidConnectionAnchor =
+          connectionMode === "connecting" && !anchorState.enabled;
 
         return (
           <g key={hotspot.id}>
@@ -79,6 +90,8 @@ export function AnchorOverlay({
                   ? "fill-sky-50 stroke-sky-600"
                   : isValidConnectionTarget
                     ? "fill-emerald-50 stroke-emerald-600"
+                    : isInvalidConnectionAnchor
+                      ? "fill-slate-100 stroke-slate-400 opacity-45"
                     : isActive
                       ? "fill-teal-50 stroke-teal-600"
                       : "fill-white stroke-teal-600 opacity-80"
@@ -95,6 +108,7 @@ export function AnchorOverlay({
               role="button"
               tabIndex={0}
               aria-label={getAnchorLabel(hotspot)}
+              aria-disabled={isInvalidConnectionAnchor}
               cx={hotspot.point.x}
               cy={hotspot.point.y}
               r={anchorHitRadius}
@@ -173,7 +187,9 @@ export function AnchorOverlay({
               onFocus={() => onActiveAnchorChange(hotspot.id)}
               onBlur={() => onActiveAnchorChange(null)}
             >
-              <title>{getAnchorLabel(hotspot)}</title>
+              <title>
+                {anchorState.reason ?? getAnchorLabel(hotspot)}
+              </title>
             </circle>
           </g>
         );

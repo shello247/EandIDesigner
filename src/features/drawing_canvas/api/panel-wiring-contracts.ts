@@ -14,7 +14,9 @@ function emptyPanelWiringData() {
     terminalMappings: [],
     internalWires: [],
     bridges: [],
-    bonds: []
+    bonds: [],
+    panelSettings: [],
+    patternSettings: []
   };
 }
 
@@ -26,7 +28,9 @@ function removeEmptyPanelWiringData(model: DrawingModel): DrawingModel {
     data.terminalMappings.length === 0 &&
     data.internalWires.length === 0 &&
     data.bridges.length === 0 &&
-    data.bonds.length === 0
+    data.bonds.length === 0 &&
+    (data.panelSettings?.length ?? 0) === 0 &&
+    (data.patternSettings?.length ?? 0) === 0
   ) {
     return { ...model, panelWiring: undefined };
   }
@@ -94,7 +98,127 @@ export function applyPanelWiringMutations(
       continue;
     }
 
-    next = {
+    if (mutation.kind === "upsert-internal-wire") {
+      next = {
+        ...next,
+        panelWiring: {
+          ...panelWiring,
+          internalWires: [
+            ...panelWiring.internalWires.filter(
+              (wire) => wire.id !== mutation.wire.id
+            ),
+            mutation.wire
+          ].sort((first, second) => first.id.localeCompare(second.id))
+        }
+      };
+      continue;
+    }
+
+    if (mutation.kind === "remove-internal-wire") {
+      next = {
+        ...next,
+        panelWiring: {
+          ...panelWiring,
+          internalWires: panelWiring.internalWires.filter(
+            (wire) => wire.id !== mutation.wireId
+          )
+        }
+      };
+      continue;
+    }
+
+    if (mutation.kind === "upsert-panel-wire-settings") {
+      next = {
+        ...next,
+        panelWiring: {
+          ...panelWiring,
+          panelSettings: [
+            ...(panelWiring.panelSettings ?? []).filter(
+              (settings) => settings.panelAssetId !== mutation.settings.panelAssetId
+            ),
+            mutation.settings
+          ].sort((first, second) =>
+            first.panelAssetId.localeCompare(second.panelAssetId)
+          )
+        }
+      };
+      continue;
+    }
+
+    if (mutation.kind === "upsert-bridge") {
+      next = {
+        ...next,
+        panelWiring: {
+          ...panelWiring,
+          bridges: [
+            ...panelWiring.bridges.filter(
+              (bridge) => bridge.id !== mutation.bridge.id
+            ),
+            mutation.bridge
+          ].sort((first, second) => first.id.localeCompare(second.id))
+        }
+      };
+      continue;
+    }
+
+    if (mutation.kind === "remove-bridge") {
+      next = {
+        ...next,
+        panelWiring: {
+          ...panelWiring,
+          bridges: panelWiring.bridges.filter(
+            (bridge) => bridge.id !== mutation.bridgeId
+          )
+        }
+      };
+      continue;
+    }
+
+    if (mutation.kind === "upsert-bond") {
+      next = {
+        ...next,
+        panelWiring: {
+          ...panelWiring,
+          bonds: [
+            ...panelWiring.bonds.filter((bond) => bond.id !== mutation.bond.id),
+            mutation.bond
+          ].sort((first, second) => first.id.localeCompare(second.id))
+        }
+      };
+      continue;
+    }
+
+    if (mutation.kind === "remove-bond") {
+      next = {
+        ...next,
+        panelWiring: {
+          ...panelWiring,
+          bonds: panelWiring.bonds.filter((bond) => bond.id !== mutation.bondId)
+        }
+      };
+      continue;
+    }
+
+    if (mutation.kind === "upsert-panel-pattern-settings") {
+      next = {
+        ...next,
+        panelWiring: {
+          ...panelWiring,
+          patternSettings: [
+            ...(panelWiring.patternSettings ?? []).filter(
+              (settings) => settings.panelAssetId !== mutation.settings.panelAssetId
+            ),
+            mutation.settings
+          ].sort((first, second) =>
+            first.panelAssetId.localeCompare(second.panelAssetId)
+          )
+        }
+      };
+      continue;
+    }
+
+    if (mutation.kind === "remove-terminal-mapping") {
+      next = {
       ...next,
       panelWiring: {
         ...panelWiring,
@@ -102,7 +226,8 @@ export function applyPanelWiringMutations(
           (mapping) => mapping.id !== mutation.mappingId
         )
       }
-    };
+      };
+    }
   }
 
   return drawingPackageModelSchema.parse(removeEmptyPanelWiringData(next));
