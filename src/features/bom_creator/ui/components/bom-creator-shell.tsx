@@ -4,18 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { LibraryBig, Search } from "lucide-react";
-import type { DrawingListItem } from "@/features/drawing_canvas/types";
-import type { GeneratedDrawingBom } from "../../data/schema";
-import { GeneratedBomTable } from "./generated-bom-table";
+import type { DrawingBomOption } from "@/features/drawing_canvas/api/public";
 
 export function BomCreatorShell({
   drawings,
   selectedDrawingId,
-  bom
 }: {
-  drawings: DrawingListItem[];
+  drawings: DrawingBomOption[];
   selectedDrawingId?: string;
-  bom?: GeneratedDrawingBom;
 }) {
   const router = useRouter();
   const [draftDrawingId, setDraftDrawingId] = useState(
@@ -32,7 +28,6 @@ export function BomCreatorShell({
   };
 
   return (
-    <div className="space-y-5">
       <div className="tool-panel p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-72 flex-1">
@@ -70,20 +65,6 @@ export function BomCreatorShell({
             Items library
           </Link>
         </div>
-      </div>
-
-      {bom ? (
-        <GeneratedBomTable bom={bom} />
-      ) : (
-        <div className="tool-panel flex min-h-[260px] items-center justify-center p-8 text-center">
-          <div>
-            <h2 className="text-lg font-bold">No drawing selected</h2>
-            <p className="mt-2 max-w-md text-sm text-slate-600">
-              Select a drawing package to generate its live BOM.
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

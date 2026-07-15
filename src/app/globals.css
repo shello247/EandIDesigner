@@ -140,6 +140,53 @@ svg {
   padding: 22px;
 }
 
+@media (max-width: 720px) {
+  .app-sidebar-expanded,
+  .app-sidebar-collapsed {
+    width: 64px;
+  }
+
+  .app-sidebar > div > div:first-child {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .app-sidebar-expanded > div > div:first-child > a {
+    flex: 0 0 auto;
+  }
+
+  .app-sidebar-expanded > div > div:first-child > a > span:last-child,
+  .sidebar-nav-item > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  .app-sidebar .sidebar-toggle {
+    display: none;
+  }
+
+  .app-sidebar nav {
+    padding: 10px 8px;
+  }
+
+  .sidebar-nav-item {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .app-main {
+    width: calc(100% - 64px);
+    padding: 14px;
+  }
+}
+
 .tool-panel {
   background: var(--panel);
   border: 1px solid var(--line);

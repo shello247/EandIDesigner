@@ -9,18 +9,33 @@ import {
   saveSymbolBomTemplate,
   updateBomItem
 } from "../data/mutations";
-import { getBomItemDetail, listBomItems } from "../data/queries";
+import {
+  getBomItemDetail,
+  listBomItemFormOptions
+} from "../data/queries";
+import {
+  getSymbolBomEditorData,
+  listBomItemPickerRows,
+  listExistingBomItemIds
+} from "../data/symbol-bom-editor-queries";
+import { saveSymbolBomTemplateInputSchema } from "../data/schema";
 import type {
   BomItemDeleteResult,
   BomItemDetail,
+  BomItemFormOptions,
   BomItemInput,
   BomItemOption,
   BomItemOptionInput,
+  BomItemPickerInput,
+  BomItemPickerResult,
   BomItemUpdateInput,
   SaveSymbolBomTemplateInput,
+  SymbolBomEditorData,
   SymbolBomTemplateDetail
 } from "../data/schema";
-import { validateSymbolBomTemplateInput } from "../logic/use_cases/symbol-bom-template-use-cases";
+import {
+  validateSymbolBomTemplateItemIds
+} from "../logic/use_cases/symbol-bom-template-use-cases";
 import type { ActionResult } from "../types";
 
 function toErrorMessage(error: unknown): string {
@@ -116,6 +131,36 @@ export async function getBomItemDetailAction(
   }
 }
 
+export async function getBomItemFormOptionsAction(): Promise<
+  ActionResult<BomItemFormOptions>
+> {
+  try {
+    return { ok: true, data: await listBomItemFormOptions() };
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
+export async function getSymbolBomEditorDataAction(
+  symbolId: string
+): Promise<ActionResult<SymbolBomEditorData>> {
+  try {
+    return { ok: true, data: await getSymbolBomEditorData(symbolId) };
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
+export async function searchBomItemPickerAction(
+  input: BomItemPickerInput
+): Promise<ActionResult<BomItemPickerResult>> {
+  try {
+    return { ok: true, data: await listBomItemPickerRows(input) };
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
 export async function deleteBomItemAction(
   id: string
 ): Promise<ActionResult<BomItemDeleteResult>> {
@@ -133,8 +178,11 @@ export async function saveSymbolBomTemplateAction(
   input: SaveSymbolBomTemplateInput
 ): Promise<ActionResult<SymbolBomTemplateDetail | null>> {
   try {
-    const items = await listBomItems({ includeArchived: true });
-    const parsed = validateSymbolBomTemplateInput(input, items);
+    const candidate = saveSymbolBomTemplateInputSchema.parse(input);
+    const itemIds = await listExistingBomItemIds(
+      candidate.lines.map((line) => line.itemId)
+    );
+    const parsed = validateSymbolBomTemplateItemIds(candidate, itemIds);
     const template = await saveSymbolBomTemplate(parsed);
 
     revalidateBomPaths({ symbolId: parsed.symbolId });

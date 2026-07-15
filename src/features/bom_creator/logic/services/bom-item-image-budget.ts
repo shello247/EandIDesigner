@@ -26,32 +26,30 @@ export type BomItemImageBudgetResult = {
   violations: BomItemImageBudgetViolation[];
 };
 
+const IMAGE_DATA_URL_PATTERN =
+  /^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/]*={0,2})$/i;
+
 function formatMegabytes(bytes: number): string {
   return `${bytes / (1024 * 1024)} MB`;
 }
 
 export function dataUrlByteLength(dataUrl: string): number | null {
-  const commaIndex = dataUrl.indexOf(",");
+  const match = IMAGE_DATA_URL_PATTERN.exec(dataUrl);
 
-  if (commaIndex <= 0) {
+  if (!match || match[2].length === 0 || match[2].length % 4 === 1) {
     return null;
   }
 
-  const header = dataUrl.slice(0, commaIndex);
-  const payload = dataUrl.slice(commaIndex + 1);
-
-  if (
-    !/^data:image\/[a-z0-9.+-]+;base64$/i.test(header) ||
-    payload.length === 0 ||
-    !/^[a-z0-9+/]*={0,2}$/i.test(payload) ||
-    payload.length % 4 === 1
-  ) {
-    return null;
-  }
-
+  const payload = match[2];
   const padding = payload.endsWith("==") ? 2 : payload.endsWith("=") ? 1 : 0;
 
   return Math.floor((payload.length * 3) / 4) - padding;
+}
+
+export function dataUrlMimeType(dataUrl: string): string | null {
+  const match = IMAGE_DATA_URL_PATTERN.exec(dataUrl);
+
+  return match ? match[1].toLowerCase() : null;
 }
 
 export function validateBomItemImageBudget(

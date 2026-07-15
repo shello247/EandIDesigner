@@ -1,130 +1,169 @@
 import type {
-  ApprovedDrawingSymbol,
-  DrawingAssetRecord,
-  DrawingConnection,
-  DrawingModel,
-  DrawingPlacement
+  DrawingModel
 } from "@/features/drawing_canvas/api/asset-contracts";
 import {
-  isNonAssetDrawingPlacement,
-  placementAssetId
-} from "@/features/drawing_canvas/api/asset-contracts";
-import type {
-  BomAssemblyProjection,
-  SymbolBomTemplateDetail
+  type BomGenerationTemplate,
+  type ConsolidatedBomLine,
+  type GeneratedBomAssembly,
+  type GeneratedBomLine,
+  type GeneratedBomWarning,
+  type GeneratedDrawingBom
 } from "../../data/schema";
-import { generateBomFromProjection } from "./generate-bom-from-projection";
+import {
+  buildBomGenerationContexts,
+  type BomGenerationAssetContext
+} from "../services/bom-generation-context";
+import { calculateBomQuantity } from "../services/bom-quantity-rules";
+
+export type BomGenerationSymbol = {
+  symbolId: string;
+  displayName: string;
+};
 
 export type GenerateDrawingBomInput = {
   drawingId: string;
   drawingTitle: string;
   model: DrawingModel;
-  symbols: ApprovedDrawingSymbol[];
-  templates: SymbolBomTemplateDetail[];
+  symbols: BomGenerationSymbol[];
+  templates: BomGenerationTemplate[];
 };
 
-type SheetRef = {
-  sheetId: string;
-  sheetName: string;
-  sheetNumber: number;
-};
-
-type AssetContext = {
-  asset: DrawingAssetRecord;
-  placements: DrawingPlacement[];
-  rawPlacementCount: number;
-  sheetRefs: SheetRef[];
-};
-
-function fallbackAssetType(placement: DrawingPlacement): DrawingAssetRecord["type"] {
-  if (placement.role === "cable_assembly") return "cable";
-  if (placement.role === "terminal_block") return "terminal_block";
-  if (placement.role === "enclosure") {
-    return placement.enclosure?.kind === "junction_box" ? "junction_box" : "panel";
-  }
-  return "other";
+function warning(input: GeneratedBomWarning): GeneratedBomWarning {
+  return input;
 }
 
-function fallbackAssetFromPlacement(placement: DrawingPlacement): DrawingAssetRecord {
-  return {
-    id: placementAssetId(placement),
-    tag: placement.tag,
-    type: fallbackAssetType(placement),
-    title:
-      placement.title?.trim() ||
-      placement.enclosure?.title?.trim() ||
-      placement.terminalBlock?.kind?.replace(/_/g, " ") ||
-      placement.tag,
-    symbolId: placement.symbolId,
-    versionId: placement.versionId
-  };
+function warningKey(item: GeneratedBomWarning): string {
+  return [item.code, item.assetId ?? "", item.itemId ?? "", item.message].join("|");
 }
 
-function buildAssetContexts(model: DrawingModel): AssetContext[] {
-  const nonAssetPlacementIds = new Set(
-    model.sheets.flatMap((sheet) =>
-      sheet.placements
-        .filter(isNonAssetDrawingPlacement)
-        .map(placementAssetId)
-    )
-  );
-  const assets = new Map(
-    (model.assets ?? [])
-      .filter((asset) => !nonAssetPlacementIds.has(asset.id))
-      .map((asset) => [asset.id, asset])
-  );
-  const placements = new Map<string, DrawingPlacement[]>();
-  const rawCounts = new Map<string, number>();
-  const sheetRefs = new Map<string, Map<string, SheetRef>>();
+function uniqueWarnings(warnings: GeneratedBomWarning[]): GeneratedBomWarning[] {
+  const seen = new Set<string>();
+  const result: GeneratedBomWarning[] = [];
 
-  model.sheets.forEach((sheet, sheetIndex) => {
-    for (const placement of sheet.placements) {
-      if (isNonAssetDrawingPlacement(placement)) continue;
-      const assetId = placementAssetId(placement);
-      rawCounts.set(assetId, (rawCounts.get(assetId) ?? 0) + 1);
-      if (placement.layoutKind) continue;
-      if (!assets.has(assetId)) assets.set(assetId, fallbackAssetFromPlacement(placement));
-      placements.set(assetId, [...(placements.get(assetId) ?? []), placement]);
-      const refs = sheetRefs.get(assetId) ?? new Map<string, SheetRef>();
-      refs.set(sheet.id, {
-        sheetId: sheet.id,
-        sheetName: sheet.name,
-        sheetNumber: sheetIndex + 1
-      });
-      sheetRefs.set(assetId, refs);
+  for (const item of warnings) {
+    const key = warningKey(item);
+
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(item);
     }
+  }
+
+  return result;
+}
+
+function isGeneratedSymbol(symbolId: string): boolean {
+  return symbolId.startsWith("__");
+}
+
+function buildAssemblyLines({
+  context,
+  template,
+}: {
+  context: BomGenerationAssetContext;
+  template: BomGenerationTemplate;
+}): {
+  lines: GeneratedBomLine[];
+  warnings: GeneratedBomWarning[];
+} {
+  const warnings: GeneratedBomWarning[] = [];
+  const lines = template.lines.map((line) => {
+    const quantityResult = calculateBomQuantity(line.quantityRule, line.quantity, {
+      connectionCount: context.connectionCount
+    });
+
+    if (line.quantityRule === "manual") {
+      warnings.push(
+        warning({
+          code: "manual_quantity_required",
+          assetId: context.asset.id,
+          itemId: line.itemId,
+          message: `${context.asset.tag} requires a manual quantity for ${line.item.displayName}.`
+        })
+      );
+    }
+
+    if (line.item.status === "archived") {
+      warnings.push(
+        warning({
+          code: "archived_item",
+          assetId: context.asset.id,
+          itemId: line.itemId,
+          message: `${line.item.displayName} is archived but still linked to ${context.asset.tag}.`
+        })
+      );
+    }
+
+    return {
+      id: `${context.asset.id}-${line.id}`,
+      itemId: line.itemId,
+      itemKey: line.item.itemKey,
+      displayName: line.item.displayName,
+      category: line.item.category,
+      unit: line.item.unit,
+      manufacturer: line.item.manufacturer,
+      partNumber: line.item.partNumber,
+      quantity: quantityResult.quantity,
+      quantityRule: line.quantityRule,
+      quantityStatus: quantityResult.status,
+      sourceLineId: line.id,
+      sourceAssetId: context.asset.id,
+      notes: line.notes
+    } satisfies GeneratedBomLine;
   });
 
-  return [...assets.values()]
-    .map((asset) => ({
-      asset,
-      placements: placements.get(asset.id) ?? [],
-      rawPlacementCount: rawCounts.get(asset.id) ?? 0,
-      sheetRefs: [...(sheetRefs.get(asset.id)?.values() ?? [])]
-    }))
-    .filter((context) => context.placements.length > 0 || context.rawPlacementCount === 0)
-    .sort((first, second) =>
-      first.asset.tag.localeCompare(second.asset.tag, undefined, { numeric: true })
-    );
+  return { lines, warnings };
 }
 
-function connectionCount(
-  connections: DrawingConnection[],
-  placements: DrawingPlacement[]
-): number {
-  const placementIds = new Set(placements.map((placement) => placement.id));
-  return new Set(
-    connections
-      .filter(
-        (connection) =>
-          placementIds.has(connection.from.placementId) ||
-          placementIds.has(connection.to.placementId) ||
-          Boolean(
-            connection.cablePlacementId && placementIds.has(connection.cablePlacementId)
-          )
-      )
-      .map((connection) => connection.id)
-  ).size;
+function aggregateLines(assemblies: GeneratedBomAssembly[]): ConsolidatedBomLine[] {
+  const groups = new Map<string, ConsolidatedBomLine>();
+  const sourceTagsByItemId = new Map<string, Set<string>>();
+
+  for (const assembly of assemblies) {
+    for (const line of assembly.lines) {
+      const current = groups.get(line.itemId);
+
+      if (!current) {
+        groups.set(line.itemId, {
+          ...line,
+          id: `consolidated-${line.itemId}`,
+          sourceAssetId: undefined,
+          quantity:
+            line.quantityStatus === "calculated" ? line.quantity ?? 0 : undefined,
+          quantityStatus: line.quantityStatus,
+          sourceAssetTags: [assembly.assetTag]
+        });
+        sourceTagsByItemId.set(line.itemId, new Set([assembly.assetTag]));
+        continue;
+      }
+
+      const sourceTags = sourceTagsByItemId.get(line.itemId)!;
+
+      if (!sourceTags.has(assembly.assetTag)) {
+        sourceTags.add(assembly.assetTag);
+        current.sourceAssetTags.push(assembly.assetTag);
+      }
+
+      if (
+        current.quantityStatus === "calculated" &&
+        line.quantityStatus === "calculated"
+      ) {
+        current.quantity = (current.quantity ?? 0) + (line.quantity ?? 0);
+      } else {
+        current.quantity = undefined;
+        current.quantityStatus =
+          line.quantityStatus === "manual_required"
+            ? "manual_required"
+            : "unavailable";
+      }
+    }
+  }
+
+  return [...groups.values()].sort((first, second) =>
+    first.displayName.localeCompare(second.displayName, undefined, {
+      numeric: true
+    })
+  );
 }
 
 export function generateDrawingBom({
@@ -133,31 +172,88 @@ export function generateDrawingBom({
   model,
   symbols,
   templates
-}: GenerateDrawingBomInput) {
-  const connections = model.sheets.flatMap((sheet) => sheet.connections);
-  const assemblies: BomAssemblyProjection[] = buildAssetContexts(model).map((context) => {
-    const count = connectionCount(connections, context.placements);
-    return {
+}: GenerateDrawingBomInput): GeneratedDrawingBom {
+  const templateBySymbolId = new Map(
+    templates.map((template) => [template.symbolId, template])
+  );
+  const symbolById = new Map(symbols.map((symbol) => [symbol.symbolId, symbol]));
+  const warnings: GeneratedBomWarning[] = [];
+  const assemblies: GeneratedBomAssembly[] = [];
+
+  for (const context of buildBomGenerationContexts(model)) {
+    const symbolId = context.asset.symbolId?.trim() || undefined;
+    const symbol = symbolId ? symbolById.get(symbolId) : undefined;
+    const assemblyWarnings: GeneratedBomWarning[] = [];
+    let lines: GeneratedBomLine[] = [];
+
+    if (!symbolId) {
+      assemblyWarnings.push(
+        warning({
+          code: "generated_symbol",
+          assetId: context.asset.id,
+          message: `${context.asset.tag} uses a generated or missing symbol and cannot be expanded.`
+        })
+      );
+    } else if (isGeneratedSymbol(symbolId)) {
+      assemblyWarnings.push(
+        warning({
+          code: "generated_symbol",
+          assetId: context.asset.id,
+          message: `${context.asset.tag} uses a generated or missing symbol and cannot be expanded.`
+        })
+      );
+    } else {
+      const template = templateBySymbolId.get(symbolId);
+
+      if (!symbol) {
+        assemblyWarnings.push(
+          warning({
+            code: "missing_symbol",
+            assetId: context.asset.id,
+            message: `${context.asset.tag} references a symbol that is not available in the drawing symbol list.`
+          })
+        );
+      }
+
+      if (!template) {
+        assemblyWarnings.push(
+          warning({
+            code: "missing_template",
+            assetId: context.asset.id,
+            message: `${context.asset.tag} does not have a linked symbol BOM template.`
+          })
+        );
+      } else {
+        const built = buildAssemblyLines({
+          context,
+          template
+        });
+        lines = built.lines;
+        assemblyWarnings.push(...built.warnings);
+      }
+    }
+
+    const assembly = {
       assetId: context.asset.id,
       assetTag: context.asset.tag,
       assetType: context.asset.type,
       title: context.asset.title,
-      symbolId: context.asset.symbolId,
-      versionId: context.asset.versionId,
+      symbolId,
+      symbolName: symbol?.displayName,
       sheetRefs: context.sheetRefs,
-      quantityFacts: {
-        cableEndCount: 2,
-        conductorTerminationCount: count,
-        connectionCount: count
-      }
-    };
-  });
+      lines,
+      warnings: uniqueWarnings(assemblyWarnings)
+    } satisfies GeneratedBomAssembly;
 
-  return generateBomFromProjection({
+    assemblies.push(assembly);
+    warnings.push(...assembly.warnings);
+  }
+
+  return {
     drawingId,
     drawingTitle,
     assemblies,
-    symbols,
-    templates
-  });
+    consolidatedLines: aggregateLines(assemblies),
+    warnings: uniqueWarnings(warnings)
+  };
 }

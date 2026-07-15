@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:panel-perf": "tsx scripts/panel-performance.ts",
+    "benchmark:bom": "tsx scripts/benchmark-bom-generation.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",

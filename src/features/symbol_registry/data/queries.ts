@@ -10,9 +10,37 @@ import type {
   SymbolDetail,
   SymbolDocumentSummary,
   SymbolEngineerNoteSummary,
+  SymbolIdentity,
   SymbolListItem,
   SymbolVersionSummary
 } from "../types";
+
+export const listSymbolIdentitiesByIds = cache(
+  async (symbolIds: string[]): Promise<SymbolIdentity[]> => {
+    const ids = [...new Set(symbolIds.filter(Boolean))];
+
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const rows = await prisma.symbol.findMany({
+      where: {
+        id: { in: ids },
+        status: { not: "archived" },
+        category: { not: "network_device" }
+      },
+      select: {
+        id: true,
+        displayName: true
+      }
+    });
+
+    return rows.map((row) => ({
+      symbolId: row.id,
+      displayName: row.displayName
+    }));
+  }
+);
 
 function toValidationIssue(issue: {
   severity: string;

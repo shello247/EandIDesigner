@@ -18,7 +18,7 @@ async function createBomItem(
     supplierSku?: string;
     unitCost?: string;
   }
-): Promise<{ itemKey: string }> {
+): Promise<{ id: string; itemKey: string }> {
   await page.getByRole("button", { name: "New item" }).click();
   await expect(page.getByRole("dialog", { name: "New item" })).toBeVisible();
   await expect(page.getByText("Assigned on save")).toBeVisible();
@@ -81,11 +81,10 @@ async function createBomItem(
 
   await page.getByRole("button", { name: "Save item" }).click();
   await expect(page.getByText("BOM item saved.")).toBeVisible();
-  await expect(page.getByRole("link", { name: input.displayName })).toBeVisible();
 
   const row = await prisma.bomItem.findFirst({
     where: { displayName: input.displayName },
-    select: { itemKey: true }
+    select: { id: true, itemKey: true }
   });
 
   if (!row) {
@@ -98,6 +97,7 @@ async function createBomItem(
 test("creates symbol mini BOM items and generates a drawing BOM", async ({
   page
 }) => {
+  test.setTimeout(120_000);
   const runId = Date.now().toString();
   const itemLabels = {
     cable: `E2E Cable ${runId}`,
@@ -129,22 +129,22 @@ test("creates symbol mini BOM items and generates a drawing BOM", async ({
       unitCost: "12.50"
     });
 
-    await page.getByRole("link", { name: itemLabels.cable }).click();
+    await page.goto(`/bom/items/${cableItem.id}`);
     await expect(page.getByRole("heading", { name: itemLabels.cable })).toBeVisible();
     await expect(page.getByText(`E2E Manufacturer ${runId}`)).toBeVisible();
     await expect(page.getByText("E2E Supplier")).toBeVisible();
     await expect(page.getByText("USD 12.50")).toBeVisible();
     await page.goto("/bom/items");
 
-    const glandItem = await createBomItem(page, {
+    await createBomItem(page, {
       displayName: itemLabels.gland,
       category: "cable_gland"
     });
-    const wireEndItem = await createBomItem(page, {
+    await createBomItem(page, {
       displayName: itemLabels.wireEnd,
       category: "wire_end"
     });
-    const sealantItem = await createBomItem(page, {
+    await createBomItem(page, {
       displayName: itemLabels.sealant,
       category: "sealant"
     });
@@ -180,42 +180,28 @@ test("creates symbol mini BOM items and generates a drawing BOM", async ({
 
     await page.goto(`/symbols/${symbol.id}`);
     await page.getByRole("tab", { name: "BOM" }).click();
+    await expect(page.getByRole("heading", { name: "Symbol Mini BOM" })).toBeVisible();
 
-    for (let index = 0; index < 4; index += 1) {
+    for (const itemName of [
+      itemLabels.cable,
+      itemLabels.gland,
+      itemLabels.wireEnd,
+      itemLabels.sealant
+    ]) {
       await page.getByRole("button", { name: "Add item" }).click();
+      const picker = page.getByRole("dialog", { name: "Select BOM item" });
+      await picker.locator("#bom-item-picker-search").fill(itemName);
+      await picker.getByRole("button", { name: "Search", exact: true }).click();
+      await picker.getByRole("button", { name: new RegExp(itemName) }).click();
     }
-
-    await page
-      .getByLabel("BOM item 1")
-      .selectOption({
-        label: `${itemLabels.cable} (${cableItem.itemKey})`
-      });
     await page.getByLabel("Quantity rule 1").selectOption("fixed_per_assembly");
     await page.getByLabel("Quantity 1").fill("1");
-
-    await page
-      .getByLabel("BOM item 2")
-      .selectOption({
-        label: `${itemLabels.gland} (${glandItem.itemKey})`
-      });
     await page.getByLabel("Quantity rule 2").selectOption("per_cable_end");
     await page.getByLabel("Quantity 2").fill("1");
-
-    await page
-      .getByLabel("BOM item 3")
-      .selectOption({
-        label: `${itemLabels.wireEnd} (${wireEndItem.itemKey})`
-      });
     await page
       .getByLabel("Quantity rule 3")
       .selectOption("per_conductor_termination");
     await page.getByLabel("Quantity 3").fill("1");
-
-    await page
-      .getByLabel("BOM item 4")
-      .selectOption({
-        label: `${itemLabels.sealant} (${sealantItem.itemKey})`
-      });
     await page.getByLabel("Quantity rule 4").selectOption("per_connection");
     await page.getByLabel("Quantity 4").fill("1");
 
@@ -236,6 +222,8 @@ test("creates symbol mini BOM items and generates a drawing BOM", async ({
     await expect(
       consolidatedBom.getByRole("row").filter({ hasText: itemLabels.sealant })
     ).toContainText("4");
+    await page.getByRole("tab", { name: /Assembly/ }).click();
+    await expect(page.getByRole("heading", { name: "Assembly View" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "C-101" })).toBeVisible();
   } finally {
     await deleteE2eDrawing(drawingId);

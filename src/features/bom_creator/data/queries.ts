@@ -3,16 +3,18 @@ import { prisma } from "@/lib/prisma";
 import {
   bomItemDetailSchema,
   bomItemFormOptionsSchema,
-  bomItemImageSummarySchema,
+  bomItemImageMetadataSchema,
   bomItemSummarySchema,
   symbolBomTemplateDetailSchema,
   type BomItemDetail,
   type BomItemFormOptions,
-  type BomItemImageSummary,
+  type BomItemImageMetadata,
+  type BomItemImagePayload,
   type BomItemStatus,
   type BomItemSummary,
   type SymbolBomTemplateDetail
 } from "./schema";
+import { buildBomItemImagePayload } from "../logic/services/bom-item-image-payload";
 
 const defaultBomCategoryOptions = [
   "cable",
@@ -56,17 +58,23 @@ type BomItemRow = {
 
 type BomItemImageRow = {
   id: string;
-  itemId: string;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
-  dataUrl: string;
   caption: string | null;
   isPrimary: boolean;
   sortOrder: number;
-  createdAt: Date;
-  updatedAt: Date;
 };
+
+const bomItemImageMetadataSelect = {
+  id: true,
+  fileName: true,
+  mimeType: true,
+  sizeBytes: true,
+  caption: true,
+  isPrimary: true,
+  sortOrder: true
+} as const;
 
 type BomItemListRow = BomItemRow & {
   images?: BomItemImageRow[];
@@ -143,18 +151,20 @@ function uniqueOptions(
   });
 }
 
-function toBomItemImageSummary(row: BomItemImageRow): BomItemImageSummary {
-  return bomItemImageSummarySchema.parse({
+function bomItemImageUrl(imageId: string): string {
+  return `/api/bom/items/images/${encodeURIComponent(imageId)}`;
+}
+
+function toBomItemImageMetadata(row: BomItemImageRow): BomItemImageMetadata {
+  return bomItemImageMetadataSchema.parse({
     id: row.id,
+    imageUrl: bomItemImageUrl(row.id),
     fileName: row.fileName,
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
-    dataUrl: row.dataUrl,
     caption: row.caption ?? undefined,
     isPrimary: row.isPrimary,
-    sortOrder: row.sortOrder,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString()
+    sortOrder: row.sortOrder
   });
 }
 
@@ -183,7 +193,7 @@ function toBomItemSummary(row: BomItemListRow): BomItemSummary {
     costNotes: row.costNotes ?? undefined,
     status: row.status as BomItemStatus,
     primaryImage: row.images?.[0]
-      ? toBomItemImageSummary(row.images[0])
+      ? toBomItemImageMetadata(row.images[0])
       : undefined,
     templateLineCount: row._count?.templateLines ?? 0,
     createdAt: row.createdAt.toISOString(),
@@ -225,6 +235,7 @@ export const listBomItems = cache(
       where: includeArchived ? undefined : { status: "active" },
       include: {
         images: {
+          select: bomItemImageMetadataSelect,
           orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
           take: 1
         },
@@ -245,6 +256,7 @@ export const getBomItemDetail = cache(
       where: { id },
       include: {
         images: {
+          select: bomItemImageMetadataSelect,
           orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }]
         },
         templateLines: {
@@ -271,7 +283,7 @@ export const getBomItemDetail = cache(
 
     return bomItemDetailSchema.parse({
       ...summary,
-      images: row.images.map(toBomItemImageSummary),
+      images: row.images.map(toBomItemImageMetadata),
       usage: row.templateLines
         .map((line) => ({
           symbolId: line.template.symbol.id,
@@ -289,6 +301,33 @@ export const getBomItemDetail = cache(
     });
   }
 );
+
+export async function getBomItemImageMetadata(
+  imageId: string
+): Promise<BomItemImageMetadata | null> {
+  const row = await prisma.bomItemImage.findUnique({
+    where: { id: imageId },
+    select: bomItemImageMetadataSelect
+  });
+
+  return row ? toBomItemImageMetadata(row) : null;
+}
+
+export async function getBomItemImagePayload(
+  imageId: string
+): Promise<BomItemImagePayload | null> {
+  const row = await prisma.bomItemImage.findUnique({
+    where: { id: imageId },
+    select: {
+      id: true,
+      mimeType: true,
+      sizeBytes: true,
+      dataUrl: true
+    }
+  });
+
+  return row ? buildBomItemImagePayload(row) : null;
+}
 
 export const listBomItemFormOptions = cache(
   async (): Promise<BomItemFormOptions> => {

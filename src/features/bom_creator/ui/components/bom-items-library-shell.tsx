@@ -1,54 +1,144 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { AlertCircle, Plus } from "lucide-react";
-import { getBomItemDetailAction } from "../../api/actions";
+import {
+  getBomItemDetailAction,
+  getBomItemFormOptionsAction
+} from "../../api/actions";
 import type {
   BomItemDetail,
+  BomItemFilterOptions,
   BomItemFormOptions,
-  BomItemSummary
+  BomItemListResult,
+  BomItemListRow
 } from "../../data/schema";
-import { BomItemDeleteDialog } from "./bom-item-delete-dialog";
-import { BomItemWizardDialog } from "./bom-item-wizard-dialog";
+import {
+  buildBomItemListUrl,
+  hasBomItemFilters
+} from "../../logic/services/bom-item-list-url";
+import { BomItemsFilters } from "./bom-items-filters";
+import { BomItemsPagination } from "./bom-items-pagination";
 import { BomItemsTable } from "./bom-items-table";
 
+const loadWizardModule = () => import("./bom-item-wizard-dialog");
+const loadDeleteDialogModule = () => import("./bom-item-delete-dialog");
+
+function DialogLoading({ label }: { label: string }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4">
+      <div
+        className="rounded-md border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-xl"
+        role="status"
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
+
+const BomItemWizardDialog = dynamic(
+  () => loadWizardModule().then((module) => module.BomItemWizardDialog),
+  {
+    ssr: false,
+    loading: () => <DialogLoading label="Loading item editor..." />
+  }
+);
+
+const BomItemDeleteDialog = dynamic(
+  () =>
+    loadDeleteDialogModule().then((module) => module.BomItemDeleteDialog),
+  {
+    ssr: false,
+    loading: () => <DialogLoading label="Loading confirmation..." />
+  }
+);
+
 type WizardState =
-  | { mode: "create"; item?: undefined }
-  | { mode: "edit"; item: BomItemDetail };
+  | {
+      mode: "create";
+      item?: undefined;
+      formOptions: BomItemFormOptions;
+    }
+  | { mode: "edit"; item: BomItemDetail; formOptions: BomItemFormOptions };
 
 export function BomItemsLibraryShell({
-  formOptions,
-  items
+  filterOptions,
+  result
 }: {
-  formOptions: BomItemFormOptions;
-  items: BomItemSummary[];
+  filterOptions: BomItemFilterOptions;
+  result: BomItemListResult;
 }) {
   const router = useRouter();
   const [wizard, setWizard] = useState<WizardState | null>(null);
-  const [deleteItem, setDeleteItem] = useState<BomItemSummary | null>(null);
+  const [deleteItem, setDeleteItem] = useState<BomItemListRow | null>(null);
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [isLoadingDetail, startDetailTransition] = useTransition();
+  const [isLoadingModal, startModalTransition] = useTransition();
+  const clearFiltersUrl = buildBomItemListUrl({
+    filters: {},
+    page: 1,
+    pageSize: result.pageSize
+  });
+  const hasFilters = hasBomItemFilters(result.appliedFilters);
 
-  const openEdit = (item: BomItemSummary) => {
+  const openCreate = () => {
     setMessage(null);
-    setBusyItemId(item.id);
-    startDetailTransition(async () => {
-      const result = await getBomItemDetailAction(item.id);
+    setBusyItemId("create");
+    startModalTransition(async () => {
+      const [optionsResult] = await Promise.all([
+        getBomItemFormOptionsAction(),
+        loadWizardModule()
+      ]);
 
-      if (!result.ok || !result.data) {
-        setMessage(result.ok ? "BOM item could not be loaded." : result.error);
+      if (!optionsResult.ok) {
+        setMessage(optionsResult.error);
         setBusyItemId(null);
         return;
       }
 
-      setWizard({ mode: "edit", item: result.data });
+      setWizard({ mode: "create", formOptions: optionsResult.data });
+      setBusyItemId(null);
+    });
+  };
+
+  const openEdit = (item: BomItemListRow) => {
+    setMessage(null);
+    setBusyItemId(item.id);
+    startModalTransition(async () => {
+      const [detailResult, optionsResult] = await Promise.all([
+        getBomItemDetailAction(item.id),
+        getBomItemFormOptionsAction(),
+        loadWizardModule()
+      ]);
+
+      if (!detailResult.ok || !detailResult.data || !optionsResult.ok) {
+        setMessage(
+          !detailResult.ok
+            ? detailResult.error
+            : !detailResult.data
+              ? "BOM item could not be loaded."
+              : optionsResult.ok
+                ? "BOM item options could not be loaded."
+                : optionsResult.error
+        );
+        setBusyItemId(null);
+        return;
+      }
+
+      setWizard({
+        mode: "edit",
+        item: detailResult.data,
+        formOptions: optionsResult.data
+      });
       setBusyItemId(null);
     });
   };
 
   const handleSaved = () => {
+    setWizard(null);
     setMessage("BOM item saved.");
     router.refresh();
   };
@@ -71,15 +161,19 @@ export function BomItemsLibraryShell({
         <button
           type="button"
           className="icon-button icon-button-primary"
-          onClick={() => {
-            setMessage(null);
-            setWizard({ mode: "create" });
-          }}
+          onClick={openCreate}
+          disabled={isLoadingModal && busyItemId === "create"}
         >
           <Plus aria-hidden="true" size={14} />
-          New item
+          {isLoadingModal && busyItemId === "create" ? "Loading..." : "New item"}
         </button>
       </div>
+
+      <BomItemsFilters
+        filters={result.appliedFilters}
+        options={filterOptions}
+        pageSize={result.pageSize}
+      />
 
       {message ? (
         <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-700">
@@ -88,20 +182,26 @@ export function BomItemsLibraryShell({
         </div>
       ) : null}
 
-      <BomItemsTable
-        items={items}
-        onEdit={openEdit}
-        onDelete={(item) => {
-          setMessage(null);
-          setDeleteItem(item);
-        }}
-        busyItemId={isLoadingDetail ? busyItemId : null}
-      />
+      <div className="tool-panel overflow-hidden">
+        <BomItemsTable
+          items={result.items}
+          onEdit={openEdit}
+          onDelete={(item) => {
+            setMessage(null);
+            void loadDeleteDialogModule();
+            setDeleteItem(item);
+          }}
+          busyItemId={isLoadingModal ? busyItemId : null}
+          clearFiltersUrl={clearFiltersUrl}
+          hasFilters={hasFilters}
+        />
+        <BomItemsPagination result={result} />
+      </div>
 
       {wizard ? (
         <BomItemWizardDialog
           key={wizard.mode === "edit" ? wizard.item.id : "create"}
-          formOptions={formOptions}
+          formOptions={wizard.formOptions}
           mode={wizard.mode}
           item={wizard.item}
           onClose={() => setWizard(null)}

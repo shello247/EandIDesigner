@@ -8,6 +8,7 @@ import {
   MAX_BOM_ITEM_IMAGES,
   MAX_BOM_ITEM_TOTAL_IMAGE_BYTES,
   dataUrlByteLength,
+  dataUrlMimeType,
   validateBomItemImageBudget
 } from "../logic/services/bom-item-image-budget";
 import {
@@ -38,6 +39,8 @@ describe("BOM item reliability", () => {
     expect(dataUrlByteLength("data:image/png;base64,YWJj")).toBe(3);
     expect(dataUrlByteLength("data:text/plain;base64,YWJj")).toBeNull();
     expect(dataUrlByteLength("data:image/png,not-base64")).toBeNull();
+    expect(dataUrlMimeType("data:image/PNG;base64,YWJj")).toBe("image/png");
+    expect(dataUrlMimeType("data:text/plain;base64,YWJj")).toBeNull();
   });
 
   it("validates count, individual size, and aggregate image budgets", () => {

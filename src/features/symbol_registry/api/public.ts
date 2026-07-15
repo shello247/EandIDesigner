@@ -1,5 +1,8 @@
 import { saveSymbolDraft } from "../data/mutations";
-import { listDrawingSymbolVersions } from "../data/queries";
+import {
+  listDrawingSymbolVersions,
+  listSymbolIdentitiesByIds
+} from "../data/queries";
 import type { SaveSymbolDraftInput } from "../data/schema";
 
 export type {
@@ -36,3 +39,6 @@ export async function listSymbolsForDrawing() {
 export async function listApprovedSymbolsForDrawing() {
   return listDrawingSymbolVersions();
 }
+
+export { listSymbolIdentitiesByIds };
+export type { SymbolIdentity } from "../types";

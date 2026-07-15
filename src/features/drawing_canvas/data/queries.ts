@@ -4,7 +4,49 @@ import {
   drawingStatusSchema,
   parseDrawingModelJson
 } from "./schema";
-import type { DrawingDetail, DrawingListItem } from "../types";
+import type {
+  DrawingBomOption,
+  DrawingBomSource,
+  DrawingDetail,
+  DrawingListItem
+} from "../types";
+
+export const listDrawingBomOptions = cache(
+  async (): Promise<DrawingBomOption[]> => {
+    return prisma.drawing.findMany({
+      where: {
+        NOT: { status: "archived" }
+      },
+      select: {
+        id: true,
+        drawingKey: true,
+        title: true
+      },
+      orderBy: { updatedAt: "desc" }
+    });
+  }
+);
+
+export const getDrawingBomSource = cache(
+  async (id: string): Promise<DrawingBomSource | null> => {
+    const row = await prisma.drawing.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        modelJson: true
+      }
+    });
+
+    return row
+      ? {
+          id: row.id,
+          title: row.title,
+          model: parseDrawingModelJson(row.modelJson)
+        }
+      : null;
+  }
+);
 
 export const listDrawings = cache(async (): Promise<DrawingListItem[]> => {
   const rows = await prisma.drawing.findMany({

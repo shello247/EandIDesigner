@@ -5,7 +5,7 @@ import {
   bomItemOptionInputSchema,
   bomItemUpdateInputSchema,
   type BomItemOption,
-  type BomItemImageInput,
+  type BomItemImageWriteInput,
   saveSymbolBomTemplateInputSchema,
   type BomItemInput,
   type BomItemOptionInput,
@@ -17,6 +17,7 @@ import {
   BOM_ITEM_KEY_SCOPE,
   formatBomItemKey
 } from "../logic/services/bom-item-key";
+import { validateBomItemImageBudget } from "../logic/services/bom-item-image-budget";
 
 const MAX_CREATE_ATTEMPTS = 3;
 
@@ -44,7 +45,9 @@ function nullableNumber(value: number | undefined): number | null {
   return value === undefined ? null : value;
 }
 
-function orderedImages(images: BomItemImageInput[]): BomItemImageInput[] {
+function orderedImages(
+  images: readonly BomItemImageWriteInput[]
+): BomItemImageWriteInput[] {
   const hasPrimary = images.some((image) => image.isPrimary);
 
   return images.map((image, index) => ({
@@ -54,23 +57,109 @@ function orderedImages(images: BomItemImageInput[]): BomItemImageInput[] {
   }));
 }
 
-async function replaceBomItemImages(
+export async function reconcileBomItemImages(
   tx: Prisma.TransactionClient,
   itemId: string,
-  images: BomItemImageInput[]
+  images: readonly BomItemImageWriteInput[]
 ) {
-  await tx.bomItemImage.deleteMany({
-    where: { itemId }
+  const currentImages = await tx.bomItemImage.findMany({
+    where: { itemId },
+    select: {
+      id: true,
+      sizeBytes: true,
+      caption: true,
+      isPrimary: true,
+      sortOrder: true
+    }
   });
-
   const nextImages = orderedImages(images);
+  const currentById = new Map(
+    currentImages.map((image) => [image.id, image])
+  );
+  const existingIds = new Set<string>();
 
-  if (nextImages.length === 0) {
+  for (const image of nextImages) {
+    if (image.kind !== "existing") {
+      continue;
+    }
+
+    if (existingIds.has(image.id)) {
+      throw new Error(`BOM item image ${image.id} is referenced more than once.`);
+    }
+
+    if (!currentById.has(image.id)) {
+      throw new Error(
+        `BOM item image ${image.id} does not belong to item ${itemId}.`
+      );
+    }
+
+    existingIds.add(image.id);
+  }
+
+  const budget = validateBomItemImageBudget(
+    nextImages.map((image) =>
+      image.kind === "new"
+        ? { sizeBytes: image.sizeBytes, dataUrl: image.dataUrl }
+        : { sizeBytes: currentById.get(image.id)!.sizeBytes }
+    )
+  );
+
+  if (!budget.ok) {
+    throw new Error(
+      budget.violations[0]?.message ?? "BOM item images are invalid."
+    );
+  }
+
+  const removedIds = currentImages
+    .filter((image) => !existingIds.has(image.id))
+    .map((image) => image.id);
+
+  if (removedIds.length > 0) {
+    await tx.bomItemImage.deleteMany({
+      where: {
+        itemId,
+        id: { in: removedIds }
+      }
+    });
+  }
+
+  for (const image of nextImages) {
+    if (image.kind !== "existing") {
+      continue;
+    }
+
+    const current = currentById.get(image.id)!;
+    const caption = nullable(image.caption);
+
+    if (
+      current.caption === caption &&
+      current.isPrimary === image.isPrimary &&
+      current.sortOrder === image.sortOrder
+    ) {
+      continue;
+    }
+
+    await tx.bomItemImage.update({
+      where: { id: image.id },
+      data: {
+        caption,
+        isPrimary: image.isPrimary,
+        sortOrder: image.sortOrder
+      }
+    });
+  }
+
+  const newImages = nextImages.filter(
+    (image): image is Extract<BomItemImageWriteInput, { kind: "new" }> =>
+      image.kind === "new"
+  );
+
+  if (newImages.length === 0) {
     return;
   }
 
   await tx.bomItemImage.createMany({
-    data: nextImages.map((image) => ({
+    data: newImages.map((image) => ({
       itemId,
       fileName: image.fileName,
       mimeType: image.mimeType,
@@ -147,7 +236,7 @@ export async function createBomItem(input: BomItemInput) {
           select: { id: true }
         });
 
-        await replaceBomItemImages(tx, row.id, parsed.images);
+        await reconcileBomItemImages(tx, row.id, parsed.images);
 
         return row.id;
       });
@@ -263,7 +352,7 @@ export async function updateBomItem(input: BomItemUpdateInput) {
     });
 
     if ("images" in input) {
-      await replaceBomItemImages(tx, parsed.id, parsed.images ?? []);
+      await reconcileBomItemImages(tx, parsed.id, parsed.images ?? []);
     }
   });
 

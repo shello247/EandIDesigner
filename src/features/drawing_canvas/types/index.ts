@@ -42,6 +42,18 @@ export type DrawingApprovalOutcome = {
   approved: boolean;
 };
 
+export type DrawingBomOption = {
+  id: string;
+  drawingKey: string;
+  title: string;
+};
+
+export type DrawingBomSource = {
+  id: string;
+  title: string;
+  model: DrawingModel;
+};
+
 export type ActionResult<T> =
   | { ok: true; data: T }
   | {
