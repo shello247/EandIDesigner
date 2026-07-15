@@ -2,11 +2,14 @@ import { prisma } from "../../src/lib/prisma";
 import {
   createDefaultDrawingSheet,
   createDefaultDrawingModel,
+  drawingPackageModelSchema,
   parseDrawingModelJson,
   stringifyDrawingModel,
   type DrawingModel
 } from "../../src/features/drawing_canvas/data/schema";
 import { createTerminalBlockPlacement } from "../../src/features/drawing_canvas/logic/services/drawing-terminal-blocks";
+import { createPanelEnclosurePlacement } from "../../src/features/drawing_canvas/logic/services/drawing-asset-containment";
+import { createBackplanePlacement } from "../../src/features/drawing_canvas/logic/services/drawing-backplane-layouts";
 import { stringifyMetadata } from "../../src/features/symbol_registry/data/schema";
 
 type FixtureSymbol = {
@@ -621,6 +624,110 @@ export async function createE2eSectionedDrawingPackage(): Promise<string> {
   });
 
   return row.id;
+}
+
+export async function createE2eTerminalBlockGroupPackage(): Promise<{
+  drawingId: string;
+  symbolId: string;
+}> {
+  await prisma.symbol.deleteMany({
+    where: { symbolKey: { startsWith: "e2e_terminal_group_module_" } }
+  });
+  const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const symbolKey = `e2e_terminal_group_module_${unique}`;
+  const symbol = await prisma.symbol.create({
+    data: {
+      symbolKey,
+      displayName: "E2E Feed-through Terminal Module",
+      category: "terminal_block",
+      status: "approved",
+      versions: {
+        create: {
+          versionNumber: 1,
+          status: "approved",
+          svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 178"><rect x="0.25" y="0.25" width="19.5" height="177.5" fill="white" stroke="#334155"/><circle cx="10" cy="50" r="5" fill="none" stroke="#334155"/><circle cx="10" cy="128" r="5" fill="none" stroke="#334155"/></svg>',
+          metadataJson: stringifyMetadata({
+            symbolKey,
+            displayName: "E2E Feed-through Terminal Module",
+            category: "terminal_block",
+            layoutUsage: "both",
+            panelCategory: "termination",
+            mountingType: "din_rail",
+            physicalWidthMm: 5.2,
+            physicalHeightMm: 50,
+            terminalBlockModule: {
+              kind: "feed_through",
+              defaultForGeneratedGroups: true
+            },
+            viewBox: { x: 0, y: 0, width: 20, height: 178 },
+            anchors: [],
+            terminals: []
+          })
+        }
+      }
+    },
+    select: { id: true }
+  });
+  const base = createDefaultDrawingModel();
+  const panel = {
+    ...createPanelEnclosurePlacement({
+      model: base,
+      activeSheet: base.sheets[0],
+      assetId: `asset_panel_${unique}`,
+      tag: "JB001",
+      title: "Terminal Group Test Panel",
+      x: 30,
+      y: 30
+    }),
+    id: `panel_${unique}`
+  };
+  const backplane = {
+    ...createBackplanePlacement({
+      panelPlacement: panel,
+      id: `backplane_${unique}`
+    }),
+    layoutDimensions: { lengthMm: 300, widthMm: 200 }
+  };
+  const detailedSheet = {
+    ...createDefaultDrawingSheet({
+      id: `sheet_terminal_detail_${unique}`,
+      name: "JB001 Detailed Panel Drawing"
+    }),
+    panelDrawingContext: {
+      kind: "detailed_panel_wiring" as const,
+      panelAssetId: panel.assetId
+    }
+  };
+  const model = drawingPackageModelSchema.parse({
+    ...base,
+    assets: [
+      {
+        id: panel.assetId,
+        tag: panel.tag,
+        type: "junction_box",
+        title: "Terminal Group Test Panel"
+      }
+    ],
+    sheets: [
+      {
+        ...base.sheets[0],
+        name: "JB001 Panel Layout Drawing",
+        placements: [panel, backplane]
+      },
+      detailedSheet
+    ]
+  });
+  const drawing = await prisma.drawing.create({
+    data: {
+      drawingKey: `e2e_terminal_group_${unique}`,
+      title: "Terminal Block Group Test",
+      status: "needs_review",
+      modelJson: stringifyDrawingModel(model)
+    },
+    select: { id: true }
+  });
+
+  return { drawingId: drawing.id, symbolId: symbol.id };
 }
 
 export async function deleteE2eSymbol(symbolId: string | undefined) {

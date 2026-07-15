@@ -6,9 +6,15 @@ import type {
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import type {
-  PanelConnectionPatternRecord
+  PanelConnectionPatternRecord,
+  PanelExternalTerminationDisplayRow,
+  PanelWirePhysicalPosition
 } from "@/features/drawing_panel_wiring/api/public";
-import { getAnchorWorldPoint, getPlacementTransform } from "./drawing-geometry";
+import {
+  getAnchorWorldPoint,
+  getPlacementScaleFactors,
+  getPlacementTransform
+} from "./drawing-geometry";
 import { renderConnectionRouteSvg } from "./connection-route-renderer";
 import {
   getAnnotationSize,
@@ -884,6 +890,120 @@ function renderPanelEnclosure(placement: DrawingModel["placements"][number]): st
   `;
 }
 
+function inferredExternalTerminationPosition(input: {
+  placement: DrawingModel["placements"][number];
+  symbol: ApprovedDrawingSymbol;
+  anchorPoint: { x: number; y: number };
+}): PanelWirePhysicalPosition {
+  const scale = getPlacementScaleFactors(input.placement, input.symbol.metadata);
+  const center = {
+    x: input.placement.x + (input.symbol.metadata.viewBox.width * scale.x) / 2,
+    y: input.placement.y + (input.symbol.metadata.viewBox.height * scale.y) / 2
+  };
+  const deltaX = input.anchorPoint.x - center.x;
+  const deltaY = input.anchorPoint.y - center.y;
+
+  if (Math.abs(deltaX) > Math.abs(deltaY)) {
+    return deltaX >= 0 ? "right" : "left";
+  }
+
+  return deltaY >= 0 ? "bottom" : "top";
+}
+
+function externalTerminationLabel(
+  termination: PanelExternalTerminationDisplayRow
+): string {
+  const wireId = termination.wireId?.trim();
+
+  if (wireId) {
+    return wireId;
+  }
+
+  const cableReference = [
+    termination.cableTag?.trim(),
+    termination.conductorKey?.trim()
+  ].filter(Boolean);
+
+  return cableReference.length > 0 ? cableReference.join("/") : "FIELD";
+}
+
+function renderPanelExternalTerminationStubs(input: {
+  model: DrawingModel;
+  approvedSymbols: ApprovedDrawingSymbol[];
+  terminations: PanelExternalTerminationDisplayRow[];
+}): string {
+  const placementsById = new Map(
+    input.model.placements.map((placement) => [placement.id, placement])
+  );
+  const directionVectors: Record<
+    PanelWirePhysicalPosition,
+    { x: number; y: number }
+  > = {
+    top: { x: 0, y: -1 },
+    right: { x: 1, y: 0 },
+    bottom: { x: 0, y: 1 },
+    left: { x: -1, y: 0 }
+  };
+  const lineLength = 32;
+
+  return input.terminations
+    .map((termination) => {
+      const placement = placementsById.get(termination.placementId);
+      const symbol = placement
+        ? getRenderableSymbolForPlacement(placement, input.approvedSymbols)
+        : undefined;
+      const anchor = symbol?.metadata.anchors.find(
+        (candidate) => candidate.key === termination.anchorKey
+      );
+
+      if (!placement || !symbol || !anchor) {
+        return "";
+      }
+
+      const start = getAnchorWorldPoint(placement, symbol.metadata, anchor);
+      const position =
+        termination.physicalPosition ??
+        inferredExternalTerminationPosition({
+          placement,
+          symbol,
+          anchorPoint: start
+        });
+      const vector = directionVectors[position];
+      const end = {
+        x: Number((start.x + vector.x * lineLength).toFixed(2)),
+        y: Number((start.y + vector.y * lineLength).toFixed(2))
+      };
+      const labelPoint = {
+        x: Number((start.x + vector.x * lineLength * 0.6).toFixed(2)),
+        y: Number((start.y + vector.y * lineLength * 0.6).toFixed(2))
+      };
+      const label = externalTerminationLabel(termination);
+      const isVertical = position === "top" || position === "bottom";
+      const labelTransform = isVertical
+        ? ` transform="rotate(-90 ${labelPoint.x} ${labelPoint.y})"`
+        : "";
+      const tooltip = [
+        `External field termination ${label}`,
+        termination.cableTag ? `Cable ${termination.cableTag}` : undefined,
+        termination.conductorKey
+          ? `Conductor ${termination.conductorKey}`
+          : undefined,
+        `Source Sheet ${termination.sourceSheet.number} - ${termination.sourceSheet.name}`
+      ]
+        .filter(Boolean)
+        .join(" / ");
+
+      return `
+        <g data-external-termination-id="${escapeXml(termination.terminationId)}" data-field-connection-id="${escapeXml(termination.source.connectionId)}" data-placement-id="${escapeXml(termination.placementId)}"${termination.wireId ? ` data-field-wire-id="${escapeXml(termination.wireId)}"` : ""} pointer-events="none">
+          <title>${escapeXml(tooltip)}</title>
+          <line x1="${start.x}" y1="${start.y}" x2="${end.x}" y2="${end.y}" stroke="#0f766e" stroke-width="0.58" stroke-linecap="square"/>
+          <text x="${labelPoint.x}" y="${labelPoint.y}"${labelTransform} text-anchor="middle" dominant-baseline="central" font-family="Inter, Poppins, Arial, Helvetica, sans-serif" font-size="3" font-weight="650" fill="#0f5f59" stroke="#ffffff" stroke-width="1.25" paint-order="stroke" stroke-linejoin="round">${escapeXml(label)}</text>
+        </g>
+      `;
+    })
+    .join("");
+}
+
 export function renderDrawingToSvg(params: {
   model: DrawingModel;
   approvedSymbols: ApprovedDrawingSymbol[];
@@ -898,6 +1018,7 @@ export function renderDrawingToSvg(params: {
   derivedSectionNumber?: number;
   panelInternalWires?: Array<{ id: string; wireId: string }>;
   panelConnectionPatterns?: PanelConnectionPatternRecord[];
+  panelExternalTerminations?: PanelExternalTerminationDisplayRow[];
   connectionVisibility?: "all" | "field" | "panel_internal";
 }): string {
   const {
@@ -914,6 +1035,7 @@ export function renderDrawingToSvg(params: {
     derivedSectionNumber,
     panelInternalWires = [],
     panelConnectionPatterns = [],
+    panelExternalTerminations = [],
     connectionVisibility = "all"
   } = params;
   const panelWireById = new Map(panelInternalWires.map((wire) => [wire.id, wire]));
@@ -1009,6 +1131,11 @@ export function renderDrawingToSvg(params: {
         })
         .join("")
     : "";
+  const externalTerminationStubs = renderPanelExternalTerminationStubs({
+    model,
+    approvedSymbols,
+    terminations: panelExternalTerminations
+  });
 
   const panelEnclosures = panelPlacements.map(renderPanelEnclosure).join("");
   const backplanes = backplanePlacements
@@ -1165,6 +1292,7 @@ export function renderDrawingToSvg(params: {
     ${panelEnclosures}
     ${backplanes}
     ${placements}
+    ${externalTerminationStubs}
     ${connections}
     ${placementLabels}
     ${sectionTitlePageContent}

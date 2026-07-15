@@ -10,6 +10,7 @@ export const symbolStatusSchema = z.enum([
 export const symbolCategorySchema = z.enum([
   "instrument",
   "monitor",
+  "network_device",
   "terminal_block",
   "cable_assembly",
   "gland",
@@ -106,6 +107,11 @@ export const symbolPanelWiringCapabilitySchema = z.object({
   schematicScale: z.number().positive().optional()
 });
 
+export const symbolTerminalBlockModuleSchema = z.object({
+  kind: z.literal("feed_through"),
+  defaultForGeneratedGroups: z.boolean().default(false)
+});
+
 export const symbolTerminalSchema = z.object({
   key: z.string().trim().min(1).max(80),
   label: z.string().trim().min(1).max(120),
@@ -122,7 +128,8 @@ export const symbolLayoutMetadataSchema = z.object({
   physicalHeightMm: z.number().positive().optional(),
   mountingType: symbolPanelMountingTypeSchema.optional(),
   panelCategory: symbolPanelCategorySchema.optional(),
-  resizable: z.boolean().default(false)
+  resizable: z.boolean().default(false),
+  terminalBlockModule: symbolTerminalBlockModuleSchema.optional()
 });
 
 export const symbolMetadataSchema = z.object({
@@ -137,6 +144,7 @@ export const symbolMetadataSchema = z.object({
   mountingType: symbolPanelMountingTypeSchema.optional(),
   panelCategory: symbolPanelCategorySchema.optional(),
   resizable: z.boolean().optional(),
+  terminalBlockModule: symbolTerminalBlockModuleSchema.optional(),
   panelWiring: symbolPanelWiringCapabilitySchema.optional(),
   viewBox: viewBoxSchema,
   terminals: z.array(symbolTerminalSchema),

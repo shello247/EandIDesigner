@@ -6,6 +6,7 @@ import type {
   DrawingSheetCanvasModel
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
+import { isTerminalBlockModuleSymbol } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
 import { replaceSheetFromCanvasModel, toSheetCanvasModel } from "../commands/drawing-sheet-commands";
 import {
   resolveCopiedPlacementAsset,
@@ -207,6 +208,24 @@ export function pasteClipboardToSheet(params: {
       model: params.model,
       selection: { ...EMPTY_CANVAS_SELECTION }
     };
+  }
+
+  const copiedSingularTerminalModule = params.clipboard.placements.find(
+    (placement) => {
+      const symbol = params.symbols.find(
+        (candidate) =>
+          candidate.symbolId === placement.symbolId &&
+          candidate.versionId === placement.versionId
+      );
+
+      return isTerminalBlockModuleSymbol(symbol);
+    }
+  );
+
+  if (copiedSingularTerminalModule) {
+    throw new Error(
+      "Individual terminal modules cannot be pasted. Use Terminal Block Group."
+    );
   }
 
   const source = params.model.sheets.find(

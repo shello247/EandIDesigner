@@ -14,7 +14,10 @@ import {
 } from "../logic/commands/drawing-panel-occurrence-commands";
 import { getPlacementBounds } from "../logic/services/drawing-geometry";
 import { getRenderableSymbolForPlacement } from "../logic/services/drawing-generated-symbols";
-import { createTerminalBlockPlacement } from "../logic/services/drawing-terminal-blocks";
+import {
+  createTerminalBlockPlacement,
+  TERMINAL_BLOCK_SCHEMATIC_SCALE
+} from "../logic/services/drawing-terminal-blocks";
 
 const PANEL_ASSET_ID = "asset_panel_alpha";
 const TERMINAL_ASSET_ID = "asset_terminal_alpha";
@@ -99,6 +102,43 @@ function createFixture(): DrawingModel {
   });
 }
 
+function createLayoutOnlyFixture(): DrawingModel {
+  const model = createFixture();
+  const sourcePlacement = model.sheets[0].placements.find(
+    (placement) => placement.assetId === TERMINAL_ASSET_ID
+  )!;
+  const terminalBlock = sourcePlacement.terminalBlock!;
+
+  return drawingPackageModelSchema.parse({
+    ...model,
+    assets: model.assets.map((asset) =>
+      asset.id === TERMINAL_ASSET_ID
+        ? { ...asset, terminalBlock }
+        : asset
+    ),
+    sheets: model.sheets.map((sheet) =>
+      sheet.id === "sheet_source"
+        ? {
+            ...sheet,
+            placements: sheet.placements.map((placement) =>
+              placement.assetId === TERMINAL_ASSET_ID
+                ? {
+                    ...placement,
+                    layoutKind: "layout_helper" as const,
+                    layoutParentId: "backplane_layout",
+                    layoutPosition: { xMm: 20, yMm: 30 },
+                    layoutDimensions: { lengthMm: 10.4, widthMm: 50 },
+                    scale: 1,
+                    terminalBlock: { ...terminalBlock, count: 2 }
+                  }
+                : placement
+            )
+          }
+        : sheet
+    )
+  });
+}
+
 describe("Detailed Panel asset occurrence commands", () => {
   it("places an existing asset occurrence without changing assets or source connections", () => {
     const model = createFixture();
@@ -135,6 +175,61 @@ describe("Detailed Panel asset occurrence commands", () => {
       sideHint: "internal",
       physicalPosition: "top"
     });
+  });
+
+  it("creates a schematic occurrence from a layout-only terminal group", () => {
+    const model = createLayoutOnlyFixture();
+    const asset = model.assets.find(
+      (candidate) => candidate.id === TERMINAL_ASSET_ID
+    )!;
+    const result = placePanelAssetOccurrence({
+      model,
+      sheetId: DETAIL_SHEET_ID,
+      assetId: TERMINAL_ASSET_ID
+    });
+    const detailedOccurrence = createPanelWiringSource(result.model, [])
+      .sheets.find((sheet) => sheet.id === DETAIL_SHEET_ID)
+      ?.occurrences.find(
+        (occurrence) => occurrence.placementId === result.placement.id
+      );
+
+    expect(result.model.assets).toEqual(model.assets);
+    expect(result.placement).toMatchObject({
+      assetId: TERMINAL_ASSET_ID,
+      containerAssetId: PANEL_ASSET_ID,
+      tag: "TB-101",
+      role: "terminal_block",
+      rotation: 0,
+      scale: TERMINAL_BLOCK_SCHEMATIC_SCALE,
+      terminalBlock: asset.terminalBlock
+    });
+    expect(result.placement.layoutKind).toBeUndefined();
+    expect(result.placement.layoutParentId).toBeUndefined();
+    expect(result.placement.layoutPosition).toBeUndefined();
+    expect(result.placement.layoutDimensions).toBeUndefined();
+    expect(detailedOccurrence).toMatchObject({
+      occurrenceKind: "wiring",
+      terminalResolutionStatus: "resolved"
+    });
+    expect(detailedOccurrence?.terminals).toHaveLength(
+      asset.terminalBlock?.count
+    );
+    expect(
+      detailedOccurrence?.terminals
+        .find((terminal) => terminal.terminalKey === "T5")
+        ?.anchors
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          anchorKey: "T5_TOP",
+          sideHint: "internal"
+        }),
+        expect.objectContaining({
+          anchorKey: "T5_BOTTOM",
+          sideHint: "external"
+        })
+      ])
+    );
   });
 
   it("rejects a second representation of the same asset", () => {

@@ -188,6 +188,9 @@ to a Backplane.
   the Detailed Panel Drawing from the Panel Work Queue. The occurrence keeps the
   same `assetId`, approved symbol/version, tag, and terminal metadata used by the
   physical layout.
+- A resolved asset-backed panel-layout occurrence is a valid representation
+  source when no field-wiring occurrence exists. The Detailed Panel occurrence
+  is generated at schematic scale and does not retain backplane layout fields.
 - Electrical terminal and anchor metadata must resolve unambiguously before an
   existing component can participate in wiring.
 - Deleting a Detailed Panel occurrence removes only that drawing reference. The
@@ -225,7 +228,10 @@ to a Backplane.
 - Selected routes expose canonical endpoints, wire ID, attributes, route reset,
   and deletion in Properties. Endpoints remain read-only in V1.
 - Canvas, Package Preview, print, and PDF use the same dark-blue internal-wire
-  renderer. Ordinary field connections are not rendered on Detailed Panel sheets.
+  renderer. Detailed Panel sheets do not copy ordinary field connections; instead,
+  represented equipment automatically receives non-interactive straight teal field
+  stubs derived from canonical external terminations. Each stub remains linked to
+  its source connection, wire/cable provenance, terminal side, and source sheet.
 - Schedules, general multi-conductor terminal capacity, and automatic circuit
   generation remain future work.
 

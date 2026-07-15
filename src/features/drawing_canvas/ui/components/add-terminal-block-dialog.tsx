@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Hash, Link2, Minus, PackagePlus, Plus, X } from "lucide-react";
+import { Hash, Link2, PackagePlus, X } from "lucide-react";
 import type {
   DrawingModel,
   DrawingSheetCanvasModel
@@ -16,10 +16,7 @@ import {
 } from "../../logic/services/drawing-asset-containment";
 import {
   allocateNextTagFromPrefix,
-  createDrawingAssetId,
-  findAssetTagConflict,
-  formatAssetTagConflictMessage,
-  stepEngineeringTag
+  createDrawingAssetId
 } from "../../logic/services/drawing-asset-identity";
 import {
   DEFAULT_TERMINAL_BLOCK_COUNT,
@@ -71,16 +68,16 @@ export function AddTerminalBlockDialog({
     [activeSheetModel]
   );
   const [mode, setMode] = useState<AddMode>("create");
-  const [tag, setTag] = useState(() =>
-    allocateNextTagFromPrefix({
-      model,
-      prefix: TERMINAL_BLOCK_TAG_PREFIX
-    })
+  const tag = useMemo(
+    () =>
+      allocateNextTagFromPrefix({
+        model,
+        prefix: TERMINAL_BLOCK_TAG_PREFIX
+      }),
+    [model]
   );
   const [count, setCount] = useState(DEFAULT_TERMINAL_BLOCK_COUNT);
-  const [startNumber, setStartNumber] = useState(
-    DEFAULT_TERMINAL_BLOCK_START_NUMBER
-  );
+  const startNumber = DEFAULT_TERMINAL_BLOCK_START_NUMBER;
   const [containerAssetId, setContainerAssetId] = useState("");
   const [selectedAssetId, setSelectedAssetId] = useState(
     existingTerminalBlocks[0]?.assetId ?? ""
@@ -99,9 +96,6 @@ export function AddTerminalBlockDialog({
           startNumber,
           orientation: "horizontal"
         });
-  const decrementedTag = stepEngineeringTag(tag, -1);
-  const incrementedTag = stepEngineeringTag(tag, 1);
-
   const placeTerminalBlock = () => {
     if (mode === "reference") {
       if (!selectedTerminalBlock) {
@@ -118,23 +112,14 @@ export function AddTerminalBlockDialog({
       return;
     }
 
-    const normalizedTag = tag.trim();
-
-    if (!normalizedTag) {
-      setError("Enter a terminal block tag before placing the strip.");
-      return;
-    }
-
-    const conflict = findAssetTagConflict(model, normalizedTag);
-
-    if (conflict) {
-      setError(formatAssetTagConflictMessage(normalizedTag, conflict));
+    if (!Number.isInteger(count) || count < 2 || count > 80) {
+      setError("Terminal count must be between 2 and 80.");
       return;
     }
 
     onPlace({
       assetId: createDrawingAssetId(),
-      tag: normalizedTag,
+      tag,
       terminalBlock: normalizeTerminalBlockPlacement({
         count,
         startNumber,
@@ -167,10 +152,10 @@ export function AddTerminalBlockDialog({
           </div>
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="text-sm font-semibold text-slate-950">
-              Add Terminal Block
+              Add Terminal Block Group
             </h2>
             <p id={descriptionId} className="mt-1 text-xs leading-5 text-slate-600">
-              Add a configurable modular terminal strip to this sheet.
+              Add a numbered modular terminal strip to this sheet.
             </p>
           </div>
           <button
@@ -198,7 +183,7 @@ export function AddTerminalBlockDialog({
             >
               <span className="flex items-center gap-2 font-bold">
                 <PackagePlus aria-hidden="true" size={14} />
-                Create new terminal block
+                Create new terminal group
               </span>
               <span className="mt-1 block text-slate-500">
                 Allocate the next TB tag.
@@ -230,42 +215,12 @@ export function AddTerminalBlockDialog({
             <label className="field-label" htmlFor="add-terminal-block-tag">
               Terminal block tag
             </label>
-            <div className="flex gap-2">
-              <input
-                id="add-terminal-block-tag"
-                className="field-input"
-                value={displayTag}
-                readOnly={mode === "reference"}
-                onChange={(event) => {
-                  setTag(event.currentTarget.value);
-                  setError(null);
-                }}
-              />
-              {mode === "create" ? (
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    className="icon-button h-9 w-9 p-0"
-                    aria-label="Decrement terminal block tag number"
-                    title="Decrement terminal block tag number"
-                    disabled={!decrementedTag}
-                    onClick={() => decrementedTag && setTag(decrementedTag)}
-                  >
-                    <Minus aria-hidden="true" size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-button h-9 w-9 p-0"
-                    aria-label="Increment terminal block tag number"
-                    title="Increment terminal block tag number"
-                    disabled={!incrementedTag}
-                    onClick={() => incrementedTag && setTag(incrementedTag)}
-                  >
-                    <Plus aria-hidden="true" size={14} />
-                  </button>
-                </div>
-              ) : null}
-            </div>
+            <input
+              id="add-terminal-block-tag"
+              className="field-input bg-slate-50 font-semibold"
+              value={displayTag}
+              readOnly
+            />
           </div>
 
           {mode === "create" ? (
@@ -278,11 +233,11 @@ export function AddTerminalBlockDialog({
                   id="terminal-block-count"
                   className="field-input"
                   type="number"
-                  min={1}
+                  min={2}
                   max={80}
                   value={count}
                   onChange={(event) =>
-                    setCount(Number(event.currentTarget.value) || 1)
+                    setCount(Number(event.currentTarget.value) || 2)
                   }
                 />
               </div>
@@ -297,9 +252,7 @@ export function AddTerminalBlockDialog({
                   min={1}
                   max={9999}
                   value={startNumber}
-                  onChange={(event) =>
-                    setStartNumber(Number(event.currentTarget.value) || 1)
-                  }
+                  readOnly
                 />
               </div>
             </div>
@@ -389,7 +342,7 @@ export function AddTerminalBlockDialog({
             onClick={placeTerminalBlock}
           >
             <PackagePlus aria-hidden="true" size={14} />
-            Place terminal block
+            Place terminal group
           </button>
         </div>
       </div>

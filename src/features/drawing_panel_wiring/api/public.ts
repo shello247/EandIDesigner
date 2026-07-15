@@ -34,6 +34,10 @@ export {
 export { buildPanelAssociatedAssetCatalog } from "../logic/services/panel-associated-asset-catalog";
 export { buildExternalTerminationCatalog } from "../logic/services/external-termination-catalog";
 export {
+  buildPanelExternalTerminationDisplayIndex,
+  buildPanelExternalTerminationDisplayRows
+} from "../logic/services/external-termination-display";
+export {
   buildExternalTerminationMappingCandidates,
   buildExternalTerminationMappingRows,
   isEffectiveAutomaticTarget
@@ -128,6 +132,7 @@ export type {
   PanelConnectivitySnapshot,
   PanelExternalTermination,
   PanelExternalTerminationProvenance,
+  PanelExternalTerminationDisplayRow,
   PanelDiscoveryStatus,
   PanelAssociatedAssetCatalogRow,
   ExternalTerminationCatalogRow,

@@ -32,6 +32,7 @@ import type {
   DrawingEndpoint
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
+import type { PanelExternalTerminationDisplayRow } from "@/features/drawing_panel_wiring/api/public";
 import { toSheetCanvasModel } from "../../logic/commands/drawing-sheet-commands";
 import { getAnchorWorldPoint } from "../../logic/services/drawing-geometry";
 import { renderDrawingToSvg } from "../../logic/services/drawing-svg-renderer";
@@ -199,6 +200,7 @@ export function SvgDrawingSurface({
   activeSheetId,
   focusSheetRequestKey,
   symbols,
+  panelExternalTerminations = [],
   selection,
   selectedPlacementId,
   viewportTransform,
@@ -255,6 +257,7 @@ export function SvgDrawingSurface({
   activeSheetId: string;
   focusSheetRequestKey?: number;
   symbols: ApprovedDrawingSymbol[];
+  panelExternalTerminations?: PanelExternalTerminationDisplayRow[];
   selection: DrawingCanvasSelection;
   selectedPlacementId?: string;
   viewportTransform: ViewportTransform;
@@ -418,12 +421,13 @@ export function SvgDrawingSurface({
             sheetKind: activeSheet?.kind,
             sectionTitlePage: activeSheet?.sectionTitlePage,
             derivedSectionNumber: activeSection?.number,
-            panelConnectionPatterns
+            panelConnectionPatterns,
+            panelExternalTerminations
           }),
         { sheetId: activeSheet?.id ?? "missing" }
       )
     };
-  }, [activeSection?.number, activeSheet, activeSheetNumber, drawingTitle, model, panelConnectionPatterns, sheetCount, symbols]);
+  }, [activeSection?.number, activeSheet, activeSheetNumber, drawingTitle, model, panelConnectionPatterns, panelExternalTerminations, sheetCount, symbols]);
   const activeGroupSheetIds =
     activeSectionMembership?.kind === "section"
       ? activeSectionMembership.isTitlePage

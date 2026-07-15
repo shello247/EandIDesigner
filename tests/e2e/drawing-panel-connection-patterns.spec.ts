@@ -43,6 +43,8 @@ test("authors, removes, restores, and reloads a structured panel jumper", async 
     const review = page.getByRole("dialog", {
       name: "Review connection pattern"
     });
+    await expect(review).toBeVisible();
+    await expect(review.locator("..")).toHaveCSS("position", "fixed");
     await expect(review).toContainText("JMP-001");
     await review.getByRole("button", { name: "Create pattern" }).click();
     await expect(page.getByTestId("drawing-toast")).toContainText("JMP-001 added");

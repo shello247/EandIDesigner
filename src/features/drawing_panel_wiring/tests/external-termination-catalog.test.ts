@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildPackageConnectivityGraph,
   buildPanelDiscoveryIndex,
+  buildPanelExternalTerminationDisplayIndex,
   getExternalTerminationProvenance
 } from "../api/public";
+import { panelWiringSourcePackageSchema } from "../data/schema";
 import {
   createGenericPanelWiringSource,
   GENERIC_PANEL_ASSET_ID
@@ -104,5 +106,59 @@ describe("external termination catalog", () => {
         (termination) => termination.wireId === "W-1"
       )
     ).toBe(false);
+  });
+
+  it("builds straight-stub display records for represented detailed-panel assets", () => {
+    const source = createGenericPanelWiringSource();
+    const sourceOccurrence = source.sheets[0].occurrences.find(
+      (occurrence) => occurrence.assetId === "asset_strip_a"
+    );
+
+    expect(sourceOccurrence).toBeDefined();
+
+    const withDetailedSheet = panelWiringSourcePackageSchema.parse({
+      ...source,
+      sheets: [
+        ...source.sheets,
+        {
+          id: "sheet_detail",
+          sheetNumber: source.sheets.length + 1,
+          name: "ENC-001 Detailed Panel Drawing",
+          kind: "drawing",
+          panelDrawingContext: {
+            kind: "detailed_panel_wiring",
+            panelAssetId: GENERIC_PANEL_ASSET_ID
+          },
+          occurrences: [
+            {
+              ...sourceOccurrence,
+              sheetId: "sheet_detail",
+              placementId: "detail_strip_a"
+            }
+          ],
+          connections: []
+        }
+      ]
+    });
+    const displayIndex = buildPanelExternalTerminationDisplayIndex(
+      buildPackageConnectivityGraph(withDetailedSheet)
+    );
+    const rows = displayIndex.get("sheet_detail") ?? [];
+
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({
+      placementId: "detail_strip_a",
+      anchorKey: "T1_BOTTOM",
+      physicalPosition: "bottom",
+      target: {
+        assetId: "asset_strip_a",
+        terminalKey: "T1",
+        side: "external"
+      },
+      wireId: "CBL-001-W1",
+      source: {
+        connectionId: "connection_1_1"
+      }
+    });
   });
 });

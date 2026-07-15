@@ -22,6 +22,7 @@ import {
   terminalBlockTerminals
 } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-layout";
 import { renderTerminalBlockSvg } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-renderer";
+import { resolveTerminalBlockModuleForDefinition } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
 import type { TerminalBlockPlacement } from "@/features/drawing_terminal_blocks/types";
 
 export type AssociatedPanelAssetStatus =
@@ -129,10 +130,20 @@ function sheetRef(
   };
 }
 
-function terminalLayoutModuleSize(symbols: ApprovedDrawingSymbol[]): {
+function terminalLayoutModuleSize(
+  symbols: ApprovedDrawingSymbol[],
+  config?: TerminalBlockPlacement
+): {
   widthMm: number;
   heightMm: number;
 } {
+  if (config?.moduleTemplate) {
+    return {
+      widthMm: config.moduleTemplate.pitchMm,
+      heightMm: config.moduleTemplate.heightMm
+    };
+  }
+
   const terminalModule = symbols.find(
     (symbol) =>
       symbol.category === "terminal_block" &&
@@ -157,6 +168,14 @@ function findTerminalBlockConfigForAsset(
   model: DrawingModel,
   assetId: string
 ): TerminalBlockPlacement | undefined {
+  const assetConfig = model.assets.find(
+    (asset) => asset.id === assetId
+  )?.terminalBlock;
+
+  if (assetConfig) {
+    return normalizeTerminalBlockPlacement(assetConfig);
+  }
+
   for (const sheet of model.sheets) {
     for (const placement of sheet.placements) {
       if (
@@ -172,9 +191,15 @@ function findTerminalBlockConfigForAsset(
 }
 
 function generatedTerminalBlockSymbol(
-  config: TerminalBlockPlacement
+  config: TerminalBlockPlacement,
+  symbols: ApprovedDrawingSymbol[],
+  instanceId = "panel-layout"
 ): ApprovedDrawingSymbol {
   const normalized = normalizeTerminalBlockPlacement(config);
+  const resolvedModule = resolveTerminalBlockModuleForDefinition(
+    normalized,
+    symbols
+  );
 
   return {
     symbolId: GENERATED_TERMINAL_BLOCK_SYMBOL_ID,
@@ -183,7 +208,10 @@ function generatedTerminalBlockSymbol(
     category: "terminal_block",
     versionId: GENERATED_TERMINAL_BLOCK_VERSION_ID,
     versionNumber: 1,
-    svg: renderTerminalBlockSvg(normalized),
+    svg: renderTerminalBlockSvg(normalized, {
+      module: resolvedModule,
+      instanceId
+    }),
     metadata: terminalBlockMetadata(normalized)
   };
 }
@@ -219,11 +247,15 @@ export function resolvePanelAssetLayout(
       : undefined;
 
   if (terminalBlockConfig) {
-    const moduleSize = terminalLayoutModuleSize(symbols);
+    const moduleSize = terminalLayoutModuleSize(symbols, terminalBlockConfig);
     const terminals = terminalBlockTerminals(terminalBlockConfig);
 
     return {
-      symbol: generatedTerminalBlockSymbol(terminalBlockConfig),
+      symbol: generatedTerminalBlockSymbol(
+        terminalBlockConfig,
+        symbols,
+        asset.id
+      ),
       terminalBlock: terminalBlockConfig,
       layoutDimensions: {
         lengthMm: Number((terminals.length * moduleSize.widthMm).toFixed(2)),

@@ -47,6 +47,7 @@ const panelWiringAssetTypeOptions: Array<{
 const categoryOptions: Array<{ value: SymbolCategory; label: string }> = [
   { value: "instrument", label: "Instrument" },
   { value: "monitor", label: "Monitor" },
+  { value: "network_device", label: "Network device" },
   { value: "terminal_block", label: "Terminal block" },
   { value: "cable_assembly", label: "Cable assembly" },
   { value: "gland", label: "Gland" },

@@ -34,12 +34,18 @@ test("authors, removes, re-represents, and reloads an internal panel wire", asyn
     const guided = await openDetailedPanelWorkflow(page);
     await guided.getByRole("button", { name: /TB-101/ }).click();
     await guided.getByRole("button", { name: /Internal Wiring/ }).click();
-    await guided
-      .getByLabel("From terminal")
-      .selectOption({ label: "Terminal 1 - Internal (top)" });
+    await expect(guided.getByLabel("To equipment")).toBeEnabled();
     await guided
       .getByLabel("To equipment")
       .selectOption({ label: "MCB-101 - Main Circuit Breaker" });
+    await expect(guided.getByLabel("To terminal")).toBeDisabled();
+    await guided
+      .getByLabel("From terminal")
+      .selectOption({ label: "Terminal 1 - Internal (top)" });
+    await expect(
+      guided.getByLabel("To equipment").locator("option:checked")
+    ).toHaveText("MCB-101 - Main Circuit Breaker");
+    await expect(guided.getByLabel("To terminal")).toBeEnabled();
     await guided
       .getByLabel("To terminal")
       .selectOption({ label: "Terminal Line - Single (top)" });

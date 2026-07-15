@@ -127,6 +127,25 @@ export type PanelExternalTermination = {
 
 export type PanelExternalTerminationProvenance = PanelExternalTermination;
 
+export type PanelExternalTerminationDisplayRow = {
+  terminationId: string;
+  panelAssetId: string;
+  detailedSheetId: string;
+  placementId: string;
+  anchorKey: string;
+  physicalPosition?: PanelWirePhysicalPosition;
+  target: PanelTerminalSideRef;
+  wireId?: string;
+  cableTag?: string;
+  conductorKey?: string;
+  source: PanelSourceEndpointRef;
+  sourceSheet: {
+    id: string;
+    number: number;
+    name: string;
+  };
+};
+
 export type PanelDiscoveryStatus =
   | "available"
   | "represented"
@@ -153,6 +172,7 @@ export type PanelAssociatedAssetCatalogRow = {
   status: PanelDiscoveryStatus;
   terminalCount: number;
   representedPlacementId?: string;
+  representationSource?: PanelSourceOccurrenceRef;
   sourceOccurrences: PanelSourceOccurrenceRef[];
   disabledReason?: string;
 };

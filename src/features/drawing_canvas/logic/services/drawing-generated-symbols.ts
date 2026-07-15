@@ -6,6 +6,7 @@ import {
   terminalBlockMetadata
 } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-layout";
 import { renderTerminalBlockSvg } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-renderer";
+import { resolveTerminalBlockModuleForDefinition } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
 import type { DrawingPlacement } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import {
@@ -44,13 +45,18 @@ export function isGeneratedTerminalBlockPlacement(
 }
 
 export function createGeneratedTerminalBlockSymbol(
-  placement: DrawingPlacement
+  placement: DrawingPlacement,
+  symbols: ApprovedDrawingSymbol[] = []
 ): ApprovedDrawingSymbol | undefined {
   if (!isGeneratedTerminalBlockPlacement(placement)) {
     return undefined;
   }
 
   const terminalBlock = normalizeTerminalBlockPlacement(placement.terminalBlock);
+  const resolvedModule = resolveTerminalBlockModuleForDefinition(
+    terminalBlock,
+    symbols
+  );
 
   return {
     symbolId: GENERATED_TERMINAL_BLOCK_SYMBOL_ID,
@@ -59,7 +65,10 @@ export function createGeneratedTerminalBlockSymbol(
     category: "terminal_block",
     versionId: GENERATED_TERMINAL_BLOCK_VERSION_ID,
     versionNumber: 1,
-    svg: renderTerminalBlockSvg(terminalBlock),
+    svg: renderTerminalBlockSvg(terminalBlock, {
+      module: resolvedModule,
+      instanceId: placement.id
+    }),
     metadata: terminalBlockMetadata(terminalBlock)
   };
 }
@@ -100,7 +109,7 @@ export function getRenderableSymbolForPlacement(
   }
 
   return (
-    createGeneratedTerminalBlockSymbol(placement) ??
+    createGeneratedTerminalBlockSymbol(placement, symbols) ??
     createGeneratedBackplaneSymbol(placement) ??
     createGeneratedWireTraySymbol(placement) ??
     createGeneratedLayoutDimensionSymbol(placement) ??

@@ -176,6 +176,28 @@ describe("panel guided workflow", () => {
     });
   });
 
+  it("treats layout-only equipment with resolved terminals as not placed", () => {
+    const source = sourceWithDetailedSheet();
+    const layoutOnlySource = panelWiringSourcePackageSchema.parse({
+      ...source,
+      sheets: source.sheets.filter((sheet) => sheet.id !== "sheet_field_1")
+    });
+    const snapshot = workflow(
+      layoutOnlySource,
+      GENERIC_TERMINAL_ASSET_IDS[0]
+    ).snapshot;
+
+    expect(snapshot.assets[0]).toMatchObject({
+      assetId: GENERIC_TERMINAL_ASSET_IDS[0],
+      status: "not_placed"
+    });
+    expect(snapshot.assets[0].disabledReason).toBeUndefined();
+    expect(snapshot.nextAction).toEqual({
+      kind: "open_step",
+      stepId: "place-representation"
+    });
+  });
+
   it("filters focused records without hiding panel-wide advanced data", () => {
     const state = workflow(
       sourceWithDetailedSheet([

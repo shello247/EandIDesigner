@@ -5,7 +5,7 @@ export async function openDetailedPanelWorkflow(
   mode: "guided" | "advanced" = "guided"
 ): Promise<Locator> {
   await page
-    .getByRole("button", { name: "Continue", exact: true })
+    .getByRole("button", { name: "Wiring wizard", exact: true })
     .click();
 
   const workflow = page.getByRole("dialog", {

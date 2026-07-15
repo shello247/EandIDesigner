@@ -43,6 +43,7 @@ export const drawingAssetRecordSchema = z.object({
   tag: z.string().trim().min(1).max(120),
   type: drawingAssetTypeSchema,
   title: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(400).optional(),
   symbolId: z.string().trim().min(1).optional(),
   versionId: z.string().trim().min(1).optional(),
   metadata: z
@@ -50,7 +51,8 @@ export const drawingAssetRecordSchema = z.object({
       generatedKind: z.string().trim().max(80).optional(),
       symbolKey: z.string().trim().max(160).optional()
     })
-    .optional()
+    .optional(),
+  terminalBlock: terminalBlockPlacementSchema.optional()
 });
 
 export const drawingEndpointSchema = z.object({
@@ -503,6 +505,7 @@ function assetRecordFromPlacement(placement: DrawingPlacement): DrawingAssetReco
     title: inferDrawingAssetTitleFromPlacement(placement),
     symbolId: placement.symbolId,
     versionId: placement.versionId,
+    terminalBlock: placement.terminalBlock,
     metadata: placement.enclosure?.kind
       ? { generatedKind: placement.enclosure.kind }
       : undefined

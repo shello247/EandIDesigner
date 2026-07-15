@@ -2,8 +2,10 @@ import {
   buildPackageConnectivityGraph,
   buildPanelDiscoveryIndex
 } from "@/features/drawing_panel_wiring/api/public";
+import { TERMINAL_BLOCK_SCHEMATIC_SCALE } from "../services/drawing-terminal-blocks";
 import {
   drawingPackageModelSchema,
+  type DrawingAssetRecord,
   type DrawingModel,
   type DrawingPackageSheet,
   type DrawingPlacement
@@ -20,6 +22,7 @@ import {
 
 const DRAWING_MARGIN = 20;
 const TITLE_BLOCK_CLEARANCE = 55;
+const DEFAULT_DETAILED_PANEL_SCHEMATIC_SCALE = 0.34;
 
 type PlacementRect = {
   x: number;
@@ -305,57 +308,62 @@ function getDetailedPanelSheet(
   };
 }
 
-function getCanonicalSourcePlacement(
+function getRepresentationSourcePlacement(
   model: DrawingModel,
-  sourceOccurrences: Array<{ sheetId: string; placementId: string; occurrenceKind: string }>
+  sourceOccurrence: { sheetId: string; placementId: string }
 ): DrawingPlacement | undefined {
-  const ordered = [...sourceOccurrences].sort((first, second) => {
-    const firstPriority = first.occurrenceKind === "wiring" ? 0 : 1;
-    const secondPriority = second.occurrenceKind === "wiring" ? 0 : 1;
-
-    return (
-      firstPriority - secondPriority ||
-      first.sheetId.localeCompare(second.sheetId) ||
-      first.placementId.localeCompare(second.placementId)
+  return model.sheets
+    .find((sheet) => sheet.id === sourceOccurrence.sheetId)
+    ?.placements.find(
+      (candidate) => candidate.id === sourceOccurrence.placementId
     );
-  });
-
-  for (const occurrence of ordered) {
-    const placement = model.sheets
-      .find((sheet) => sheet.id === occurrence.sheetId)
-      ?.placements.find((candidate) => candidate.id === occurrence.placementId);
-
-    if (placement) {
-      return placement;
-    }
-  }
-
-  return undefined;
 }
 
 function createRepresentationPlacement({
   source,
+  sourceOccurrenceKind,
+  asset,
   panelAssetId,
-  id
+  id,
+  symbols
 }: {
   source: DrawingPlacement;
+  sourceOccurrenceKind: "wiring" | "layout" | "enclosure_reference";
+  asset: DrawingAssetRecord;
   panelAssetId: string;
   id: string;
+  symbols: ApprovedDrawingSymbol[];
 }): DrawingPlacement {
+  const terminalBlock = asset.terminalBlock ?? source.terminalBlock;
+  const effectiveSource = terminalBlock
+    ? { ...source, terminalBlock }
+    : source;
+  const sourceSymbol = getRenderableSymbolForPlacement(
+    effectiveSource,
+    symbols
+  );
+  const scale =
+    sourceOccurrenceKind === "layout"
+      ? terminalBlock
+        ? TERMINAL_BLOCK_SCHEMATIC_SCALE
+        : sourceSymbol?.metadata.panelWiring?.schematicScale ??
+          DEFAULT_DETAILED_PANEL_SCHEMATIC_SCALE
+      : source.scale;
+
   return {
     id,
-    assetId: source.assetId,
+    assetId: asset.id,
     containerAssetId: panelAssetId,
     symbolId: source.symbolId,
     versionId: source.versionId,
     role: source.role,
-    tag: source.tag,
-    title: source.title,
+    tag: asset.tag,
+    title: asset.title,
     x: 0,
     y: 0,
     rotation: 0,
-    scale: source.scale,
-    terminalBlock: source.terminalBlock
+    scale,
+    terminalBlock
   };
 }
 
@@ -395,17 +403,38 @@ export function placePanelAssetOccurrence({
     throw new Error(row.disabledReason ?? "This panel asset cannot be placed.");
   }
 
-  const source = getCanonicalSourcePlacement(model, row.sourceOccurrences);
+  if (!row.representationSource) {
+    throw new Error("No resolved electrical representation source is available.");
+  }
 
-  if (!source?.assetId) {
-    throw new Error("No compatible source occurrence is available for this asset.");
+  const source = getRepresentationSourcePlacement(
+    model,
+    row.representationSource
+  );
+  const asset = model.assets.find((candidate) => candidate.id === assetId);
+
+  if (!source?.assetId || !asset) {
+    throw new Error(
+      "The selected electrical representation source is no longer available."
+    );
   }
 
   const draft = createRepresentationPlacement({
     source,
+    sourceOccurrenceKind: row.representationSource.occurrenceKind,
+    asset,
     panelAssetId,
-    id: createOccurrencePlacementId()
+    id: createOccurrencePlacementId(),
+    symbols
   });
+  const draftSymbol = getRenderableSymbolForPlacement(draft, symbols);
+
+  if (!draftSymbol || draftSymbol.metadata.terminals.length === 0) {
+    throw new Error(
+      "The selected asset no longer has resolved electrical terminal metadata."
+    );
+  }
+
   const position = findNextPanelOccurrencePosition({
     sheet,
     placement: draft,

@@ -138,7 +138,7 @@ export function PanelDrawingSummary({
                   onClick={onOpenWorkQueue}
                 >
                   <ClipboardList aria-hidden="true" size={14} />
-                  Continue
+                  Wiring wizard
                 </button>
               </div>
             ) : null}

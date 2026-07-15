@@ -9,23 +9,34 @@ import { renderDrawingToSvg } from "../../logic/services/drawing-svg-renderer";
 import { getDrawingSheetPresentation } from "../../logic/services/drawing-sheet-presentation";
 import { measureDrawingOperation } from "../../logic/services/drawing-performance-diagnostics";
 import type { DrawingSectionIndex } from "../../logic/services/drawing-sections";
+import type { PanelExternalTerminationDisplayRow } from "@/features/drawing_panel_wiring/api/public";
 
 type PackagePreviewSurfaceProps = {
   model: DrawingModel;
   sectionIndex: DrawingSectionIndex;
   drawingTitle: string;
   symbols: ApprovedDrawingSymbol[];
+  panelExternalTerminationsBySheetId?: ReadonlyMap<
+    string,
+    PanelExternalTerminationDisplayRow[]
+  >;
   onExitPreview: () => void;
   onPreviewPdf: () => void;
 };
 
 const MAX_MOUNTED_PREVIEW_PAGES = 12;
+const EMPTY_PANEL_EXTERNAL_TERMINATIONS_BY_SHEET = new Map<
+  string,
+  PanelExternalTerminationDisplayRow[]
+>();
 
 export function PackagePreviewSurface({
   model,
   sectionIndex,
   drawingTitle,
   symbols,
+  panelExternalTerminationsBySheetId =
+    EMPTY_PANEL_EXTERNAL_TERMINATIONS_BY_SHEET,
   onExitPreview,
   onPreviewPdf
 }: PackagePreviewSurfaceProps) {
@@ -125,6 +136,9 @@ export function PackagePreviewSurface({
               sheetNumber={index + 1}
               sheetCount={model.sheets.length}
               derivedSectionNumber={derivedSectionNumber}
+              panelExternalTerminations={
+                panelExternalTerminationsBySheetId.get(sheet.id) ?? []
+              }
               cacheKey={`${sheet.id}:${index + 1}:${derivedSectionNumber ?? 0}`}
               mounted={mountedSheetIds.includes(sheet.id)}
               onProximityChange={handlePageProximityChange}
@@ -146,6 +160,7 @@ function PackagePreviewPage({
   sheetNumber,
   sheetCount,
   derivedSectionNumber,
+  panelExternalTerminations,
   mounted,
   onProximityChange,
   getCachedSvg
@@ -158,6 +173,7 @@ function PackagePreviewPage({
   sheetNumber: number;
   sheetCount: number;
   derivedSectionNumber?: number;
+  panelExternalTerminations: PanelExternalTerminationDisplayRow[];
   mounted: boolean;
   onProximityChange: (sheetId: string, isNear: boolean) => void;
   getCachedSvg: (sheetId: string, render: () => string) => string;
@@ -199,12 +215,13 @@ function PackagePreviewPage({
             record
           }))
         ],
+        panelExternalTerminations,
         connectionVisibility: sheet.panelDrawingContext
           ? "panel_internal"
           : "field"
       }), { sheetId });
     });
-  }, [cacheKey, derivedSectionNumber, drawingTitle, getCachedSvg, model, mounted, sheet, sheetCount, sheetId, sheetNumber, symbols]);
+  }, [cacheKey, derivedSectionNumber, drawingTitle, getCachedSvg, model, mounted, panelExternalTerminations, sheet, sheetCount, sheetId, sheetNumber, symbols]);
 
   useEffect(() => {
     const element = containerRef.current;

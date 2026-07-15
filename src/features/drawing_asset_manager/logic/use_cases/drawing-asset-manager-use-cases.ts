@@ -199,6 +199,7 @@ function recordFromPlacement(
     title: titleFromPlacement(placement, symbols),
     symbolId: placement.symbolId,
     versionId: placement.versionId,
+    terminalBlock: placement.terminalBlock,
     metadata: {
       generatedKind: placement.enclosure?.kind,
       symbolKey: symbol?.symbolKey
@@ -386,9 +387,11 @@ export function reconcileDrawingAssets(
       tag: asset.tag,
       type: asset.type,
       title: asset.title,
+      description: asset.description,
       symbolId: asset.symbolId,
       versionId: asset.versionId,
-      metadata: asset.metadata
+      metadata: asset.metadata,
+      terminalBlock: asset.terminalBlock
     }))
   };
 }
@@ -411,6 +414,7 @@ export function createManagedAsset(
     tag,
     type: parsed.type,
     title: assetTitleForCreate(parsed),
+    description: parsed.description,
     symbolId: symbol?.symbolId ?? parsed.symbolId,
     versionId: symbol?.versionId ?? parsed.versionId,
     metadata: {

@@ -6,6 +6,11 @@ import { buildDrawingPdfPrintHtml } from "@/features/drawing_canvas/logic/servic
 import { toSheetCanvasModel } from "@/features/drawing_canvas/logic/commands/drawing-sheet-commands";
 import { renderDrawingToSvg } from "@/features/drawing_canvas/logic/services/drawing-svg-renderer";
 import { buildDrawingSectionIndex } from "@/features/drawing_canvas/logic/services/drawing-sections";
+import { createPanelWiringSource } from "@/features/drawing_canvas/api/panel-wiring-contracts";
+import {
+  buildPackageConnectivityGraph,
+  buildPanelExternalTerminationDisplayIndex
+} from "@/features/drawing_panel_wiring/api/public";
 import {
   parsePanelDeliverableSearchParams,
   renderPanelScheduleForPrint
@@ -46,6 +51,15 @@ export async function GET(
 
   const sheetCount = drawing.model.sheets.length;
   const sectionIndex = buildDrawingSectionIndex(drawing.model);
+  const panelExternalTerminationsBySheetId = drawing.model.sheets.some(
+    (sheet) => Boolean(sheet.panelDrawingContext)
+  )
+    ? buildPanelExternalTerminationDisplayIndex(
+        buildPackageConnectivityGraph(
+          createPanelWiringSource(drawing.model, symbols)
+        )
+      )
+    : new Map();
   const drawingPages = drawing.model.sheets.map((sheet, index) => {
     const sheetModel = toSheetCanvasModel(drawing.model, sheet.id);
     const sectionTitle = sheet.sectionTitlePage?.title?.trim();
@@ -82,6 +96,8 @@ export async function GET(
             record
           }))
         ],
+        panelExternalTerminations:
+          panelExternalTerminationsBySheetId.get(sheet.id) ?? [],
         connectionVisibility: sheet.panelDrawingContext ? "panel_internal" : "field"
       })
     };

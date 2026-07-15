@@ -91,6 +91,10 @@ import {
 } from "../../logic/commands/drawing-section-commands";
 import { createDetailedPanelDrawingSheet } from "../../logic/commands/drawing-detailed-panel-sheet-commands";
 import {
+  createAndPlaceTerminalBlockGroup,
+  updateTerminalBlockGroup
+} from "../../logic/commands/drawing-terminal-block-group-commands";
+import {
   centerDetailedPanelEquipment,
   placePanelAssetOccurrence,
   removePanelAssetOccurrence
@@ -124,6 +128,7 @@ import {
   buildPanelConnectionPatternCatalog,
   buildPanelEngineeringSnapshotFromValidatedSource,
   buildPanelDiscoveryIndex,
+  buildPanelExternalTerminationDisplayIndex,
   buildPanelGuidedWorkflowSnapshot,
   buildPanelInternalWireEndpointCatalog,
   buildPanelQualityIndex,
@@ -146,6 +151,7 @@ import {
   updateDetailedPanelDrawingContext,
   validatePanelDrawingContext,
   type PanelDrawingQualityFinding,
+  type PanelExternalTerminationDisplayRow,
   type PanelGuidedWorkflowSnapshot,
   type PanelInternalWireEndpointCatalog,
   type PanelElectricalDomain,
@@ -179,7 +185,6 @@ import {
   allocateNextTagFromPrefix,
   createDrawingAssetId,
   defaultPlacementScale,
-  placementAssetId,
   roleFromSymbol,
   renameDrawingAssetTag
 } from "../../logic/services/drawing-asset-identity";
@@ -248,6 +253,10 @@ import {
   type AddTerminalBlockSubmission
 } from "./add-terminal-block-dialog";
 import {
+  TerminalBlockGroupDialog,
+  type TerminalBlockGroupDialogSubmission
+} from "./terminal-block-group-dialog";
+import {
   AddSheetDialog,
   type AddSheetDialogSubmission
 } from "./add-sheet-dialog";
@@ -300,6 +309,8 @@ import {
 } from "../../logic/services/drawing-sections";
 import { getDrawingSheetPresentation } from "../../logic/services/drawing-sheet-presentation";
 import { createTerminalBlockPlacement } from "../../logic/services/drawing-terminal-blocks";
+import { isGeneratedTerminalBlockGroupLibrarySymbolReference } from "../../logic/services/drawing-terminal-block-groups";
+import { isTerminalBlockModuleSymbol } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
 import {
   createNewAssetFromPlacement,
   relinkPlacementsToExistingAsset,
@@ -496,6 +507,8 @@ export function DrawingCanvasShell({
   const [isSheetLoaderOpen, setIsSheetLoaderOpen] = useState(false);
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
   const [isAddTerminalBlockOpen, setIsAddTerminalBlockOpen] = useState(false);
+  const [isTerminalBlockGroupOpen, setIsTerminalBlockGroupOpen] =
+    useState(false);
   const [isBackplanePanelPickerOpen, setIsBackplanePanelPickerOpen] =
     useState(false);
   const [isAssetManagerOpen, setIsAssetManagerOpen] = useState(false);
@@ -658,6 +671,7 @@ export function DrawingCanvasShell({
   const panelEngineeringSnapshot = useMemo(
     () =>
       isDetailedPanelDrawing ||
+      viewMode === "preview" ||
       Boolean(panelReviewAssetId) ||
       isPanelDeliverablesOpen
         ? measureDrawingOperation(
@@ -678,10 +692,20 @@ export function DrawingCanvasShell({
       isDetailedPanelDrawing,
       isPanelDeliverablesOpen,
       panelReviewAssetId,
-      panelWiringSource
+      panelWiringSource,
+      viewMode
     ]
   );
   const panelConnectivityGraph = panelEngineeringSnapshot?.graph;
+  const panelExternalTerminationDisplayIndex = useMemo<
+    ReadonlyMap<string, PanelExternalTerminationDisplayRow[]>
+  >(
+    () =>
+      panelConnectivityGraph
+        ? buildPanelExternalTerminationDisplayIndex(panelConnectivityGraph)
+        : new Map(),
+    [panelConnectivityGraph]
+  );
   const deferredPanelEngineeringSnapshot = useDeferredValue(
     panelEngineeringSnapshot
   );
@@ -1362,6 +1386,7 @@ export function DrawingCanvasShell({
     setActiveSheet(sheetId);
     setViewportTransform(restoredViewport);
     setViewportCenter(restoredCenter);
+    setIsTerminalBlockGroupOpen(false);
     setIsPanelDiscoveryOpen(false);
     setPendingInternalWire(null);
     setInternalWireDeleteCandidate(null);
@@ -1532,6 +1557,13 @@ export function DrawingCanvasShell({
   );
 
   const addLayoutSymbol = (symbol: ApprovedDrawingSymbol) => {
+    if (isTerminalBlockModuleSymbol(symbol)) {
+      setMessage(
+        "Individual terminal modules cannot be placed. Use Terminal Block Group."
+      );
+      return;
+    }
+
     const backplanes = getBackplanesForSheet(activeSheetCanvasModel);
     const backplane = selectedBackplane ?? backplanes[0];
 
@@ -1695,6 +1727,41 @@ export function DrawingCanvasShell({
     setSelectedConnectionId(undefined);
     setIsAddTerminalBlockOpen(false);
     setMessage(`${placement.tag} terminal block added.`);
+  };
+
+  const addTerminalBlockGroup = ({
+    backplaneId,
+    name,
+    description,
+    count
+  }: TerminalBlockGroupDialogSubmission) => {
+    try {
+      const result = createAndPlaceTerminalBlockGroup({
+        model,
+        symbols,
+        input: {
+          sheetId: resolvedActiveSheetId,
+          backplaneId,
+          name,
+          description,
+          count
+        }
+      });
+
+      commitModel(result.model);
+      selectPlacement(result.placement.id);
+      setSelectedConnectionId(undefined);
+      setIsTerminalBlockGroupOpen(false);
+      setMessage(
+        `${result.placement.tag} terminal block group added to the backplane.`
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Terminal block group could not be created."
+      );
+    }
   };
 
   const updatePlacement = (
@@ -1950,22 +2017,29 @@ export function DrawingCanvasShell({
 
   const updateTerminalBlockConfig = (
     assetId: string,
-    terminalBlock: TerminalBlockPlacement
+    updates: {
+      terminalBlock?: TerminalBlockPlacement;
+      title?: string;
+      description?: string;
+    }
   ) => {
-    commitModel(
-      (current) => ({
-        ...current,
-        sheets: current.sheets.map((sheet) => ({
-          ...sheet,
-          placements: sheet.placements.map((placement) =>
-            placementAssetId(placement) === assetId && placement.terminalBlock
-              ? { ...placement, terminalBlock }
-              : placement
-          )
-        }))
-      }),
-      { coalesceKey: `terminal-block:${assetId}` }
-    );
+    try {
+      const nextModel = updateTerminalBlockGroup({
+        model,
+        assetId,
+        count: updates.terminalBlock?.count,
+        name: updates.title,
+        description: updates.description
+      });
+
+      commitModel(nextModel, { coalesceKey: `terminal-block:${assetId}` });
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Terminal block group could not be updated."
+      );
+    }
   };
 
   const updateTitleBlock = (
@@ -3182,6 +3256,11 @@ export function DrawingCanvasShell({
         return;
       }
 
+      if (isGeneratedTerminalBlockGroupLibrarySymbolReference(symbol)) {
+        setIsTerminalBlockGroupOpen(true);
+        return;
+      }
+
       if (isPanelLayoutLibrarySymbol(symbol)) {
         addLayoutSymbol(symbol);
         return;
@@ -3658,6 +3737,7 @@ export function DrawingCanvasShell({
     setIsAddSheetOpen(false);
     setIsAddPanelOpen(false);
     setIsAddTerminalBlockOpen(false);
+    setIsTerminalBlockGroupOpen(false);
     setIsBackplanePanelPickerOpen(false);
     setIsPanelDiscoveryOpen(false);
     setPendingSymbol(null);
@@ -3845,6 +3925,16 @@ export function DrawingCanvasShell({
           onCreateAsset={createAssetManagerAsset}
           onUpdateAsset={updateAssetManagerAsset}
           onDeleteAsset={deleteAssetManagerAsset}
+        />
+      ) : null}
+      {isTerminalBlockGroupOpen ? (
+        <TerminalBlockGroupDialog
+          model={model}
+          activeSheetModel={activeSheetCanvasModel}
+          symbols={symbols}
+          preferredBackplaneId={activeAssociatedBackplane?.id}
+          onCancel={() => setIsTerminalBlockGroupOpen(false)}
+          onPlace={addTerminalBlockGroup}
         />
       ) : null}
       {isPanelDeliverablesOpen && panelQualityGraph && panelPackageQuality ? (
@@ -4153,6 +4243,9 @@ export function DrawingCanvasShell({
           sectionIndex={drawingSectionIndex}
           drawingTitle={title}
           symbols={symbols}
+          panelExternalTerminationsBySheetId={
+            panelExternalTerminationDisplayIndex
+          }
           onExitPreview={() => setViewMode("edit")}
           onPreviewPdf={exportPdf}
         />
@@ -4327,6 +4420,9 @@ export function DrawingCanvasShell({
           activeSheetId={resolvedActiveSheetId}
           focusSheetRequestKey={sheetFocusRequestKey}
           symbols={symbols}
+          panelExternalTerminations={
+            panelExternalTerminationDisplayIndex.get(resolvedActiveSheetId) ?? []
+          }
           selection={selection}
           selectedPlacementId={selectedPlacementId}
           viewportTransform={viewportTransform}

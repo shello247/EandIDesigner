@@ -23,12 +23,14 @@ function terminalSource(number: number): PanelWiringSourceTerminal {
       {
         anchorKey: `T${number}_BOTTOM`,
         anchorKind: "terminal",
-        sideHint: "external"
+        sideHint: "external",
+        physicalPosition: "bottom"
       },
       {
         anchorKey: `T${number}_TOP`,
         anchorKind: "terminal",
-        sideHint: "internal"
+        sideHint: "internal",
+        physicalPosition: "top"
       }
     ]
   };

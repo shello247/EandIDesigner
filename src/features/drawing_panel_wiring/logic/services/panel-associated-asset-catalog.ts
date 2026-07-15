@@ -53,6 +53,32 @@ function sourceOccurrenceRef(
   };
 }
 
+function representationSourcePriority(
+  occurrence: PanelWiringSourceOccurrence
+): number {
+  if (occurrence.occurrenceKind === "wiring") {
+    return 0;
+  }
+
+  if (occurrence.occurrenceKind === "layout") {
+    return 1;
+  }
+
+  return 2;
+}
+
+function compareRepresentationSources(
+  first: PanelWiringSourceOccurrence,
+  second: PanelWiringSourceOccurrence
+): number {
+  return (
+    representationSourcePriority(first) -
+      representationSourcePriority(second) ||
+    first.sheetId.localeCompare(second.sheetId) ||
+    first.placementId.localeCompare(second.placementId)
+  );
+}
+
 function resolveStatus({
   representedPlacementId,
   asset,
@@ -63,7 +89,11 @@ function resolveStatus({
   asset?: PanelWiringSourceAsset;
   sourceOccurrences: PanelWiringSourceOccurrence[];
   hasConflict: boolean;
-}): { status: PanelDiscoveryStatus; disabledReason?: string } {
+}): {
+  status: PanelDiscoveryStatus;
+  representationSource?: PanelWiringSourceOccurrence;
+  disabledReason?: string;
+} {
   if (hasConflict) {
     return {
       status: "conflicting",
@@ -78,39 +108,34 @@ function resolveStatus({
     };
   }
 
-  const electricalSource = sourceOccurrences.find(
-    (occurrence) => occurrence.occurrenceKind !== "layout"
+  const orderedSources = [...sourceOccurrences].sort(
+    compareRepresentationSources
+  );
+  const representationSource = orderedSources.find(
+    (occurrence) =>
+      occurrence.terminalResolutionStatus === "resolved" &&
+      occurrence.terminals.length > 0
   );
 
-  if (!electricalSource) {
-    return {
-      status: "unsupported",
-      disabledReason: "No electrical drawing occurrence is available for this asset."
-    };
-  }
+  if (!representationSource) {
+    const diagnosticSource = orderedSources.find(
+      (occurrence) =>
+        occurrence.terminalResolutionStatus !== "not_applicable"
+    );
 
-  if (electricalSource.terminalResolutionStatus === "missing_symbol") {
-    return {
-      status: "unsupported",
-      disabledReason: "Needs a compatible approved or generated symbol."
-    };
-  }
-
-  if (
-    electricalSource.terminalResolutionStatus !== "resolved" ||
-    electricalSource.terminals.length === 0
-  ) {
     return {
       status: "unsupported",
       disabledReason:
-        electricalSource.terminalResolutionMessage ??
-        "Needs resolved electrical terminal metadata."
+        diagnosticSource?.terminalResolutionMessage ??
+        (diagnosticSource?.terminalResolutionStatus === "missing_symbol"
+          ? "Needs a compatible approved or generated symbol."
+          : "Needs resolved electrical terminal metadata.")
     };
   }
 
   return representedPlacementId
-    ? { status: "represented" }
-    : { status: "available" };
+    ? { status: "represented", representationSource }
+    : { status: "available", representationSource };
 }
 
 export function buildPanelAssociatedAssetCatalog(
@@ -170,6 +195,9 @@ export function buildPanelAssociatedAssetCatalog(
       status: resolved.status,
       terminalCount,
       representedPlacementId,
+      representationSource: resolved.representationSource
+        ? sourceOccurrenceRef(context, resolved.representationSource)
+        : undefined,
       sourceOccurrences: sourceOccurrences
         .map((occurrence) => sourceOccurrenceRef(context, occurrence))
         .sort(

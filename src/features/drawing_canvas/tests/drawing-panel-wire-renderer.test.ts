@@ -124,4 +124,66 @@ describe("Detailed Panel internal-wire renderer", () => {
     expect(svg).not.toContain("FIELD-001");
     expect(svg).not.toContain('data-connection-id="field_route"');
   });
+
+  it("renders derived external field terminations as straight incoming stubs", () => {
+    const model = toSheetCanvasModel(createDefaultDrawingModel(), "sheet_1");
+    model.placements = [
+      {
+        id: "p1",
+        assetId: "asset_k101",
+        symbolId: symbol.symbolId,
+        versionId: symbol.versionId,
+        role: "device",
+        tag: "K-101",
+        x: 50,
+        y: 60,
+        rotation: 0,
+        scale: 1
+      }
+    ];
+
+    const svg = renderDrawingToSvg({
+      model,
+      approvedSymbols: [symbol],
+      panelExternalTerminations: [
+        {
+          terminationId: "external_termination_1",
+          panelAssetId: "panel_1",
+          detailedSheetId: "sheet_1",
+          placementId: "p1",
+          anchorKey: "T",
+          physicalPosition: "right",
+          target: {
+            assetId: "asset_k101",
+            terminalKey: "T",
+            side: "single"
+          },
+          wireId: "FIELD-W101",
+          cableTag: "CBL-101",
+          conductorKey: "1",
+          source: {
+            sheetId: "field_sheet_1",
+            connectionId: "field_connection_1",
+            endpointRole: "to",
+            placementId: "field_k101",
+            anchorKey: "T"
+          },
+          sourceSheet: {
+            id: "field_sheet_1",
+            number: 5,
+            name: "K-101 Field Wiring"
+          }
+        }
+      ],
+      connectionVisibility: "panel_internal"
+    });
+
+    expect(svg).toContain(
+      'data-external-termination-id="external_termination_1"'
+    );
+    expect(svg).toContain('data-field-connection-id="field_connection_1"');
+    expect(svg).toContain('x1="90" y1="80" x2="122" y2="80"');
+    expect(svg).toContain("FIELD-W101");
+    expect(svg).toContain("Source Sheet 5 - K-101 Field Wiring");
+  });
 });

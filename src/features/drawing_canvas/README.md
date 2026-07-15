@@ -58,9 +58,9 @@ Supported now:
   references such as `PDP-101`.
 - Explicit panel containment for devices and terminal assets shown inside a
   visible enclosure on a sheet.
-- Generated configurable terminal block strips such as `TB-101`, with
-  package-wide asset identity, editable terminal count/start number, and
-  generated top/bottom terminal anchors.
+- Asset-backed Terminal Block Groups such as `TB-101`, with package-wide asset
+  identity, an engineer-selected count, fixed `1...N` numbering, and generated
+  top/internal and bottom/external terminal anchors.
 - Programmable Backplanes for panel-layout work on normal drawing sheets. A
   backplane is a generated Symbol Library item under Panel Layout, not a
   physical asset.
@@ -296,12 +296,19 @@ Adjacent drawing features:
 - Existing field connections remain authoritative and immutable. The panel graph
   derives external terminations with their original sheet, connection, endpoint,
   wire, cable, conductor, placement, and anchor provenance.
+- A represented asset on a Detailed Panel Drawing automatically renders those
+  resolved external terminations as straight, non-editable teal stubs at the
+  canonical external/single terminal anchor. The display is derived only; it does
+  not add or duplicate a sheet connection and is shared by canvas, Package Preview,
+  print, and PDF.
 - A Detailed Panel Drawing exposes a Panel Work Queue derived from the memoized
   connectivity graph. It lists associated physical assets and field terminations
   as available, represented, missing, conflicting, or unsupported records.
 - Placing from the Panel Work Queue reuses the existing physical `assetId` and
-  copies only the source occurrence's visual/device definition. It never creates
-  a package asset, allocates a new tag, or copies source connections.
+  uses a resolved wiring occurrence when available, otherwise a resolved
+  asset-backed panel-layout occurrence. Layout sources create a schematic-scale
+  representation without backplane layout fields. Placement never creates a
+  package asset, allocates a new tag, or copies source connections.
 - New Detailed Panel equipment is positioned from the usable sheet center outward.
   Guided Step 1 can explicitly center the represented equipment group without
   moving notes or reference helpers.
@@ -403,9 +410,14 @@ Adjacent drawing features:
   returns the asset to the work queue.
 - Assets that do not yet have a layout-ready symbol or supported generated
   renderer are shown disabled as `Needs layout-ready symbol`.
-- Generated terminal blocks are added from the sheet toolbar. They render from
-  the single-terminal module geometry, repeat horizontally, use TB package tags
-  by default, and expose generated anchors such as `T1_TOP` and `T1_BOTTOM`.
+- Terminal Block Group is available under Panel Layout. It opens a wizard that
+  creates one physical terminal-block asset on a selected panel-associated
+  backplane, allocates the next TB package tag, and repeats the configured
+  approved feed-through module at physical backplane scale. The singular module
+  remains an internal renderer primitive and cannot be added or pasted.
+- Group count changes update linked generated occurrences together. Reductions
+  are blocked when removed terminals participate in field terminations,
+  mappings, internal wires, bridges, bonds, or connection patterns.
 - Devices and terminal assets can be assigned to a visible panel from the Add
   Symbol dialog or from the selected placement's Location / Enclosure panel.
   Cables are not contained in panels in V1.

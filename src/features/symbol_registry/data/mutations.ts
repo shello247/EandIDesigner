@@ -235,7 +235,8 @@ export async function updateSymbolLayoutMetadata(
     physicalHeightMm: parsed.physicalHeightMm,
     mountingType: parsed.mountingType,
     panelCategory: parsed.panelCategory,
-    resizable: parsed.resizable
+    resizable: parsed.resizable,
+    terminalBlockModule: parsed.terminalBlockModule
   };
   const validation = validateSymbol(version.svg, updatedMetadata);
   const nextVersionStatus =

@@ -63,7 +63,8 @@ export function normalizeTerminalBlockPlacement(
     moduleHeight:
       config?.moduleHeight && config.moduleHeight > 0
         ? config.moduleHeight
-        : DEFAULT_TERMINAL_BLOCK_MODULE_HEIGHT
+        : DEFAULT_TERMINAL_BLOCK_MODULE_HEIGHT,
+    moduleTemplate: config?.moduleTemplate
   };
 }
 
@@ -156,11 +157,20 @@ export function terminalBlockMetadata(
   config: TerminalBlockPlacement
 ): SymbolMetadata {
   const normalized = normalizeTerminalBlockPlacement(config);
+  const physicalWidth = normalized.moduleTemplate
+    ? normalized.count * normalized.moduleTemplate.pitchMm
+    : undefined;
 
   return {
     symbolKey: "generated_modular_terminal_block",
     displayName: "Modular Terminal Block",
     category: "terminal_block",
+    layoutUsage: normalized.moduleTemplate ? "both" : undefined,
+    physicalWidthMm: physicalWidth,
+    physicalHeightMm: normalized.moduleTemplate?.heightMm,
+    mountingType: normalized.moduleTemplate ? "din_rail" : undefined,
+    panelCategory: normalized.moduleTemplate ? "termination" : undefined,
+    resizable: false,
     viewBox: terminalBlockViewBox(normalized),
     anchors: terminalBlockAnchors(normalized),
     terminals: terminalBlockSymbolTerminals(normalized)

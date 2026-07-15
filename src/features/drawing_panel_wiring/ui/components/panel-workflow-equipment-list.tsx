@@ -2,8 +2,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   CircleDot,
-  MapPinned,
-  Unplug
+  MapPinned
 } from "lucide-react";
 import type {
   PanelAssetWorkflowRow,
@@ -30,9 +29,9 @@ const STATUS_PRESENTATION: Record<
     icon: CircleDot
   },
   needs_internal_wiring: {
-    label: "Needs wiring",
-    className: "border-sky-200 bg-sky-50 text-sky-800",
-    icon: Unplug
+    label: "Added to sheet",
+    className: "border-teal-200 bg-teal-50 text-teal-800",
+    icon: CheckCircle2
   },
   ready: {
     label: "Ready",

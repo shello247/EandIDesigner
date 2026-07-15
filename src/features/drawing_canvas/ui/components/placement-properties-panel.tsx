@@ -81,6 +81,7 @@ import {
   detectTerminalBlockWarnings
 } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-qc";
 import type { TerminalBlockPlacement } from "@/features/drawing_terminal_blocks/types";
+import { getTerminalBlockGroupPhysicalSize } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
 import type { AssetLinkDialogMode } from "./asset-link-dialog";
 import {
   getPanelComponentPlacementSummary,
@@ -183,7 +184,11 @@ export function PlacementPropertiesPanel({
   onPanelTitleChange: (assetId: string, title: string) => void;
   onTerminalBlockChange: (
     assetId: string,
-    terminalBlock: TerminalBlockPlacement
+    updates: {
+      terminalBlock?: TerminalBlockPlacement;
+      title?: string;
+      description?: string;
+    }
   ) => void;
   onPlacementContainerChange: (
     placementId: string,
@@ -1800,7 +1805,11 @@ function SelectedTerminalBlockEditor({
   packageModel: DrawingPackageModel;
   onTerminalBlockChange: (
     assetId: string,
-    terminalBlock: TerminalBlockPlacement
+    updates: {
+      terminalBlock?: TerminalBlockPlacement;
+      title?: string;
+      description?: string;
+    }
   ) => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -1822,7 +1831,11 @@ function SelectedTerminalBlockEditor({
 
   const assetId = placementAssetId(placement);
   const config = normalizeTerminalBlockPlacement(placement.terminalBlock);
+  const physicalSize = getTerminalBlockGroupPhysicalSize(config);
   const terminals = terminalBlockTerminals(config);
+  const packageAsset = packageModel.assets.find(
+    (asset) => asset.id === assetId
+  );
   const terminalBlockAsset = terminalBlockCatalog.find(
     (candidate) => candidate.assetId === assetId
   );
@@ -1840,10 +1853,12 @@ function SelectedTerminalBlockEditor({
   const updateConfig = (updates: Partial<TerminalBlockPlacement>) => {
     onTerminalBlockChange(
       assetId,
-      normalizeTerminalBlockPlacement({
-        ...config,
-        ...updates
-      })
+      {
+        terminalBlock: normalizeTerminalBlockPlacement({
+          ...config,
+          ...updates
+        })
+      }
     );
   };
 
@@ -1878,6 +1893,40 @@ function SelectedTerminalBlockEditor({
         id="selected-terminal-block-editor"
         className={isExpanded ? "space-y-3 p-4" : "hidden"}
       >
+        <div>
+          <label className="field-label" htmlFor="selected-terminal-name">
+            Group name
+          </label>
+          <input
+            id="selected-terminal-name"
+            className="field-input"
+            value={packageAsset?.title ?? placement.title ?? ""}
+            onChange={(event) =>
+              onTerminalBlockChange(assetId, {
+                title: event.currentTarget.value
+              })
+            }
+          />
+        </div>
+        <div>
+          <label
+            className="field-label"
+            htmlFor="selected-terminal-description"
+          >
+            Description
+          </label>
+          <textarea
+            id="selected-terminal-description"
+            className="field-input min-h-20 resize-y"
+            value={packageAsset?.description ?? ""}
+            placeholder="Optional engineering description"
+            onChange={(event) =>
+              onTerminalBlockChange(assetId, {
+                description: event.currentTarget.value
+              })
+            }
+          />
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="field-label" htmlFor="selected-terminal-count">
@@ -1887,12 +1936,12 @@ function SelectedTerminalBlockEditor({
               id="selected-terminal-count"
               className="field-input"
               type="number"
-              min={1}
+              min={2}
               max={80}
               value={config.count}
               onChange={(event) =>
                 updateConfig({
-                  count: Number(event.currentTarget.value) || 1
+                  count: Number(event.currentTarget.value) || 2
                 })
               }
             />
@@ -1908,18 +1957,15 @@ function SelectedTerminalBlockEditor({
               min={1}
               max={9999}
               value={config.startNumber}
-              onChange={(event) =>
-                updateConfig({
-                  startNumber: Number(event.currentTarget.value) || 1
-                })
-              }
+              readOnly
             />
           </div>
         </div>
 
         <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
           Referenced on {sheetReferenceText}. Terminal range{" "}
-          {config.startNumber} - {config.startNumber + config.count - 1}.
+          {config.startNumber} - {config.startNumber + config.count - 1}. Physical
+          size {physicalSize.lengthMm} x {physicalSize.widthMm} mm.
         </div>
 
         <div className="space-y-2">

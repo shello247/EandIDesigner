@@ -4,8 +4,12 @@ import {
   type PanelWiringSourcePackage,
   type PanelWiringSourceTerminal
 } from "@/features/drawing_panel_wiring/api/contracts";
-import { terminalBlockTerminals } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-layout";
+import {
+  isGeneratedTerminalBlockReference,
+  terminalBlockTerminals
+} from "@/features/drawing_terminal_blocks/logic/services/terminal-block-layout";
 import type {
+  DrawingAssetRecord,
   DrawingConnection,
   DrawingModel,
   DrawingPackageSheet,
@@ -39,6 +43,23 @@ function occurrenceKind(
   }
 
   return placement.role === "enclosure" ? "enclosure_reference" : "wiring";
+}
+
+function placementWithAuthoritativeTerminalBlock(
+  placement: DrawingPlacement,
+  asset: DrawingAssetRecord | undefined
+): DrawingPlacement {
+  if (
+    !asset?.terminalBlock ||
+    !isGeneratedTerminalBlockReference(placement)
+  ) {
+    return placement;
+  }
+
+  return {
+    ...placement,
+    terminalBlock: asset.terminalBlock
+  };
 }
 
 type PhysicalPosition = "top" | "right" | "bottom" | "left";
@@ -281,23 +302,31 @@ function terminalSourceForPlacement(
 function sourceOccurrence(
   sheet: DrawingPackageSheet,
   placement: DrawingPlacement,
-  symbols: ApprovedDrawingSymbol[]
+  symbols: ApprovedDrawingSymbol[],
+  asset: DrawingAssetRecord | undefined
 ): PanelWiringSourceOccurrence {
-  const renderableSymbol = getRenderableSymbolForPlacement(placement, symbols);
+  const effectivePlacement = placementWithAuthoritativeTerminalBlock(
+    placement,
+    asset
+  );
+  const renderableSymbol = getRenderableSymbolForPlacement(
+    effectivePlacement,
+    symbols
+  );
   return {
     sheetId: sheet.id,
-    placementId: placement.id,
-    assetId: occurrenceAssetId(placement),
-    tag: placement.tag,
-    role: placement.role,
-    occurrenceKind: occurrenceKind(placement),
-    containerAssetId: placement.containerAssetId,
-    symbolId: placement.symbolId,
-    versionId: placement.versionId,
+    placementId: effectivePlacement.id,
+    assetId: occurrenceAssetId(effectivePlacement),
+    tag: asset?.tag ?? effectivePlacement.tag,
+    role: effectivePlacement.role,
+    occurrenceKind: occurrenceKind(effectivePlacement),
+    containerAssetId: effectivePlacement.containerAssetId,
+    symbolId: effectivePlacement.symbolId,
+    versionId: effectivePlacement.versionId,
     availableAnchorKeys: renderableSymbol?.metadata.anchors.map(
       (anchor) => anchor.key
     ),
-    ...terminalSourceForPlacement(placement, symbols)
+    ...terminalSourceForPlacement(effectivePlacement, symbols)
   };
 }
 
@@ -325,6 +354,10 @@ export function buildDrawingPanelWiringSource(
   model: DrawingModel,
   symbols: ApprovedDrawingSymbol[]
 ): PanelWiringSourcePackage {
+  const assetsById = new Map(
+    (model.assets ?? []).map((asset) => [asset.id, asset])
+  );
+
   return panelWiringSourcePackageSchema.parse({
     assets: (model.assets ?? []).map((asset) => ({
       id: asset.id,
@@ -352,9 +385,15 @@ export function buildDrawingPanelWiringSource(
         kind: sheet.kind,
         description: sheet.description,
         panelDrawingContext: sheet.panelDrawingContext,
-        occurrences: sheet.placements.map((placement) =>
-          sourceOccurrence(sheet, placement, symbols)
-        ),
+        occurrences: sheet.placements.map((placement) => {
+          const assetId = occurrenceAssetId(placement);
+          return sourceOccurrence(
+            sheet,
+            placement,
+            symbols,
+            assetId ? assetsById.get(assetId) : undefined
+          );
+        }),
         connections: sheet.connections.map((connection) => {
           const cablePlacement = cablePlacementForConnection(sheet, connection);
 

@@ -12,6 +12,11 @@ import {
   createGeneratedDimensionLibrarySymbols,
   isGeneratedLayoutDimensionSymbolReference
 } from "./drawing-layout-dimensions";
+import {
+  createGeneratedTerminalBlockGroupLibrarySymbol,
+  isGeneratedTerminalBlockGroupLibrarySymbolReference
+} from "./drawing-terminal-block-groups";
+import { isTerminalBlockModuleSymbol } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
 
 export type SymbolLibraryContext = "wiring" | "none";
 
@@ -105,6 +110,7 @@ export function isPanelLayoutLibrarySymbol(
     isGeneratedBackplaneSymbolReference(symbol) ||
     isGeneratedWireTraySymbolReference(symbol) ||
     isGeneratedLayoutDimensionSymbolReference(symbol) ||
+    isGeneratedTerminalBlockGroupLibrarySymbolReference(symbol) ||
     ((usage === "panel_layout" || usage === "both") &&
       hasPanelLayoutPhysicalDimensions(symbol) &&
       (PANEL_LAYOUT_CATEGORIES.has(symbol.metadata.panelCategory ?? "other") ||
@@ -151,6 +157,10 @@ function symbolLibraryGroupSort(
 }
 
 function symbolSupportsWiring(symbol: ApprovedDrawingSymbol): boolean {
+  if (isTerminalBlockModuleSymbol(symbol)) {
+    return false;
+  }
+
   return (
     (symbol.metadata.layoutUsage ?? "wiring") !== "panel_layout" ||
     isPanelLayoutLibrarySymbol(symbol)
@@ -175,6 +185,9 @@ export function getSymbolsForLibraryContext(
     const filtered = symbols.filter(symbolSupportsWiring);
     const hasBackplane = filtered.some(isGeneratedBackplaneSymbolReference);
     const hasWireTray = filtered.some(isGeneratedWireTraySymbolReference);
+    const hasTerminalBlockGroup = filtered.some(
+      isGeneratedTerminalBlockGroupLibrarySymbolReference
+    );
     const generatedDimensions = createGeneratedDimensionLibrarySymbols().filter(
       (dimensionSymbol) =>
         !filtered.some((symbol) =>
@@ -186,6 +199,9 @@ export function getSymbolsForLibraryContext(
     const generatedSymbols = [
       ...(hasBackplane ? [] : [createGeneratedBackplaneLibrarySymbol()]),
       ...(hasWireTray ? [] : [createGeneratedWireTrayLibrarySymbol()]),
+      ...(hasTerminalBlockGroup
+        ? []
+        : [createGeneratedTerminalBlockGroupLibrarySymbol()]),
       ...generatedDimensions
     ];
 

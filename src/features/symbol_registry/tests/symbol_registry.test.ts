@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { sanitizeSvg } from "../logic/services/svg-sanitizer";
 import { normalizeTerminalMapVerificationOutput } from "../logic/services/openai-terminal-map-verifier";
 import { validateSymbol } from "../logic/use_cases/validate-symbol";
-import type { SymbolMetadata } from "../data/schema";
+import {
+  symbolCategorySchema,
+  type SymbolMetadata
+} from "../data/schema";
 
 const validSvg =
   '<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="10"/></svg>';
@@ -25,6 +28,12 @@ const validMetadata: SymbolMetadata = {
 };
 
 describe("symbol registry validation", () => {
+  it("accepts stored network device symbols", () => {
+    expect(symbolCategorySchema.parse("network_device")).toBe(
+      "network_device"
+    );
+  });
+
   it("accepts a valid symbol", () => {
     const result = validateSymbol(validSvg, validMetadata);
 

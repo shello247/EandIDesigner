@@ -160,7 +160,6 @@ export function PanelInternalWireForm({
               onChange={(event) => {
                 setFromAssetId(event.currentTarget.value);
                 setFromEndpointId("");
-                setToAssetId("");
                 setToEndpointId("");
                 setError(null);
               }}
@@ -187,7 +186,6 @@ export function PanelInternalWireForm({
               disabled={readOnly || !fromEquipment}
               onChange={(event) => {
                 setFromEndpointId(event.currentTarget.value);
-                setToAssetId("");
                 setToEndpointId("");
                 setError(null);
               }}
@@ -207,7 +205,7 @@ export function PanelInternalWireForm({
           </div>
         </fieldset>
 
-        <fieldset className="space-y-3" disabled={readOnly || !fromEndpoint}>
+        <fieldset className="space-y-3" disabled={readOnly}>
           <legend className="text-[10px] font-bold uppercase text-slate-500">To</legend>
           <div>
             <label className="field-label" htmlFor="panel-wire-to-equipment">To equipment</label>
@@ -224,8 +222,10 @@ export function PanelInternalWireForm({
               <option value="">Select equipment</option>
               {catalog.equipment.map((equipment) => {
                 const hasValidDestination = equipment.endpoints.some((endpoint) => {
-                  if (endpoint.disabledReason || !fromEndpoint) return false;
-                  return getPairState(fromEndpoint.terminal, endpoint.terminal).enabled;
+                  if (endpoint.disabledReason) return false;
+                  return fromEndpoint
+                    ? getPairState(fromEndpoint.terminal, endpoint.terminal).enabled
+                    : true;
                 });
                 return (
                   <option
@@ -246,13 +246,17 @@ export function PanelInternalWireForm({
               id="panel-wire-to-terminal"
               className="field-input"
               value={toEndpointId}
-              disabled={readOnly || !destinationEquipment}
+              disabled={readOnly || !destinationEquipment || !fromEndpoint}
               onChange={(event) => {
                 setToEndpointId(event.currentTarget.value);
                 setError(null);
               }}
             >
-              <option value="">Select terminal</option>
+              <option value="">
+                {destinationEquipment && !fromEndpoint
+                  ? "Select source terminal first"
+                  : "Select terminal"}
+              </option>
               {destinationOptions.map(({ endpoint, disabledReason }) => (
                 <option
                   key={endpoint.id}

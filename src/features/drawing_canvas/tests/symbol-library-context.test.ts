@@ -18,6 +18,7 @@ import {
   GENERATED_HORIZONTAL_DIMENSION_SYMBOL_KEY,
   GENERATED_VERTICAL_DIMENSION_SYMBOL_KEY
 } from "../logic/services/drawing-layout-dimensions";
+import { GENERATED_TERMINAL_BLOCK_GROUP_LIBRARY_SYMBOL_KEY } from "../logic/services/drawing-terminal-block-groups";
 
 function approvedSymbol(input: {
   key: string;
@@ -128,9 +129,9 @@ describe("symbol library context", () => {
       "nrf81_tank_side_monitor",
       "miniature_circuit_breaker_3_pole",
       "standard_th35_din_rail",
-      "terminal_block_single_scaled",
       GENERATED_BACKPLANE_SYMBOL_KEY,
       GENERATED_WIRE_TRAY_SYMBOL_KEY,
+      GENERATED_TERMINAL_BLOCK_GROUP_LIBRARY_SYMBOL_KEY,
       GENERATED_HORIZONTAL_DIMENSION_SYMBOL_KEY,
       GENERATED_VERTICAL_DIMENSION_SYMBOL_KEY
     ]);
@@ -168,7 +169,7 @@ describe("symbol library context", () => {
       GENERATED_BACKPLANE_SYMBOL_KEY,
       GENERATED_HORIZONTAL_DIMENSION_SYMBOL_KEY,
       "standard_th35_din_rail",
-      "terminal_block_single_scaled",
+      GENERATED_TERMINAL_BLOCK_GROUP_LIBRARY_SYMBOL_KEY,
       GENERATED_VERTICAL_DIMENSION_SYMBOL_KEY,
       GENERATED_WIRE_TRAY_SYMBOL_KEY
     ]);
