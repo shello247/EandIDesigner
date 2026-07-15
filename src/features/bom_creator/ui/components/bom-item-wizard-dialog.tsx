@@ -667,18 +667,18 @@ export function BomItemWizardDialog({
                 />
               </div>
               <div>
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <label className="field-label mb-0" htmlFor="bom-category">
+                <div className="relative">
+                  <label className="field-label pr-8" htmlFor="bom-category">
                     Category
                   </label>
                   <button
                     type="button"
-                    className="icon-button h-7 w-7 p-0"
+                    className="icon-button absolute right-0 top-0 !h-6 !min-h-6 w-6 p-0"
                     aria-label="Add category"
                     title="Add category"
                     onClick={() => setOptionDialog("category")}
                   >
-                    <Plus aria-hidden="true" size={13} />
+                    <Plus aria-hidden="true" size={12} />
                   </button>
                 </div>
                 <select
@@ -716,18 +716,18 @@ export function BomItemWizardDialog({
                 </select>
               </div>
               <div>
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <label className="field-label mb-0" htmlFor="bom-manufacturer">
+                <div className="relative">
+                  <label className="field-label pr-8" htmlFor="bom-manufacturer">
                     Manufacturer
                   </label>
                   <button
                     type="button"
-                    className="icon-button h-7 w-7 p-0"
+                    className="icon-button absolute right-0 top-0 !h-6 !min-h-6 w-6 p-0"
                     aria-label="Add manufacturer"
                     title="Add manufacturer"
                     onClick={() => setOptionDialog("manufacturer")}
                   >
-                    <Plus aria-hidden="true" size={13} />
+                    <Plus aria-hidden="true" size={12} />
                   </button>
                 </div>
                 <select
