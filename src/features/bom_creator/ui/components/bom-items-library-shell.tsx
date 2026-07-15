@@ -10,6 +10,7 @@ import {
 } from "../../api/actions";
 import type {
   BomItemDetail,
+  BomItemAppliedFilters,
   BomItemFilterOptions,
   BomItemFormOptions,
   BomItemListResult,
@@ -64,6 +65,50 @@ type WizardState =
     }
   | { mode: "edit"; item: BomItemDetail; formOptions: BomItemFormOptions };
 
+function toListRow(item: BomItemDetail): BomItemListRow {
+  return {
+    id: item.id,
+    itemKey: item.itemKey,
+    displayName: item.displayName,
+    category: item.category,
+    unit: item.unit,
+    manufacturer: item.manufacturer,
+    partNumber: item.partNumber,
+    supplierName: item.supplierName,
+    supplierSku: item.supplierSku,
+    unitCost: item.unitCost,
+    currency: item.currency,
+    primaryImage: item.primaryImage,
+    templateLineCount: item.templateLineCount
+  };
+}
+
+function matchesAppliedFilters(
+  item: BomItemListRow,
+  filters: BomItemAppliedFilters
+): boolean {
+  if (filters.category && item.category !== filters.category) {
+    return false;
+  }
+
+  if (filters.manufacturer && item.manufacturer !== filters.manufacturer) {
+    return false;
+  }
+
+  const query = filters.query?.toLocaleLowerCase();
+  if (!query) {
+    return true;
+  }
+
+  return [
+    item.itemKey,
+    item.displayName,
+    item.partNumber,
+    item.manufacturer,
+    item.supplierName
+  ].some((value) => value?.toLocaleLowerCase().includes(query));
+}
+
 export function BomItemsLibraryShell({
   filterOptions,
   result
@@ -76,6 +121,12 @@ export function BomItemsLibraryShell({
   const [deleteItem, setDeleteItem] = useState<BomItemListRow | null>(null);
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [removedItemIds, setRemovedItemIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  const [itemOverrides, setItemOverrides] = useState<
+    ReadonlyMap<string, BomItemListRow>
+  >(() => new Map());
   const [isLoadingModal, startModalTransition] = useTransition();
   const clearFiltersUrl = buildBomItemListUrl({
     filters: {},
@@ -83,6 +134,9 @@ export function BomItemsLibraryShell({
     pageSize: result.pageSize
   });
   const hasFilters = hasBomItemFilters(result.appliedFilters);
+  const visibleItems = result.items
+    .filter((item) => !removedItemIds.has(item.id))
+    .map((item) => itemOverrides.get(item.id) ?? item);
 
   const openCreate = () => {
     setMessage(null);
@@ -137,13 +191,26 @@ export function BomItemsLibraryShell({
     });
   };
 
-  const handleSaved = () => {
+  const handleSaved = (item: BomItemDetail) => {
+    const row = toListRow(item);
+
+    if (matchesAppliedFilters(row, result.appliedFilters)) {
+      setItemOverrides((current) => {
+        const next = new Map(current);
+        next.set(row.id, row);
+        return next;
+      });
+    } else {
+      setRemovedItemIds((current) => new Set(current).add(row.id));
+    }
+
     setWizard(null);
     setMessage("BOM item saved.");
     router.refresh();
   };
 
   const handleDeleted = (result: { id: string; mode: "deleted" | "archived" }) => {
+    setRemovedItemIds((current) => new Set(current).add(result.id));
     setDeleteItem(null);
     setMessage(result.mode === "archived" ? "BOM item archived." : "BOM item deleted.");
     router.refresh();
@@ -184,7 +251,7 @@ export function BomItemsLibraryShell({
 
       <div className="tool-panel overflow-hidden">
         <BomItemsTable
-          items={result.items}
+          items={visibleItems}
           onEdit={openEdit}
           onDelete={(item) => {
             setMessage(null);
