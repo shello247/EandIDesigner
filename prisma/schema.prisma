@@ -151,6 +151,9 @@ model BomItem {
   @@index([category])
   @@index([manufacturer])
   @@index([supplierName])
+  @@index([status, displayName, itemKey])
+  @@index([status, category, displayName, itemKey])
+  @@index([status, manufacturer, displayName, itemKey])
 }
 
 model BomItemKeySequence {

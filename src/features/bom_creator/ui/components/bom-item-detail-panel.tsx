@@ -1,8 +1,9 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import {
   ArrowLeft,
   ExternalLink,
@@ -10,9 +11,28 @@ import {
   Pencil,
   Star
 } from "lucide-react";
+import { getBomItemFormOptionsAction } from "../../api/actions";
 import type { BomItemDetail, BomItemFormOptions } from "../../data/schema";
-import { BomItemWizardDialog } from "./bom-item-wizard-dialog";
+import { BomItemImageView } from "./bom-item-image-view";
 import { categoryLabel } from "./bom-item-options";
+
+const loadWizardModule = () => import("./bom-item-wizard-dialog");
+const BomItemWizardDialog = dynamic(
+  () => loadWizardModule().then((module) => module.BomItemWizardDialog),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4">
+        <div
+          className="rounded-md border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-xl"
+          role="status"
+        >
+          Loading item editor...
+        </div>
+      </div>
+    )
+  }
+);
 
 function valueOrDash(value: string | number | undefined): string {
   return value === undefined || value === "" ? "-" : String(value);
@@ -55,21 +75,38 @@ function DetailField({
 }
 
 export function BomItemDetailPanel({
-  formOptions,
   item
 }: {
-  formOptions: BomItemFormOptions;
   item: BomItemDetail;
 }) {
   const router = useRouter();
-  const [isEditing, setIsEditing] = useState(false);
+  const [formOptions, setFormOptions] = useState<BomItemFormOptions | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [isLoadingEditor, startEditorTransition] = useTransition();
   const primaryImage = item.images.find((image) => image.isPrimary) ?? item.images[0];
   const supplierWebsite = websiteHref(item.supplierWebsite);
 
   const handleSaved = () => {
+    setFormOptions(null);
     setMessage("BOM item saved.");
     router.refresh();
+  };
+
+  const openEditor = () => {
+    setMessage(null);
+    startEditorTransition(async () => {
+      const [optionsResult] = await Promise.all([
+        getBomItemFormOptionsAction(),
+        loadWizardModule()
+      ]);
+
+      if (!optionsResult.ok) {
+        setMessage(optionsResult.error);
+        return;
+      }
+
+      setFormOptions(optionsResult.data);
+    });
   };
 
   return (
@@ -105,10 +142,11 @@ export function BomItemDetailPanel({
         <button
           type="button"
           className="icon-button icon-button-primary"
-          onClick={() => setIsEditing(true)}
+          onClick={openEditor}
+          disabled={isLoadingEditor}
         >
           <Pencil aria-hidden="true" size={14} />
-          Edit item
+          {isLoadingEditor ? "Loading..." : "Edit item"}
         </button>
       </div>
 
@@ -124,13 +162,15 @@ export function BomItemDetailPanel({
             <h2>Images</h2>
           </div>
           <div className="p-4">
-            <div className="grid aspect-[4/3] place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+            <div className="relative grid aspect-[4/3] place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
               {primaryImage ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={primaryImage.dataUrl}
+                <BomItemImageView
+                  src={primaryImage.imageUrl}
+                  mimeType={primaryImage.mimeType}
                   alt={primaryImage.caption || primaryImage.fileName}
                   className="h-full w-full object-contain"
+                  loading="eager"
+                  sizes="(min-width: 1280px) 420px, 100vw"
                 />
               ) : (
                 <ImageIcon aria-hidden="true" size={28} className="text-slate-400" />
@@ -147,11 +187,12 @@ export function BomItemDetailPanel({
                     className="relative aspect-square overflow-hidden rounded-md border border-slate-200 bg-slate-50"
                     title={image.caption || image.fileName}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={image.dataUrl}
+                    <BomItemImageView
+                      src={image.imageUrl}
+                      mimeType={image.mimeType}
                       alt=""
                       className="h-full w-full object-contain"
+                      sizes="96px"
                     />
                     {image.isPrimary ? (
                       <span className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-teal-600 text-white">
@@ -262,13 +303,13 @@ export function BomItemDetailPanel({
         </div>
       </div>
 
-      {isEditing ? (
+      {formOptions ? (
         <BomItemWizardDialog
           key={item.id}
           formOptions={formOptions}
           mode="edit"
           item={item}
-          onClose={() => setIsEditing(false)}
+          onClose={() => setFormOptions(null)}
           onSaved={handleSaved}
         />
       ) : null}

@@ -2,8 +2,9 @@ import type { DrawingConnection } from "@/features/drawing_canvas/api/asset-cont
 import type { BomQuantityRule, BomQuantityStatus } from "../../data/schema";
 
 export type BomQuantityContext = {
-  assetPlacementIds: string[];
-  connections: DrawingConnection[];
+  connectionCount?: number;
+  assetPlacementIds?: string[];
+  connections?: DrawingConnection[];
 };
 
 export type BomQuantityResult = {
@@ -23,7 +24,11 @@ function connectionTouchesPlacement(
 }
 
 function countAssetConnections(context: BomQuantityContext): number {
-  const placementIds = new Set(context.assetPlacementIds);
+  if (context.connectionCount !== undefined) {
+    return context.connectionCount;
+  }
+
+  const placementIds = new Set(context.assetPlacementIds ?? []);
 
   if (placementIds.size === 0) {
     return 0;
@@ -31,7 +36,7 @@ function countAssetConnections(context: BomQuantityContext): number {
 
   const connectionIds = new Set<string>();
 
-  for (const connection of context.connections) {
+  for (const connection of context.connections ?? []) {
     if (connectionTouchesPlacement(connection, placementIds)) {
       connectionIds.add(connection.id);
     }

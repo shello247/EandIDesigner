@@ -3,14 +3,14 @@
 import { useState, useTransition } from "react";
 import { AlertTriangle, Trash2, X } from "lucide-react";
 import { deleteBomItemAction } from "../../api/actions";
-import type { BomItemSummary } from "../../data/schema";
+import type { BomItemListRow } from "../../data/schema";
 
 export function BomItemDeleteDialog({
   item,
   onClose,
   onDeleted
 }: {
-  item: BomItemSummary;
+  item: BomItemListRow;
   onClose: () => void;
   onDeleted: (result: { id: string; mode: "deleted" | "archived" }) => void;
 }) {

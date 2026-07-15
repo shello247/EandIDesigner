@@ -35,6 +35,18 @@ export type DrawingDetail = {
   updatedAt: string;
 };
 
+export type DrawingBomOption = {
+  id: string;
+  drawingKey: string;
+  title: string;
+};
+
+export type DrawingBomSource = {
+  id: string;
+  title: string;
+  model: DrawingModel;
+};
+
 export type ActionResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string };

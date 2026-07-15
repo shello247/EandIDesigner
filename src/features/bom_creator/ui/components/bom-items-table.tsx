@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { ImageIcon, Pencil, Trash2 } from "lucide-react";
-import type { BomItemSummary } from "../../data/schema";
+import type { BomItemListRow } from "../../data/schema";
+import { BomItemImageView } from "./bom-item-image-view";
 import { categoryLabel } from "./bom-item-options";
 
-function formatCost(item: BomItemSummary): string {
+function formatCost(item: BomItemListRow): string {
   if (item.unitCost === undefined) {
     return "-";
   }
@@ -17,7 +18,7 @@ function formatCost(item: BomItemSummary): string {
   })}`;
 }
 
-function supplierSummary(item: BomItemSummary): string {
+function supplierSummary(item: BomItemListRow): string {
   const parts = [item.supplierName, item.supplierSku].filter(Boolean);
 
   if (parts.length > 0) {
@@ -31,29 +32,46 @@ export function BomItemsTable({
   items,
   onEdit,
   onDelete,
-  busyItemId
+  busyItemId,
+  clearFiltersUrl,
+  hasFilters
 }: {
-  items: BomItemSummary[];
-  onEdit: (item: BomItemSummary) => void;
-  onDelete: (item: BomItemSummary) => void;
+  items: BomItemListRow[];
+  onEdit: (item: BomItemListRow) => void;
+  onDelete: (item: BomItemListRow) => void;
   busyItemId?: string | null;
+  clearFiltersUrl: string;
+  hasFilters: boolean;
 }) {
   if (items.length === 0) {
     return (
-      <div className="tool-panel flex min-h-[260px] items-center justify-center p-8 text-center">
+      <div className="flex min-h-[260px] items-center justify-center p-8 text-center">
         <div>
-          <h2 className="text-lg font-bold">No BOM items yet</h2>
+          <h2 className="text-lg font-bold">
+            {hasFilters ? "No items match these filters" : "No BOM items yet"}
+          </h2>
           <p className="mt-2 max-w-md text-sm text-slate-600">
-            Create library items before linking mini BOMs to symbols.
+            {hasFilters
+              ? "Change or clear the current search and filter values."
+              : "Create library items before linking mini BOMs to symbols."}
           </p>
+          {hasFilters ? (
+            <Link
+              href={clearFiltersUrl}
+              className="icon-button mt-4"
+              prefetch={false}
+            >
+              Clear filters
+            </Link>
+          ) : null}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="tool-panel overflow-hidden">
-      <table className="data-table">
+    <div className="overflow-x-auto">
+      <table className="data-table min-w-[900px]">
         <thead>
           <tr>
             <th>Item</th>
@@ -70,13 +88,14 @@ export function BomItemsTable({
             <tr key={item.id} className="hover:bg-slate-50">
               <td>
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-md border border-slate-200 bg-slate-50">
+                  <div className="relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-md border border-slate-200 bg-slate-50">
                     {item.primaryImage ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={item.primaryImage.dataUrl}
+                      <BomItemImageView
+                        src={item.primaryImage.imageUrl}
+                        mimeType={item.primaryImage.mimeType}
                         alt=""
                         className="h-full w-full object-contain"
+                        sizes="48px"
                       />
                     ) : (
                       <ImageIcon

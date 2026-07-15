@@ -18,3 +18,20 @@ export function validateSymbolBomTemplateInput(
 
   return parsed;
 }
+
+export function validateSymbolBomTemplateItemIds(
+  input: SaveSymbolBomTemplateInput,
+  itemIds: readonly string[]
+): SaveSymbolBomTemplateInput {
+  const parsed = saveSymbolBomTemplateInputSchema.parse(input);
+  const availableItemIds = new Set(itemIds);
+  const missingLine = parsed.lines.find(
+    (line) => !availableItemIds.has(line.itemId)
+  );
+
+  if (missingLine) {
+    throw new Error("Symbol BOM template references an item outside the library.");
+  }
+
+  return parsed;
+}

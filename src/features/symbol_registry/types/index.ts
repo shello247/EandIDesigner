@@ -18,6 +18,11 @@ export type SymbolListItem = {
   updatedAt: string;
 };
 
+export type SymbolIdentity = {
+  symbolId: string;
+  displayName: string;
+};
+
 export type SymbolVersionSummary = {
   id: string;
   versionNumber: number;

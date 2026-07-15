@@ -389,6 +389,21 @@ async function main() {
   `);
 
   await execute(`
+    CREATE INDEX IF NOT EXISTS "BomItem_status_displayName_itemKey_idx"
+    ON "BomItem"("status", "displayName", "itemKey");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "BomItem_status_category_displayName_itemKey_idx"
+    ON "BomItem"("status", "category", "displayName", "itemKey");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "BomItem_status_manufacturer_displayName_itemKey_idx"
+    ON "BomItem"("status", "manufacturer", "displayName", "itemKey");
+  `);
+
+  await execute(`
     CREATE TABLE IF NOT EXISTS "BomItemKeySequence" (
       "scope" TEXT NOT NULL PRIMARY KEY,
       "lastValue" INTEGER NOT NULL DEFAULT 0,

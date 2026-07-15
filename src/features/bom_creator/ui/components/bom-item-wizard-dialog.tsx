@@ -28,8 +28,10 @@ import {
 import {
   type BomItemDetail,
   type BomItemFormOptions,
-  type BomItemImageInput,
+  type BomItemImageMetadata,
+  type BomItemImageWriteInput,
   type BomItemInput,
+  type BomItemNewImageInput,
   type BomItemOption
 } from "../../data/schema";
 import {
@@ -43,11 +45,17 @@ import {
   bomUnitOptions,
   categoryLabel
 } from "./bom-item-options";
+import { BomItemImageView } from "./bom-item-image-view";
 
 type WizardStep = "general" | "images" | "supplier";
 type OptionDialogKind = "category" | "manufacturer";
 
-type WizardDraft = BomItemInput;
+type ExistingImageDraft = BomItemImageMetadata & { kind: "existing" };
+type NewImageDraft = BomItemNewImageInput & { clientId: string };
+type BomItemImageDraft = ExistingImageDraft | NewImageDraft;
+type WizardDraft = Omit<BomItemInput, "images"> & {
+  images: BomItemImageDraft[];
+};
 
 const steps: Array<{ key: WizardStep; label: string }> = [
   { key: "general", label: "General" },
@@ -101,7 +109,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-function normalizeImages(images: BomItemImageInput[]): BomItemImageInput[] {
+function normalizeImages(images: BomItemImageDraft[]): BomItemImageDraft[] {
   const hasPrimary = images.some((image) => image.isPrimary);
 
   return images.map((image, index) => ({
@@ -132,12 +140,37 @@ function detailToDraft(item: BomItemDetail): WizardDraft {
     leadTimeDays: item.leadTimeDays,
     minimumOrderQuantity: item.minimumOrderQuantity,
     costNotes: item.costNotes ?? "",
-    images: normalizeImages(item.images)
+    images: normalizeImages(
+      item.images.map((image) => ({ ...image, kind: "existing" as const }))
+    )
   };
 }
 
-function imageKey(image: BomItemImageInput, index: number): string {
-  return image.id ?? `${image.fileName}-${image.sizeBytes}-${index}`;
+function imageKey(image: BomItemImageDraft): string {
+  return image.kind === "existing" ? image.id : image.clientId;
+}
+
+function toImageWriteInput(image: BomItemImageDraft): BomItemImageWriteInput {
+  if (image.kind === "existing") {
+    return {
+      kind: "existing",
+      id: image.id,
+      caption: image.caption,
+      isPrimary: image.isPrimary,
+      sortOrder: image.sortOrder
+    };
+  }
+
+  return {
+    kind: "new",
+    fileName: image.fileName,
+    mimeType: image.mimeType,
+    sizeBytes: image.sizeBytes,
+    dataUrl: image.dataUrl,
+    caption: image.caption,
+    isPrimary: image.isPrimary,
+    sortOrder: image.sortOrder
+  };
 }
 
 function toOptionalNumber(value: string): number | undefined {
@@ -342,7 +375,10 @@ export function BomItemWizardDialog({
     setDraft((current) => ({ ...current, ...updates }));
   };
 
-  const updateImage = (index: number, updates: Partial<BomItemImageInput>) => {
+  const updateImage = (
+    index: number,
+    updates: Partial<Pick<BomItemImageDraft, "caption" | "isPrimary">>
+  ) => {
     setDraft((current) => ({
       ...current,
       images: current.images.map((image, imageIndex) =>
@@ -392,7 +428,7 @@ export function BomItemWizardDialog({
       return;
     }
 
-    const nextImages: BomItemImageInput[] = [];
+    const nextImages: NewImageDraft[] = [];
 
     for (const file of files) {
       const dataUrl = await readFileAsDataUrl(file);
@@ -403,7 +439,8 @@ export function BomItemWizardDialog({
       }
 
       nextImages.push({
-        id: crypto.randomUUID(),
+        kind: "new",
+        clientId: crypto.randomUUID(),
         fileName: file.name || "pasted-image.png",
         mimeType: file.type,
         sizeBytes: file.size,
@@ -468,17 +505,22 @@ export function BomItemWizardDialog({
 
     startTransition(async () => {
       setMessage(null);
-      const normalizedDraft: BomItemInput = {
-        ...draft,
-        images: normalizedImages
-      };
+      const { images: _images, ...itemFields } = draft;
+      void _images;
+      const imageInputs = normalizedImages.map(toImageWriteInput);
       const result =
         mode === "edit" && item
           ? await updateBomItemAction({
-              ...normalizedDraft,
-              id: item.id
+              ...itemFields,
+              id: item.id,
+              images: imageInputs
             })
-          : await createBomItemAction(normalizedDraft);
+          : await createBomItemAction({
+              ...itemFields,
+              images: imageInputs.filter(
+                (image): image is BomItemNewImageInput => image.kind === "new"
+              )
+            });
 
       if (!result.ok) {
         setMessage(result.error);
@@ -806,15 +848,20 @@ export function BomItemWizardDialog({
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {draft.images.map((image, index) => (
                     <div
-                      key={imageKey(image, index)}
+                      key={imageKey(image)}
                       className="overflow-hidden rounded-lg border border-slate-200 bg-white"
                     >
-                      <div className="aspect-[4/3] bg-slate-100">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={image.dataUrl}
+                      <div className="relative aspect-[4/3] bg-slate-100">
+                        <BomItemImageView
+                          src={
+                            image.kind === "existing"
+                              ? image.imageUrl
+                              : image.dataUrl
+                          }
+                          mimeType={image.mimeType}
                           alt={image.caption || image.fileName}
                           className="h-full w-full object-contain"
+                          sizes="320px"
                         />
                       </div>
                       <div className="grid gap-3 p-3">

@@ -85,7 +85,6 @@ function item(input: Partial<BomItemSummary> & { id: string }): BomItemSummary {
     leadTimeDays: input.leadTimeDays,
     minimumOrderQuantity: input.minimumOrderQuantity,
     costNotes: input.costNotes,
-    images: input.images ?? [],
     primaryImage: input.primaryImage,
     templateLineCount: input.templateLineCount ?? 0
   };
@@ -335,6 +334,7 @@ describe("bom creator", () => {
         minimumOrderQuantity: "10",
         images: [
           {
+            kind: "new",
             fileName: "gland.png",
             mimeType: "image/png",
             sizeBytes: 3,
@@ -357,6 +357,7 @@ describe("bom creator", () => {
     expect(() =>
       bomItemImagesInputSchema.parse([
         {
+          kind: "new",
           fileName: "document.pdf",
           mimeType: "application/pdf",
           sizeBytes: 1024,
@@ -370,6 +371,7 @@ describe("bom creator", () => {
     expect(() =>
       bomItemImagesInputSchema.parse([
         {
+          kind: "new",
           fileName: "large.png",
           mimeType: "image/png",
           sizeBytes: MAX_BOM_ITEM_IMAGE_BYTES + 1,
@@ -383,6 +385,7 @@ describe("bom creator", () => {
     expect(() =>
       bomItemImagesInputSchema.parse([
         {
+          kind: "new",
           fileName: "first.png",
           mimeType: "image/png",
           sizeBytes: 3,
@@ -391,6 +394,7 @@ describe("bom creator", () => {
           sortOrder: 0
         },
         {
+          kind: "new",
           fileName: "second.png",
           mimeType: "image/png",
           sizeBytes: 3,
