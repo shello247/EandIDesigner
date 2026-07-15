@@ -6,6 +6,7 @@ import type {
   DrawingPlacement,
   DrawingSheetCanvasModel
 } from "../../data/schema";
+import { isNonAssetDrawingPlacement } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import { duplicateSheet } from "../commands/drawing-sheet-commands";
 import {
@@ -63,6 +64,8 @@ export type SheetDuplicatePlan = {
   warnings: string[];
   blockingErrors: string[];
   existingTags: string[];
+  preserveAssetReferences?: boolean;
+  isSectionTitlePage?: boolean;
 };
 
 export function suggestSheetDuplicateSourceLabel(
@@ -353,7 +356,10 @@ function validatePlan(plan: SheetDuplicatePlan): SheetDuplicatePlan {
     createTags.set(normalizedTag, row.sourceAssetId);
   }
 
-  if (!plan.sourceLabel?.trim() || !plan.targetLabel?.trim()) {
+  if (
+    !plan.isSectionTitlePage &&
+    (!plan.sourceLabel?.trim() || !plan.targetLabel?.trim())
+  ) {
     warnings.push("Sheet name replacement is not configured.");
   }
 
@@ -390,8 +396,13 @@ export function buildSheetDuplicatePlan({
   const choiceMap = new Map(choices.map((choice) => [choice.sourceAssetId, choice]));
   const rowMap = new Map<SheetDuplicateAssetRow["sourceAssetId"], SheetDuplicateAssetRow>();
   const delta = labelNumberDelta(sourceLabel, targetLabel);
+  const preserveAssetReferences =
+    sourceSheet.panelDrawingContext?.kind === "detailed_panel_wiring";
 
   sourceSheet.placements.forEach((placement) => {
+    if (isNonAssetDrawingPlacement(placement)) {
+      return;
+    }
     const sourceAssetId = placementAssetId(placement);
 
     if (rowMap.has(sourceAssetId)) {
@@ -406,21 +417,23 @@ export function buildSheetDuplicatePlan({
       ? findReferenceByTag(compatibleAssets, likelyTargetTag)
       : undefined;
     const defaultAction: SheetDuplicateAssetAction =
-      shouldReferenceByDefault(placement) || likelyTargetAsset
+      preserveAssetReferences || shouldReferenceByDefault(placement) || likelyTargetAsset
         ? "reference"
         : "create";
     const allocatedTag = allocateNextPlacementTag(model, placement, symbols, {
       reservedTags
     });
     const choice = choiceMap.get(sourceAssetId);
-    const action = choice?.action ?? defaultAction;
+    const action = preserveAssetReferences ? "reference" : choice?.action ?? defaultAction;
     const defaultReference =
       likelyTargetAsset ??
       compatibleAssets.find((asset) => asset.assetId === sourceAssetId) ??
       compatibleAssets[0];
     const targetAssetId =
       action === "reference"
-        ? choice?.targetAssetId ?? defaultReference?.assetId
+        ? preserveAssetReferences
+          ? sourceAssetId
+          : choice?.targetAssetId ?? defaultReference?.assetId
         : choice?.targetAssetId;
     const targetAsset = compatibleAssets.find((asset) => asset.assetId === targetAssetId);
     const targetTag =
@@ -469,7 +482,9 @@ export function buildSheetDuplicatePlan({
     assetRows: [...rowMap.values()],
     warnings: collectManualWireWarnings({ model, sheet: sourceSheet, symbols }),
     blockingErrors: [],
-    existingTags: existingTags(model)
+    existingTags: existingTags(model),
+    preserveAssetReferences,
+    isSectionTitlePage: sourceSheet.kind === "section_title"
   };
 
   return validatePlan(plan);
@@ -479,6 +494,9 @@ export function updateSheetDuplicateChoice(
   plan: SheetDuplicatePlan,
   choice: SheetDuplicateAssetChoice
 ): SheetDuplicatePlan {
+  if (plan.preserveAssetReferences) {
+    return plan;
+  }
   const assetRows = plan.assetRows.map((row) => {
     if (row.sourceAssetId !== choice.sourceAssetId) {
       return row;
@@ -552,7 +570,9 @@ export function applySheetDuplicatePlan({
   }
 
   return duplicateSheet(model, validatedPlan.sourceSheetId, symbols, {
-    duplicateMode: "new-system",
+    duplicateMode: validatedPlan.preserveAssetReferences
+      ? "same-system"
+      : "new-system",
     assetMapping,
     name: validatedPlan.targetSheetName
   });

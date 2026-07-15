@@ -8,6 +8,7 @@ import {
   isGeneratedTerminalBlockReference,
   normalizeAssetTag,
   placementAssetId,
+  isNonAssetDrawingPlacement,
   renameDrawingAssetTag,
   type ApprovedDrawingSymbol,
   type DrawingAssetRecord,
@@ -27,7 +28,8 @@ export type ManagedAssetSheetReference = {
   sheetId: string;
   sheetName: string;
   sheetNumber: number;
-  placementId: string;
+  referenceKind: "placement" | "containment" | "panel_context";
+  placementId?: string;
 };
 
 export type ManagedAssetCatalogItem = DrawingAssetRecord & {
@@ -40,7 +42,7 @@ export type ManagedAssetCatalogItem = DrawingAssetRecord & {
 };
 
 export type AssetDeletionBlocker = {
-  code: "placement" | "containment";
+  code: "placement" | "containment" | "panel_context";
   message: string;
   sheetRefs: ManagedAssetSheetReference[];
 };
@@ -52,6 +54,13 @@ const ASSET_TYPE_LABELS: Record<DrawingAssetType, string> = {
   junction_box: "Junction Box",
   terminal_block: "Terminal Block",
   breaker: "Breaker",
+  fuse: "Fuse",
+  relay: "Relay",
+  power_supply: "Power Supply",
+  isolator: "Isolator",
+  converter: "Converter",
+  io_module: "I/O Module",
+  earth_bar: "Earth Bar",
   cable: "Cable",
   other: "Asset"
 };
@@ -63,6 +72,13 @@ const ASSET_TYPE_PREFIXES: Record<DrawingAssetType, string> = {
   junction_box: "JB",
   terminal_block: "TB",
   breaker: "MCB",
+  fuse: "FU",
+  relay: "K",
+  power_supply: "PSU",
+  isolator: "ISO",
+  converter: "CV",
+  io_module: "IO",
+  earth_bar: "EB",
   cable: "C",
   other: "EQ"
 };
@@ -74,6 +90,13 @@ const ASSET_TYPE_STARTS: Record<DrawingAssetType, number> = {
   junction_box: 1,
   terminal_block: 101,
   breaker: 101,
+  fuse: 101,
+  relay: 101,
+  power_supply: 101,
+  isolator: 101,
+  converter: 101,
+  io_module: 101,
+  earth_bar: 101,
   cable: 101,
   other: 101
 };
@@ -158,6 +181,7 @@ function sheetReference(
     sheetId: sheet.id,
     sheetName: sheet.name,
     sheetNumber: sheetIndex + 1,
+    referenceKind: "placement",
     placementId: placement.id
   };
 }
@@ -175,6 +199,7 @@ function recordFromPlacement(
     title: titleFromPlacement(placement, symbols),
     symbolId: placement.symbolId,
     versionId: placement.versionId,
+    terminalBlock: placement.terminalBlock,
     metadata: {
       generatedKind: placement.enclosure?.kind,
       symbolKey: symbol?.symbolKey
@@ -206,8 +231,22 @@ export function buildManagedAssetCatalog(
   symbols: ApprovedDrawingSymbol[]
 ): ManagedAssetCatalogItem[] {
   const catalog = new Map<string, ManagedAssetCatalogItem>();
+  const nonAssetLayoutHelperIds = new Set(
+    model.sheets.flatMap((sheet) =>
+      sheet.placements
+        .filter(
+          (placement) =>
+            isNonAssetDrawingPlacement(placement)
+        )
+        .map(placementAssetId)
+    )
+  );
 
   for (const asset of model.assets ?? []) {
+    if (nonAssetLayoutHelperIds.has(asset.id)) {
+      continue;
+    }
+
     catalog.set(asset.id, {
       ...asset,
       normalizedTag: normalizeAssetTag(asset.tag),
@@ -222,7 +261,7 @@ export function buildManagedAssetCatalog(
 
   model.sheets.forEach((sheet, sheetIndex) => {
     sheet.placements.forEach((placement) => {
-      if (placement.layoutKind) {
+      if (isNonAssetDrawingPlacement(placement)) {
         return;
       }
 
@@ -260,6 +299,18 @@ export function buildManagedAssetCatalog(
 
       catalog.set(assetId, current);
     });
+
+    const panelAssetId = sheet.panelDrawingContext?.panelAssetId;
+    const panelAsset = panelAssetId ? catalog.get(panelAssetId) : undefined;
+
+    if (panelAsset) {
+      panelAsset.sheetRefs.push({
+        sheetId: sheet.id,
+        sheetName: sheet.name,
+        sheetNumber: sheetIndex + 1,
+        referenceKind: "panel_context"
+      });
+    }
   });
 
   const tagGroups = new Map<string, ManagedAssetCatalogItem[]>();
@@ -292,7 +343,7 @@ function existingAssetTags(model: DrawingModel): Set<string> {
     ...(model.assets ?? []).map((asset) => normalizeAssetTag(asset.tag)),
     ...model.sheets.flatMap((sheet) =>
       sheet.placements
-        .filter((placement) => !placement.layoutKind)
+        .filter((placement) => !isNonAssetDrawingPlacement(placement))
         .map((placement) => normalizeAssetTag(placement.tag))
     )
   ]);
@@ -336,9 +387,11 @@ export function reconcileDrawingAssets(
       tag: asset.tag,
       type: asset.type,
       title: asset.title,
+      description: asset.description,
       symbolId: asset.symbolId,
       versionId: asset.versionId,
-      metadata: asset.metadata
+      metadata: asset.metadata,
+      terminalBlock: asset.terminalBlock
     }))
   };
 }
@@ -361,6 +414,7 @@ export function createManagedAsset(
     tag,
     type: parsed.type,
     title: assetTitleForCreate(parsed),
+    description: parsed.description,
     symbolId: symbol?.symbolId ?? parsed.symbolId,
     versionId: symbol?.versionId ?? parsed.versionId,
     metadata: {
@@ -446,6 +500,7 @@ export function getAssetDeletionBlockers(
 ): AssetDeletionBlocker[] {
   const placementRefs: ManagedAssetSheetReference[] = [];
   const containmentRefs: ManagedAssetSheetReference[] = [];
+  const panelContextRefs: ManagedAssetSheetReference[] = [];
 
   model.sheets.forEach((sheet, sheetIndex) => {
     sheet.placements.forEach((placement) => {
@@ -454,9 +509,21 @@ export function getAssetDeletionBlockers(
       }
 
       if (placement.containerAssetId === assetId) {
-        containmentRefs.push(sheetReference(sheet, sheetIndex, placement));
+        containmentRefs.push({
+          ...sheetReference(sheet, sheetIndex, placement),
+          referenceKind: "containment"
+        });
       }
     });
+
+    if (sheet.panelDrawingContext?.panelAssetId === assetId) {
+      panelContextRefs.push({
+        sheetId: sheet.id,
+        sheetName: sheet.name,
+        sheetNumber: sheetIndex + 1,
+        referenceKind: "panel_context"
+      });
+    }
   });
 
   return [
@@ -472,6 +539,13 @@ export function getAssetDeletionBlockers(
           code: "containment" as const,
           message: "Asset is used as a container for sheet placements.",
           sheetRefs: containmentRefs
+        }
+      : undefined,
+    panelContextRefs.length > 0
+      ? {
+          code: "panel_context" as const,
+          message: "Asset is referenced by a Detailed Panel Drawing.",
+          sheetRefs: panelContextRefs
         }
       : undefined
   ].filter((blocker): blocker is AssetDeletionBlocker => Boolean(blocker));

@@ -3,12 +3,22 @@ import type { ApprovedDrawingSymbol } from "../types";
 import {
   getSymbolLibraryContextForSheetKind,
   getSymbolsForLibraryContext,
-  groupSymbolsForLibrary
+  groupSymbolsForLibrary,
+  hasPanelLayoutPhysicalDimensions
 } from "../logic/services/symbol-library-context";
 import {
   GENERATED_BACKPLANE_SYMBOL_ID,
   GENERATED_BACKPLANE_SYMBOL_KEY
 } from "../logic/services/drawing-backplane-layouts";
+import {
+  GENERATED_WIRE_TRAY_SYMBOL_ID,
+  GENERATED_WIRE_TRAY_SYMBOL_KEY
+} from "../logic/services/drawing-wire-tray-layouts";
+import {
+  GENERATED_HORIZONTAL_DIMENSION_SYMBOL_KEY,
+  GENERATED_VERTICAL_DIMENSION_SYMBOL_KEY
+} from "../logic/services/drawing-layout-dimensions";
+import { GENERATED_TERMINAL_BLOCK_GROUP_LIBRARY_SYMBOL_KEY } from "../logic/services/drawing-terminal-block-groups";
 
 function approvedSymbol(input: {
   key: string;
@@ -82,8 +92,8 @@ describe("symbol library context", () => {
     category: "terminal_block",
     layoutUsage: "both",
     panelCategory: "termination",
-    physicalWidthMm: 20,
-    physicalHeightMm: 78,
+    physicalWidthMm: 5.2,
+    physicalHeightMm: 50,
     mountingType: "din_rail"
   });
   const incompletePanelSymbol = approvedSymbol({
@@ -119,9 +129,22 @@ describe("symbol library context", () => {
       "nrf81_tank_side_monitor",
       "miniature_circuit_breaker_3_pole",
       "standard_th35_din_rail",
-      "terminal_block_single_scaled",
-      GENERATED_BACKPLANE_SYMBOL_KEY
+      GENERATED_BACKPLANE_SYMBOL_KEY,
+      GENERATED_WIRE_TRAY_SYMBOL_KEY,
+      GENERATED_TERMINAL_BLOCK_GROUP_LIBRARY_SYMBOL_KEY,
+      GENERATED_HORIZONTAL_DIMENSION_SYMBOL_KEY,
+      GENERATED_VERTICAL_DIMENSION_SYMBOL_KEY
     ]);
+  });
+
+  it("requires physical dimensions for panel layout symbols", () => {
+    expect(hasPanelLayoutPhysicalDimensions(sharedTerminal)).toBe(true);
+    expect(hasPanelLayoutPhysicalDimensions(incompletePanelSymbol)).toBe(false);
+    expect(
+      getSymbolsForLibraryContext(symbols, "wiring").map(
+        (symbol) => symbol.symbolKey
+      )
+    ).not.toContain("layout_symbol_without_size");
   });
 
   it("groups wiring symbols by engineering library category", () => {
@@ -132,7 +155,6 @@ describe("symbol library context", () => {
       "Instrumentation",
       "Controllers",
       "Circuit Protection",
-      "Terminal Block",
       "Panel Layout"
     ]);
     expect(
@@ -140,17 +162,26 @@ describe("symbol library context", () => {
         .symbolKey
     ).toBe("miniature_circuit_breaker_3_pole");
     expect(
-      groups.find((group) => group.key === "terminal_block")?.symbols[0]
-        .symbolKey
-    ).toBe("terminal_block_single_scaled");
-    expect(
-      groups.find((group) => group.key === "panel_layout")?.symbols[0]
-        .symbolKey
-    ).toBe(GENERATED_BACKPLANE_SYMBOL_KEY);
+      groups
+        .find((group) => group.key === "panel_layout")
+        ?.symbols.map((symbol) => symbol.symbolKey)
+    ).toEqual([
+      GENERATED_BACKPLANE_SYMBOL_KEY,
+      GENERATED_HORIZONTAL_DIMENSION_SYMBOL_KEY,
+      "standard_th35_din_rail",
+      GENERATED_TERMINAL_BLOCK_GROUP_LIBRARY_SYMBOL_KEY,
+      GENERATED_VERTICAL_DIMENSION_SYMBOL_KEY,
+      GENERATED_WIRE_TRAY_SYMBOL_KEY
+    ]);
     expect(
       groups
         .find((group) => group.key === "panel_layout")
         ?.symbols.map((symbol) => symbol.symbolId)
     ).toContain(GENERATED_BACKPLANE_SYMBOL_ID);
+    expect(
+      groups
+        .find((group) => group.key === "panel_layout")
+        ?.symbols.map((symbol) => symbol.symbolId)
+    ).toContain(GENERATED_WIRE_TRAY_SYMBOL_ID);
   });
 });

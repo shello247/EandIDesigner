@@ -7,12 +7,16 @@ export function DeleteSheetConfirmationDialog({
   sheetName,
   sheetNumber,
   sheetCount,
+  sectionMemberCount,
+  sectionMergeDestination,
   onCancel,
   onConfirm
 }: {
   sheetName: string;
   sheetNumber: number;
   sheetCount: number;
+  sectionMemberCount?: number;
+  sectionMergeDestination?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -60,14 +64,32 @@ export function DeleteSheetConfirmationDialog({
           </div>
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="text-sm font-semibold text-slate-950">
-              Delete sheet
+              {sectionMemberCount !== undefined
+                ? "Remove section divider"
+                : "Delete sheet"}
             </h2>
             <p id={descriptionId} className="mt-1 text-xs leading-5 text-slate-600">
-              Remove{" "}
-              <span className="font-semibold text-slate-900">{sheetName}</span>{" "}
-              from this drawing package. This is Sheet {sheetNumber} of{" "}
-              {sheetCount} and includes its placements, wiring, notes, and sheet
-              metadata.
+              {sectionMemberCount !== undefined ? (
+                <>
+                  Remove the divider{" "}
+                  <span className="font-semibold text-slate-900">
+                    {sheetName}
+                  </span>
+                  . {sectionMemberCount} member sheet
+                  {sectionMemberCount === 1 ? "" : "s"} will be retained and
+                  merged into {sectionMergeDestination ?? "the preceding group"}.
+                </>
+              ) : (
+                <>
+                  Remove{" "}
+                  <span className="font-semibold text-slate-900">
+                    {sheetName}
+                  </span>{" "}
+                  from this drawing package. This is Sheet {sheetNumber} of{" "}
+                  {sheetCount} and includes its placements, wiring, notes, and
+                  sheet metadata.
+                </>
+              )}
             </p>
           </div>
           <button
@@ -100,7 +122,9 @@ export function DeleteSheetConfirmationDialog({
             onClick={onConfirm}
           >
             <Trash2 aria-hidden="true" size={14} />
-            Delete sheet
+            {sectionMemberCount !== undefined
+              ? "Remove divider"
+              : "Delete sheet"}
           </button>
         </div>
       </div>

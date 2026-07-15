@@ -53,7 +53,11 @@ const initialForm: SymbolMetadataFormState = {
   physicalHeightMm: "",
   mountingType: "",
   panelCategory: "",
-  resizable: false
+  resizable: false,
+  panelWiringEnabled: false,
+  panelWiringAssetType: "other",
+  panelWiringTagPrefix: "EQ",
+  panelWiringSchematicScale: ""
 };
 
 export function SvgImportStudio() {

@@ -9,6 +9,8 @@ import {
   type SaveSymbolDraftInput,
   symbolLayoutMetadataUpdateInputSchema,
   type SymbolLayoutMetadataUpdateInput,
+  symbolPanelWiringCapabilityUpdateInputSchema,
+  type SymbolPanelWiringCapabilityUpdateInput,
   terminalMapUpdateInputSchema,
   type TerminalMapUpdateInput,
   uploadSymbolDocumentInputSchema,
@@ -233,7 +235,56 @@ export async function updateSymbolLayoutMetadata(
     physicalHeightMm: parsed.physicalHeightMm,
     mountingType: parsed.mountingType,
     panelCategory: parsed.panelCategory,
-    resizable: parsed.resizable
+    resizable: parsed.resizable,
+    terminalBlockModule: parsed.terminalBlockModule
+  };
+  const validation = validateSymbol(version.svg, updatedMetadata);
+  const nextVersionStatus =
+    version.status === "approved" ? "needs_review" : version.status;
+  const nextSymbolStatus =
+    version.symbol.status === "archived" ? "archived" : "needs_review";
+
+  await prisma.$transaction([
+    prisma.symbolVersion.update({
+      where: { id: version.id },
+      data: {
+        status: nextVersionStatus,
+        svg: validation.sanitizedSvg,
+        metadataJson: stringifyMetadata(validation.metadata ?? updatedMetadata)
+      }
+    }),
+    prisma.symbol.update({
+      where: { id: version.symbolId },
+      data: { status: nextSymbolStatus }
+    })
+  ]);
+
+  await replaceValidationIssues({
+    symbolId: version.symbolId,
+    versionId: version.id,
+    issues: validation.issues
+  });
+
+  return getSymbolDetail(version.symbolId);
+}
+
+export async function updateSymbolPanelWiringCapability(
+  input: SymbolPanelWiringCapabilityUpdateInput
+) {
+  const parsed = symbolPanelWiringCapabilityUpdateInputSchema.parse(input);
+  const version = await prisma.symbolVersion.findUnique({
+    where: { id: parsed.versionId },
+    include: { symbol: true }
+  });
+
+  if (!version) {
+    throw new Error("Symbol version was not found.");
+  }
+
+  const metadata = parseMetadataJson(version.metadataJson);
+  const updatedMetadata = {
+    ...metadata,
+    panelWiring: parsed.panelWiring
   };
   const validation = validateSymbol(version.svg, updatedMetadata);
   const nextVersionStatus =

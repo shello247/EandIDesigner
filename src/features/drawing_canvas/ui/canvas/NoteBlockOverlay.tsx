@@ -30,7 +30,8 @@ export function NoteBlockOverlay({
   onAnnotationChange,
   onAnnotationGroupChange,
   onGestureStart,
-  onGestureEnd
+  onGestureEnd,
+  onGestureCancel
 }: {
   model: DrawingModel;
   selectedAnnotationId?: string;
@@ -55,6 +56,7 @@ export function NoteBlockOverlay({
   ) => void;
   onGestureStart: () => void;
   onGestureEnd: () => void;
+  onGestureCancel: () => void;
 }) {
   const dragStateRef = useRef<AnnotationDragState | null>(null);
   const leaderDragStateRef = useRef<AnnotationLeaderDragState | null>(null);
@@ -158,6 +160,11 @@ export function NoteBlockOverlay({
     onGestureEnd();
   };
 
+  const cancelDrag = () => {
+    dragStateRef.current = null;
+    onGestureCancel();
+  };
+
   const startLeaderDrag = (
     annotation: DrawingAnnotation,
     event: PointerEvent<SVGCircleElement>
@@ -210,6 +217,11 @@ export function NoteBlockOverlay({
     onGestureEnd();
   };
 
+  const cancelLeaderDrag = () => {
+    leaderDragStateRef.current = null;
+    onGestureCancel();
+  };
+
   return (
     <g data-testid="canvas-note-overlay">
       {visibleNoteAnnotations(model).map((annotation) => {
@@ -238,7 +250,7 @@ export function NoteBlockOverlay({
               onPointerDown={(event) => startDrag(annotation, event)}
               onPointerMove={updateDrag}
               onPointerUp={endDrag}
-              onPointerCancel={endDrag}
+              onPointerCancel={cancelDrag}
               onDoubleClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -263,7 +275,7 @@ export function NoteBlockOverlay({
                 onPointerDown={(event) => startLeaderDrag(annotation, event)}
                 onPointerMove={updateLeaderDrag}
                 onPointerUp={endLeaderDrag}
-                onPointerCancel={endLeaderDrag}
+                onPointerCancel={cancelLeaderDrag}
               >
                 <title>Drag note leader target</title>
               </circle>

@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
-process.env.DATABASE_URL ??= "file:./test-e2e.db";
+const e2eDatabaseUrl = process.env.DATABASE_URL ?? "file:./test-e2e.db";
+process.env.DATABASE_URL = e2eDatabaseUrl;
 process.env.OPENAI_TERMINAL_MAP_MOCK ??= "true";
 
 export default defineConfig({
@@ -18,7 +19,7 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 120000,
     env: {
-      DATABASE_URL: "file:./test-e2e.db",
+      DATABASE_URL: e2eDatabaseUrl,
       OPENAI_TERMINAL_MAP_MOCK: "true"
     }
   },

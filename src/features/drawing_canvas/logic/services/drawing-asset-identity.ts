@@ -7,7 +7,10 @@ import type {
   DrawingPlacementRole,
   DrawingSheetCanvasModel
 } from "../../data/schema";
-import { createStablePlacementAssetId } from "../../data/schema";
+import {
+  createStablePlacementAssetId,
+  isNonAssetDrawingPlacement
+} from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import {
   GENERATED_PANEL_ENCLOSURE_SYMBOL_ID,
@@ -226,7 +229,7 @@ export function findAssetTagConflict(
 
   for (const [sheetIndex, sheet] of model.sheets.entries()) {
     for (const placement of sheet.placements) {
-      if (placement.layoutKind) {
+      if (placement.layoutKind || isNonAssetDrawingPlacement(placement)) {
         continue;
       }
 
@@ -484,8 +487,22 @@ export function buildDrawingAssetCatalog(
   symbols: ApprovedDrawingSymbol[]
 ): DrawingAssetCatalogItem[] {
   const catalog = new Map<string, DrawingAssetCatalogItem>();
+  const nonAssetLayoutHelperIds = new Set(
+    model.sheets.flatMap((sheet) =>
+      sheet.placements
+        .filter(
+          (placement) =>
+            isNonAssetDrawingPlacement(placement)
+        )
+        .map(placementAssetId)
+    )
+  );
 
   (model.assets ?? []).forEach((asset) => {
+    if (nonAssetLayoutHelperIds.has(asset.id)) {
+      return;
+    }
+
     const symbol = symbols.find(
       (candidate) =>
         candidate.symbolId === asset.symbolId &&
@@ -508,7 +525,7 @@ export function buildDrawingAssetCatalog(
 
   model.sheets.forEach((sheet, sheetIndex) => {
     sheet.placements.forEach((placement) => {
-      if (placement.layoutKind) {
+      if (isNonAssetDrawingPlacement(placement)) {
         return;
       }
 
@@ -565,7 +582,18 @@ function roleFromAssetType(type: DrawingAssetType): DrawingPlacementRole {
     return "terminal_block";
   }
 
-  if (type === "instrument" || type === "controller" || type === "breaker") {
+  if (
+    type === "instrument" ||
+    type === "controller" ||
+    type === "breaker" ||
+    type === "fuse" ||
+    type === "relay" ||
+    type === "power_supply" ||
+    type === "isolator" ||
+    type === "converter" ||
+    type === "io_module" ||
+    type === "earth_bar"
+  ) {
     return "device";
   }
 
@@ -603,7 +631,7 @@ export function detectDuplicatePlacementTags(
 
   model.sheets.forEach((sheet, sheetIndex) => {
     sheet.placements.forEach((placement) => {
-      if (placement.layoutKind) {
+      if (placement.layoutKind || isNonAssetDrawingPlacement(placement)) {
         return;
       }
 

@@ -9,6 +9,47 @@ import {
 } from "./schema";
 import { getDrawingDetail } from "./queries";
 
+export class DrawingRevisionConflictError extends Error {
+  readonly latestUpdatedAt?: string;
+
+  constructor(latestUpdatedAt?: string) {
+    super("This drawing changed after it was opened. Reload the latest revision before saving.");
+    this.name = "DrawingRevisionConflictError";
+    this.latestUpdatedAt = latestUpdatedAt;
+  }
+}
+
+async function updateDrawingRevision({
+  drawingId,
+  expectedUpdatedAt,
+  data
+}: {
+  drawingId: string;
+  expectedUpdatedAt?: string;
+  data: { title: string; status: string; modelJson: string };
+}) {
+  if (!expectedUpdatedAt) {
+    await prisma.drawing.update({ where: { id: drawingId }, data });
+    return;
+  }
+
+  const result = await prisma.drawing.updateMany({
+    where: {
+      id: drawingId,
+      updatedAt: new Date(expectedUpdatedAt)
+    },
+    data
+  });
+
+  if (result.count === 0) {
+    const latest = await prisma.drawing.findUnique({
+      where: { id: drawingId },
+      select: { updatedAt: true }
+    });
+    throw new DrawingRevisionConflictError(latest?.updatedAt.toISOString());
+  }
+}
+
 function normalizeDrawingKey(value: string): string {
   const normalized = value
     .trim()
@@ -59,8 +100,9 @@ export async function createDrawing(input: CreateDrawingInput) {
 export async function saveDrawing(input: SaveDrawingInput) {
   const parsed = saveDrawingInputSchema.parse(input);
 
-  await prisma.drawing.update({
-    where: { id: parsed.drawingId },
+  await updateDrawingRevision({
+    drawingId: parsed.drawingId,
+    expectedUpdatedAt: parsed.expectedUpdatedAt,
     data: {
       title: parsed.title,
       status: "needs_review",
@@ -71,13 +113,22 @@ export async function saveDrawing(input: SaveDrawingInput) {
   return getDrawingDetail(parsed.drawingId);
 }
 
-export async function approveDrawing(drawingId: string) {
-  await prisma.drawing.update({
-    where: { id: drawingId },
-    data: { status: "approved" }
+export async function saveDrawingReviewState(
+  input: SaveDrawingInput,
+  status: "needs_review" | "approved"
+) {
+  const parsed = saveDrawingInputSchema.parse(input);
+  await updateDrawingRevision({
+    drawingId: parsed.drawingId,
+    expectedUpdatedAt: parsed.expectedUpdatedAt,
+    data: {
+      title: parsed.title,
+      status,
+      modelJson: stringifyDrawingModel(parsed.model)
+    }
   });
 
-  return getDrawingDetail(drawingId);
+  return getDrawingDetail(parsed.drawingId);
 }
 
 export async function deleteDrawing(drawingId: string) {

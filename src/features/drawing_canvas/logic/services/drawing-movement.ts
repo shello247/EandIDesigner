@@ -9,8 +9,17 @@ import {
   clampAnnotationPosition,
   clampPointToSheet
 } from "./drawing-annotations";
-import { containedPlacementIdsForBackplanes } from "./drawing-backplane-layouts";
+import {
+  containedPlacementIdsForBackplanes,
+  isBackplanePlacement,
+  isLayoutHelperPlacement
+} from "./drawing-backplane-layouts";
+import { moveLayoutHelperByDisplayDelta } from "./drawing-backplane-scale";
 import { containedPlacementIdsForPanels } from "./drawing-asset-containment";
+import {
+  isLayoutDimensionPlacement,
+  moveLayoutDimensionByDisplayDelta
+} from "./drawing-layout-dimensions";
 import type { DrawingCanvasSelection } from "./drawing-selection";
 
 type Point = { x: number; y: number };
@@ -186,7 +195,11 @@ export function moveCanvasSelection({
     ...containedPlacementIdsForPanels(model, selection.placementIds),
     ...containedPlacementIdsForBackplanes(model, selection.placementIds)
   ]);
+  const explicitPlacementIds = new Set(selection.placementIds);
   const selectedAnnotationIds = new Set(selection.annotationIds);
+  const placementById = new Map(
+    model.placements.map((placement) => [placement.id, placement])
+  );
   const selectedPlacements = model.placements.filter((placement) =>
     selectedPlacementIds.has(placement.id)
   );
@@ -198,11 +211,42 @@ export function moveCanvasSelection({
 
   return {
     ...model,
-    placements: model.placements.map((placement) =>
-      selectedPlacementIds.has(placement.id)
-        ? movePlacementWithAttachedLabel(placement, constrainedDelta)
-        : placement
-    ),
+    placements: model.placements.map((placement) => {
+      if (!selectedPlacementIds.has(placement.id)) {
+        return placement;
+      }
+
+      const parentBackplane =
+        isLayoutHelperPlacement(placement) && placement.layoutParentId
+          ? placementById.get(placement.layoutParentId)
+          : undefined;
+
+      if (
+        parentBackplane &&
+        isBackplanePlacement(parentBackplane) &&
+        explicitPlacementIds.has(placement.id) &&
+        !explicitPlacementIds.has(parentBackplane.id)
+      ) {
+        if (isLayoutDimensionPlacement(placement)) {
+          return moveLayoutDimensionByDisplayDelta({
+            sheet: model.sheet,
+            placement,
+            backplane: parentBackplane,
+            delta: constrainedDelta,
+            model
+          });
+        }
+
+        return moveLayoutHelperByDisplayDelta({
+          sheet: model.sheet,
+          placement,
+          backplane: parentBackplane,
+          delta: constrainedDelta
+        });
+      }
+
+      return movePlacementWithAttachedLabel(placement, constrainedDelta);
+    }),
     connections: model.connections.map((connection) =>
       connection.route &&
       isConnectionFullySelected(connection, selectedPlacementIds)

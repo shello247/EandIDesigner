@@ -53,8 +53,19 @@ uses each symbol's metadata to:
 - support anchor-to-anchor connection authoring.
 - derive readable endpoint labels.
 - derive conductor and wire ID defaults.
+- normalize approved terminals for Detailed Panel Drawings. A terminal may declare
+  `panelSide` as `external`, `internal`, or `single`; repeated logical keys require
+  explicit unique sides, while legacy one-anchor terminals remain single-sided.
+- constrain Detailed Panel connection patterns through optional per-terminal
+  `electricalDomains` (`signal`, `power`, `neutral`, `shield`, `protective_earth`,
+  or `signal_ground`). Missing constraints remain backward-compatible and produce
+  capacity/domain warnings rather than guessed engineering behavior.
 - filter and place approved panel layout symbols at configured physical
   millimetre size.
+- expose symbols to Detailed Panel Drawings only through explicit
+  `panelWiring` capability metadata. The capability declares the package asset
+  type, default tag prefix, and optional schematic scale; valid electrical
+  terminal/anchor metadata remains mandatory.
 
 The canvas should not bypass this module to read symbol internals directly.
 

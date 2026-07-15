@@ -8,6 +8,7 @@ import type {
   SymbolAnchor,
   SymbolTerminal
 } from "@/features/symbol_registry/data/schema";
+import type { DimensionAttachmentTarget } from "../../logic/services/drawing-dimension-snapping";
 
 export type DragState = {
   placementId: string;
@@ -15,9 +16,18 @@ export type DragState = {
   startPointer: { x: number; y: number };
   startPlacement: { x: number; y: number };
   startModel: DrawingSheetCanvasModel;
+  previewDelta?: { x: number; y: number };
 };
 
-export type ResizeHandle = "nw" | "ne" | "sw" | "se";
+export type ResizeHandle =
+  | "nw"
+  | "ne"
+  | "sw"
+  | "se"
+  | "dimension-start"
+  | "dimension-end"
+  | "dimension-offset"
+  | "dimension-label";
 
 export type PlacementResizeState = {
   placementId: string;
@@ -26,6 +36,14 @@ export type PlacementResizeState = {
   baseSize: { width: number; height: number };
   center?: { x: number; y: number };
   rotation?: number;
+};
+
+export type DimensionSnapFeedback = {
+  placementId: string;
+  backplaneId: string;
+  handle: "dimension-start" | "dimension-end";
+  target: DimensionAttachmentTarget;
+  guideSheetPoint: { x: number; y: number };
 };
 
 export type PlacementRotationState = {

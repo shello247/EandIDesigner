@@ -18,9 +18,33 @@ import {
 } from "../../api/actions";
 import type {
   SymbolMetadata,
+  SymbolElectricalDomain,
   SymbolTerminal,
+  SymbolTerminalPanelSide,
   TerminalMapVerificationResult
 } from "../../data/schema";
+
+const PANEL_SIDE_OPTIONS: Array<{
+  value: SymbolTerminalPanelSide | "";
+  label: string;
+}> = [
+  { value: "", label: "Automatic / legacy" },
+  { value: "external", label: "External (field)" },
+  { value: "internal", label: "Internal (panel)" },
+  { value: "single", label: "Single / not sided" }
+];
+
+const ELECTRICAL_DOMAIN_OPTIONS: Array<{
+  value: SymbolElectricalDomain;
+  label: string;
+}> = [
+  { value: "signal", label: "Signal" },
+  { value: "power", label: "Power" },
+  { value: "neutral", label: "Neutral" },
+  { value: "shield", label: "Shield" },
+  { value: "protective_earth", label: "PE" },
+  { value: "signal_ground", label: "Signal ground" }
+];
 
 function cloneTerminals(metadata: SymbolMetadata): SymbolTerminal[] {
   return metadata.terminals.map((terminal) => ({ ...terminal }));
@@ -47,6 +71,11 @@ function normalizeTerminal(terminal: SymbolTerminal): SymbolTerminal {
     label: terminal.label.trim(),
     function: nextFunction.length > 0 ? nextFunction : undefined,
     anchorKey: terminal.anchorKey.trim(),
+    panelSide: terminal.panelSide,
+    electricalDomains:
+      terminal.electricalDomains && terminal.electricalDomains.length > 0
+        ? terminal.electricalDomains
+        : undefined,
     requiredForWiring: terminal.requiredForWiring
   };
 }
@@ -232,6 +261,8 @@ export function TerminalMapTable({
             <th>Label</th>
             <th>Function</th>
             <th>Anchor</th>
+            <th>Panel side</th>
+            <th>Domains</th>
             <th>Required</th>
           </tr>
         </thead>
@@ -242,6 +273,19 @@ export function TerminalMapTable({
               <td>{terminal.label}</td>
               <td>{terminal.function || "-"}</td>
               <td>{terminal.anchorKey}</td>
+              <td>
+                {PANEL_SIDE_OPTIONS.find(
+                  (option) => option.value === (terminal.panelSide ?? "")
+                )?.label ?? "Automatic / legacy"}
+              </td>
+              <td>
+                {terminal.electricalDomains?.map(
+                  (domain) =>
+                    ELECTRICAL_DOMAIN_OPTIONS.find(
+                      (option) => option.value === domain
+                    )?.label ?? domain
+                ).join(", ") || "Unknown / unrestricted"}
+              </td>
               <td>{terminal.requiredForWiring ? "Yes" : "No"}</td>
             </tr>
           ))}
@@ -291,6 +335,8 @@ export function TerminalMapTable({
                     <th>Label</th>
                     <th>Function</th>
                     <th>Anchor</th>
+                    <th>Panel side</th>
+                    <th>Domains</th>
                     <th>Required</th>
                     <th></th>
                   </tr>
@@ -354,6 +400,48 @@ export function TerminalMapTable({
                             <option value="">No anchors</option>
                           ) : null}
                         </select>
+                      </td>
+                      <td>
+                        <select
+                          aria-label={`Panel side for terminal ${terminal.key}`}
+                          className="field-input min-w-40"
+                          value={terminal.panelSide ?? ""}
+                          onChange={(event) =>
+                            updateDraftTerminal(index, {
+                              panelSide:
+                                (event.currentTarget.value as
+                                  | SymbolTerminalPanelSide
+                                  | "") || undefined
+                            })
+                          }
+                        >
+                          {PANEL_SIDE_OPTIONS.map((option) => (
+                            <option key={option.value || "automatic"} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <div className="grid min-w-56 grid-cols-2 gap-x-3 gap-y-1">
+                          {ELECTRICAL_DOMAIN_OPTIONS.map((option) => (
+                            <label key={option.value} className="flex items-center gap-1.5 text-[11px] text-slate-600">
+                              <input
+                                type="checkbox"
+                                checked={terminal.electricalDomains?.includes(option.value) ?? false}
+                                onChange={(event) => {
+                                  const current = terminal.electricalDomains ?? [];
+                                  updateDraftTerminal(index, {
+                                    electricalDomains: event.currentTarget.checked
+                                      ? [...current, option.value]
+                                      : current.filter((domain) => domain !== option.value)
+                                  });
+                                }}
+                              />
+                              {option.label}
+                            </label>
+                          ))}
+                        </div>
                       </td>
                       <td>
                         <input

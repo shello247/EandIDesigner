@@ -227,7 +227,8 @@ export async function getSymbolVersionForExport(symbolId: string) {
 export async function listDrawingSymbolVersions() {
   const rows = await prisma.symbol.findMany({
     where: {
-      status: { not: "archived" }
+      status: { not: "archived" },
+      category: { not: "network_device" }
     },
     include: {
       versions: {

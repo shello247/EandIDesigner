@@ -40,14 +40,28 @@ import {
   getLayoutChildrenForBackplane,
   isBackplanePlacement,
   isLayoutHelperPlacement,
-  resizeBackplane
+  normalizeLayoutHelperDimensionsForSymbol,
+  shouldAutosizeLayoutSymbolToBackplane
 } from "../../logic/services/drawing-backplane-layouts";
+import { resolveBackplaneLayoutScale } from "../../logic/services/drawing-backplane-scale";
 import { getAnnotationSize } from "../../logic/services/drawing-annotations";
 import {
   getConnectionLabel,
   getSymbolForPlacement
 } from "../../logic/services/drawing-connections";
 import { isPanelLayoutLibrarySymbol } from "../../logic/services/symbol-library-context";
+import {
+  layoutLabelPositionLabels,
+  layoutLabelPositions,
+  resolveLayoutLabel,
+  type LayoutLabelPosition
+} from "../../logic/services/drawing-layout-labels";
+import {
+  isLayoutDimensionPlacement,
+  layoutDimensionValueLabel,
+  resolveAssociatedLayoutDimensionPlacement,
+  updateLayoutDimensionPlacement
+} from "../../logic/services/drawing-layout-dimensions";
 import { getConnectionTransitionGroups } from "../../logic/services/drawing-connection-groups";
 import {
   deriveWireId,
@@ -67,7 +81,14 @@ import {
   detectTerminalBlockWarnings
 } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-qc";
 import type { TerminalBlockPlacement } from "@/features/drawing_terminal_blocks/types";
+import { getTerminalBlockGroupPhysicalSize } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
 import type { AssetLinkDialogMode } from "./asset-link-dialog";
+import {
+  getPanelComponentPlacementSummary,
+  type PanelConnectionPatternRecord,
+  type PanelWireAttributes
+} from "@/features/drawing_panel_wiring/api/public";
+import { isGeneratedPanelPatternLegendPlacement } from "../../logic/services/drawing-panel-reference-symbols";
 
 function placementAnchorOptions(
   placementId: string,
@@ -95,12 +116,16 @@ export function PlacementPropertiesPanel({
   activeSheet,
   activeSheetNumber,
   sheetCount,
+  sectionLabel,
+  sectionMemberCount,
+  sectionMoveOptions,
   symbols,
   headerAction,
   onTitleChange,
   onTitleBlockChange,
   onSheetMetadataChange,
   onSectionTitlePageChange,
+  onMoveSheetToSection,
   selection,
   selectedPlacementId,
   onPlacementAssetTagChange,
@@ -116,6 +141,10 @@ export function PlacementPropertiesPanel({
   onConnectionChange,
   onConnectionRemove,
   onConnectionRouteReset,
+  onInternalWireChange,
+  onPanelPatternChange,
+  onPanelPatternLegendVisibilityChange,
+  showConnections = true,
   onAnnotationChange,
   onAnnotationRemove
 }: {
@@ -125,6 +154,9 @@ export function PlacementPropertiesPanel({
   activeSheet: DrawingPackageSheet;
   activeSheetNumber: number;
   sheetCount: number;
+  sectionLabel: string;
+  sectionMemberCount?: number;
+  sectionMoveOptions: Array<{ id: string; label: string }>;
   symbols: ApprovedDrawingSymbol[];
   headerAction?: ReactNode;
   onTitleChange: (title: string) => void;
@@ -152,7 +184,11 @@ export function PlacementPropertiesPanel({
   onPanelTitleChange: (assetId: string, title: string) => void;
   onTerminalBlockChange: (
     assetId: string,
-    terminalBlock: TerminalBlockPlacement
+    updates: {
+      terminalBlock?: TerminalBlockPlacement;
+      title?: string;
+      description?: string;
+    }
   ) => void;
   onPlacementContainerChange: (
     placementId: string,
@@ -167,6 +203,17 @@ export function PlacementPropertiesPanel({
   ) => void;
   onConnectionRemove: (connectionId: string) => void;
   onConnectionRouteReset: (connectionId: string) => void;
+  onInternalWireChange?: (
+    wireRecordId: string,
+    updates: { wireId: string; attributes?: PanelWireAttributes }
+  ) => void;
+  onMoveSheetToSection: (targetSectionId: string | "front_matter") => void;
+  onPanelPatternChange?: (
+    patternId: string,
+    updates: { label?: string; description?: string }
+  ) => void;
+  onPanelPatternLegendVisibilityChange?: (visible: boolean) => void;
+  showConnections?: boolean;
   onAnnotationChange: (
     annotationId: string,
     updates: Partial<DrawingAnnotation>
@@ -206,8 +253,12 @@ export function PlacementPropertiesPanel({
         sheet={activeSheet}
         sheetNumber={activeSheetNumber}
         sheetCount={sheetCount}
+        sectionLabel={sectionLabel}
+        sectionMemberCount={sectionMemberCount}
+        sectionMoveOptions={sectionMoveOptions}
         onSheetMetadataChange={onSheetMetadataChange}
         onSectionTitlePageChange={onSectionTitlePageChange}
+        onMoveSheetToSection={onMoveSheetToSection}
       />
 
       <MultiSelectionSummary selection={selection} />
@@ -224,9 +275,19 @@ export function PlacementPropertiesPanel({
         placement={selectedPlacement}
         packageModel={packageModel}
         symbols={symbols}
+        allowCreateAsset={
+          activeSheet.panelDrawingContext?.kind !== "detailed_panel_wiring"
+        }
         onPlacementAssetTagChange={onPlacementAssetTagChange}
         onOpenAssetLinkDialog={onOpenAssetLinkDialog}
         onPlacementTitleChange={onPlacementTitleChange}
+      />
+
+      <SelectedDetailedPanelComponentSummary
+        placement={selectedPlacement}
+        activeSheet={activeSheet}
+        packageModel={packageModel}
+        symbols={symbols}
       />
 
       <SelectedPlacementLayoutEditor
@@ -259,7 +320,26 @@ export function PlacementPropertiesPanel({
         onAnnotationRemove={onAnnotationRemove}
       />
 
-      <ConnectionEditor
+      <InternalWireEditor
+        packageModel={packageModel}
+        model={model}
+        selectedConnectionId={selectedConnectionId}
+        onInternalWireChange={onInternalWireChange}
+        onConnectionRemove={onConnectionRemove}
+        onConnectionRouteReset={onConnectionRouteReset}
+      />
+
+      <PanelPatternEditor
+        packageModel={packageModel}
+        model={model}
+        selectedConnectionId={selectedConnectionId}
+        onPanelPatternChange={onPanelPatternChange}
+        onLegendVisibilityChange={onPanelPatternLegendVisibilityChange}
+        onConnectionRemove={onConnectionRemove}
+        onConnectionRouteReset={onConnectionRouteReset}
+      />
+
+      {showConnections ? <ConnectionEditor
         model={model}
         symbols={symbols}
         selectedConnectionId={selectedConnectionId}
@@ -267,8 +347,104 @@ export function PlacementPropertiesPanel({
         onConnectionChange={onConnectionChange}
         onConnectionRemove={onConnectionRemove}
         onConnectionRouteReset={onConnectionRouteReset}
-      />
+      /> : null}
     </div>
+  );
+}
+
+function SelectedDetailedPanelComponentSummary({
+  placement,
+  activeSheet,
+  packageModel,
+  symbols
+}: {
+  placement?: DrawingModel["placements"][number];
+  activeSheet: DrawingPackageSheet;
+  packageModel: DrawingPackageModel;
+  symbols: ApprovedDrawingSymbol[];
+}) {
+  if (
+    !placement?.assetId ||
+    activeSheet.panelDrawingContext?.kind !== "detailed_panel_wiring" ||
+    placement.containerAssetId !== activeSheet.panelDrawingContext.panelAssetId
+  ) {
+    return null;
+  }
+  const symbol = symbols.find(
+    (candidate) =>
+      candidate.symbolId === placement.symbolId &&
+      candidate.versionId === placement.versionId
+  );
+  if (!symbol?.metadata.panelWiring) {
+    return null;
+  }
+  const asset = packageModel.assets?.find(
+    (candidate) => candidate.id === placement.assetId
+  );
+  const panel = packageModel.assets?.find(
+    (candidate) => candidate.id === placement.containerAssetId
+  );
+  const summary = getPanelComponentPlacementSummary({
+    symbol,
+    placement,
+    asset
+  });
+
+  return (
+    <section className="tool-panel overflow-hidden">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <h2 className="text-sm font-bold">Panel Component</h2>
+        <p className="mt-0.5 text-xs text-slate-500">
+          {summary.tag} / {summary.title ?? symbol.displayName}
+        </p>
+      </div>
+      <div className="space-y-3 p-4 text-xs">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase text-slate-500">Type</p>
+            <p className="mt-1 font-semibold text-slate-900">
+              {(summary.assetType ?? symbol.metadata.panelWiring.assetType)
+                .replace(/_/g, " ")
+                .replace(/\b\w/g, (letter) => letter.toUpperCase())}
+            </p>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase text-slate-500">Parent panel</p>
+            <p className="mt-1 font-semibold text-slate-900">{panel?.tag ?? "Missing"}</p>
+          </div>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase text-slate-500">
+            Approved symbol
+          </p>
+          <p className="mt-1 font-semibold text-slate-900">
+            {symbol.displayName} / Version {symbol.versionNumber}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase text-slate-500">
+            Terminals ({summary.terminals.length})
+          </p>
+          <div className="mt-2 space-y-1.5">
+            {summary.terminals.map((terminal) => (
+              <div key={terminal.terminalKey} className="rounded-md border border-slate-200 px-2.5 py-2">
+                <p className="font-bold text-slate-900">
+                  {terminal.terminalKey} / {terminal.label}
+                </p>
+                <p className="mt-0.5 text-[10px] text-slate-500">
+                  {terminal.function ?? "Electrical terminal"} / {terminal.supportedSides.join(", ")}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+        {summary.warnings.map((warning) => (
+          <div key={warning} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+            {warning}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -310,12 +486,19 @@ function SheetPropertiesEditor({
   sheet,
   sheetNumber,
   sheetCount,
+  sectionLabel,
+  sectionMemberCount,
+  sectionMoveOptions,
   onSheetMetadataChange,
-  onSectionTitlePageChange
+  onSectionTitlePageChange,
+  onMoveSheetToSection
 }: {
   sheet: DrawingPackageSheet;
   sheetNumber: number;
   sheetCount: number;
+  sectionLabel: string;
+  sectionMemberCount?: number;
+  sectionMoveOptions: Array<{ id: string; label: string }>;
   onSheetMetadataChange: (updates: {
     name?: string;
     description?: string;
@@ -325,6 +508,7 @@ function SheetPropertiesEditor({
       NonNullable<DrawingPackageSheet["sectionTitlePage"]>
     >
   ) => void;
+  onMoveSheetToSection: (targetSectionId: string | "front_matter") => void;
 }) {
   const isSectionTitlePage = sheet.kind === "section_title";
   const sectionTitlePage = sheet.sectionTitlePage ?? {};
@@ -356,6 +540,18 @@ function SheetPropertiesEditor({
 
         {isSectionTitlePage ? (
           <>
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-[11px] font-bold uppercase text-slate-500">
+                Package section
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {sectionLabel}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {sectionMemberCount ?? 0} member sheet
+                {(sectionMemberCount ?? 0) === 1 ? "" : "s"}
+              </p>
+            </div>
             <div>
               <label className="field-label" htmlFor="section-title-page-title">
                 Section title
@@ -391,43 +587,63 @@ function SheetPropertiesEditor({
                 }
               />
             </div>
+          </>
+        ) : (
+          <>
             <div>
-              <label
-                className="field-label"
-                htmlFor="section-title-page-number"
-              >
-                Section number
+              <label className="field-label" htmlFor="active-sheet-description">
+                Description
               </label>
-              <input
-                id="section-title-page-number"
-                className="field-input"
-                value={sectionTitlePage.sectionNumber ?? ""}
-                placeholder="Optional"
+              <textarea
+                id="active-sheet-description"
+                className="field-input min-h-24 resize-y leading-relaxed"
+                value={sheet.description ?? ""}
+                placeholder="Optional sheet description"
                 onChange={(event) =>
-                  onSectionTitlePageChange({
-                    sectionNumber: event.currentTarget.value
+                  onSheetMetadataChange({
+                    description: event.currentTarget.value
                   })
                 }
               />
             </div>
+            <div>
+              <label className="field-label" htmlFor="active-sheet-section">
+                Package section
+              </label>
+              <div
+                id="active-sheet-section"
+                className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900"
+              >
+                {sectionLabel}
+              </div>
+            </div>
+            {sectionMoveOptions.length > 0 ? (
+              <div>
+                <label
+                  className="field-label"
+                  htmlFor="move-active-sheet-section"
+                >
+                  Move to section
+                </label>
+                <select
+                  id="move-active-sheet-section"
+                  className="field-input"
+                  value=""
+                  onChange={(event) => {
+                    const target = event.currentTarget.value;
+                    if (target) onMoveSheetToSection(target);
+                  }}
+                >
+                  <option value="">Choose destination...</option>
+                  {sectionMoveOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
           </>
-        ) : (
-          <div>
-            <label className="field-label" htmlFor="active-sheet-description">
-              Description
-            </label>
-            <textarea
-              id="active-sheet-description"
-              className="field-input min-h-24 resize-y leading-relaxed"
-              value={sheet.description ?? ""}
-              placeholder="Optional sheet description"
-              onChange={(event) =>
-                onSheetMetadataChange({
-                  description: event.currentTarget.value
-                })
-              }
-            />
-          </div>
         )}
       </div>
     </section>
@@ -709,6 +925,7 @@ function SelectedPlacementAssetEditor({
   placement,
   packageModel,
   symbols,
+  allowCreateAsset,
   onPlacementAssetTagChange,
   onOpenAssetLinkDialog,
   onPlacementTitleChange
@@ -716,6 +933,7 @@ function SelectedPlacementAssetEditor({
   placement: DrawingModel["placements"][number] | undefined;
   packageModel: DrawingPackageModel;
   symbols: ApprovedDrawingSymbol[];
+  allowCreateAsset: boolean;
   onPlacementAssetTagChange: (assetId: string, tag: string) => void;
   onOpenAssetLinkDialog: (mode: AssetLinkDialogMode) => void;
   onPlacementTitleChange: (placementId: string, title: string) => void;
@@ -902,14 +1120,16 @@ function SelectedPlacementAssetEditor({
             Asset link
           </div>
           <div className="grid gap-2">
-            <button
-              type="button"
-              className="icon-button justify-start"
-              onClick={() => onOpenAssetLinkDialog("create")}
-            >
-              <GitBranch aria-hidden="true" size={14} />
-              Create new asset
-            </button>
+            {allowCreateAsset ? (
+              <button
+                type="button"
+                className="icon-button justify-start"
+                onClick={() => onOpenAssetLinkDialog("create")}
+              >
+                <GitBranch aria-hidden="true" size={14} />
+                Create new asset
+              </button>
+            ) : null}
             <button
               type="button"
               className="icon-button justify-start"
@@ -918,7 +1138,7 @@ function SelectedPlacementAssetEditor({
               <Link2 aria-hidden="true" size={14} />
               Reference existing asset
             </button>
-            {asset && asset.placementRefs.length > 1 ? (
+            {allowCreateAsset && asset && asset.placementRefs.length > 1 ? (
               <button
                 type="button"
                 className="icon-button justify-start"
@@ -960,6 +1180,13 @@ function SelectedPlacementLayoutEditor({
   ) => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [dimensionDraft, setDimensionDraft] = useState<{
+    placementId: string;
+    values: {
+      lengthMm: string;
+      widthMm: string;
+    };
+  } | null>(null);
   const symbol = getSymbolForPlacement(placement, symbols);
   const containers = useMemo(() => getVisibleSheetContainers(model), [model]);
   const backplanes = useMemo(() => getBackplanesForSheet(model), [model]);
@@ -970,28 +1197,60 @@ function SelectedPlacementLayoutEditor({
 
   if (isBackplanePlacement(placement)) {
     const layoutDimensions = placement.layoutDimensions;
+    const activeDraft =
+      dimensionDraft?.placementId === placement.id ? dimensionDraft : null;
+    const draftValues = activeDraft?.values ?? {
+      lengthMm: String(layoutDimensions.lengthMm),
+      widthMm: String(layoutDimensions.widthMm)
+    };
     const parentPanel = containers.find(
       (container) => container.assetId === placement.containerAssetId
     );
+    const resolvedScale = resolveBackplaneLayoutScale(model.sheet, placement);
     const childCount = getLayoutChildrenForBackplane(model, placement.id).length;
-    const updateDimension = (
+    const updateDimensionDraft = (
       key: "lengthMm" | "widthMm",
       value: string
     ) => {
-      const parsed = Number(value);
+      setDimensionDraft((current) => {
+        const base =
+          current?.placementId === placement.id
+            ? current.values
+            : {
+                lengthMm: String(layoutDimensions.lengthMm),
+                widthMm: String(layoutDimensions.widthMm)
+              };
 
-      if (!Number.isFinite(parsed) || parsed <= 0) {
+        return {
+          placementId: placement.id,
+          values: {
+            ...base,
+            [key]: value
+          }
+        };
+      });
+    };
+    const commitDimensionDraft = () => {
+      const width = Number(draftValues.lengthMm);
+      const height = Number(draftValues.widthMm);
+
+      if (
+        !Number.isFinite(width) ||
+        width <= 0 ||
+        !Number.isFinite(height) ||
+        height <= 0
+      ) {
+        setDimensionDraft(null);
         return;
       }
 
-      const resized = resizeBackplane(model, placement, {
-        x: placement.x,
-        y: placement.y,
-        width: key === "lengthMm" ? parsed : layoutDimensions.lengthMm,
-        height: key === "widthMm" ? parsed : layoutDimensions.widthMm
+      setDimensionDraft(null);
+      onPlacementChange(placement.id, {
+        layoutDimensions: {
+          lengthMm: Number(width.toFixed(2)),
+          widthMm: Number(height.toFixed(2))
+        }
       });
-
-      onPlacementChange(placement.id, resized);
     };
 
     return (
@@ -1030,6 +1289,10 @@ function SelectedPlacementLayoutEditor({
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
             {childCount} layout item{childCount === 1 ? "" : "s"} assigned.
           </div>
+          <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500">
+            Scale: {resolvedScale.mode === "auto" ? "Auto " : ""}
+            {resolvedScale.label}
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="field-label" htmlFor="backplane-length">
@@ -1039,10 +1302,19 @@ function SelectedPlacementLayoutEditor({
                 id="backplane-length"
                 className="field-input"
                 inputMode="decimal"
-                value={layoutDimensions.lengthMm}
+                value={draftValues.lengthMm}
                 onChange={(event) =>
-                  updateDimension("lengthMm", event.currentTarget.value)
+                  updateDimensionDraft("lengthMm", event.currentTarget.value)
                 }
+                onBlur={commitDimensionDraft}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                  if (event.key === "Escape") {
+                    setDimensionDraft(null);
+                  }
+                }}
               />
             </div>
             <div>
@@ -1053,12 +1325,237 @@ function SelectedPlacementLayoutEditor({
                 id="backplane-width"
                 className="field-input"
                 inputMode="decimal"
-                value={layoutDimensions.widthMm}
+                value={draftValues.widthMm}
                 onChange={(event) =>
-                  updateDimension("widthMm", event.currentTarget.value)
+                  updateDimensionDraft("widthMm", event.currentTarget.value)
+                }
+                onBlur={commitDimensionDraft}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                  if (event.key === "Escape") {
+                    setDimensionDraft(null);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (isLayoutDimensionPlacement(placement)) {
+    const currentBackplane = backplanes.find(
+      (candidate) => candidate.id === placement.layoutParentId
+    );
+    const resolvedPlacement = currentBackplane
+      ? resolveAssociatedLayoutDimensionPlacement({
+          model,
+          placement,
+          backplane: currentBackplane
+        })
+      : placement;
+    const dimension = resolvedPlacement.layoutDimension!;
+    const updateDimension = (
+      updates: Partial<NonNullable<typeof placement.layoutDimension>>
+    ) => {
+      if (!currentBackplane) {
+        onPlacementChange(placement.id, {
+          layoutDimension: {
+            ...dimension,
+            ...updates
+          }
+        });
+        return;
+      }
+
+      const updated = updateLayoutDimensionPlacement({
+        placement: resolvedPlacement,
+        backplane: currentBackplane,
+        sheet: model.sheet,
+        updates
+      });
+
+      onPlacementChange(placement.id, {
+        x: updated.x,
+        y: updated.y,
+        layoutPosition: updated.layoutPosition,
+        layoutDimensions: updated.layoutDimensions,
+        layoutDimension: updated.layoutDimension
+      });
+    };
+    const updateNumericDimension = (
+      key: "startMm" | "endMm" | "offsetMm" | "labelPositionMm",
+      value: string
+    ) => {
+      const parsed = Number(value);
+
+      if (!Number.isFinite(parsed)) {
+        return;
+      }
+
+      updateDimension({ [key]: Number(parsed.toFixed(2)) });
+    };
+
+    return (
+      <section className="tool-panel overflow-hidden">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 text-left transition hover:bg-slate-50"
+          aria-expanded={isExpanded}
+          aria-controls="selected-placement-dimension-editor"
+          onClick={() => setIsExpanded((current) => !current)}
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-bold text-slate-950">
+              Dimension
+            </span>
+            <span className="mt-0.5 block truncate text-xs text-slate-500">
+              {dimension.orientation === "horizontal"
+                ? "Horizontal"
+                : "Vertical"}{" "}
+              / {layoutDimensionValueLabel(resolvedPlacement)}
+            </span>
+          </span>
+          <ChevronRight
+            aria-hidden="true"
+            size={16}
+            className={[
+              "shrink-0 text-slate-400 transition-transform",
+              isExpanded ? "rotate-90" : ""
+            ].join(" ")}
+          />
+        </button>
+
+        <div
+          id="selected-placement-dimension-editor"
+          className={isExpanded ? "space-y-3 p-4" : "hidden"}
+        >
+          {!currentBackplane ? (
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+              <AlertTriangle
+                aria-hidden="true"
+                size={14}
+                className="mt-0.5 shrink-0"
+              />
+              <span>This dimension is not assigned to a backplane.</span>
+            </div>
+          ) : null}
+          <div>
+            <label className="field-label" htmlFor="layout-dimension-orientation">
+              Orientation
+            </label>
+            <input
+              id="layout-dimension-orientation"
+              className="field-input"
+              value={
+                dimension.orientation === "horizontal"
+                  ? "Horizontal"
+                  : "Vertical"
+              }
+              readOnly
+            />
+          </div>
+          <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-800">
+            Drag the grey witness grips onto measured edges. The yellow end
+            grip moves the dimension line; the yellow centre grip moves its
+            label. Numeric values remain exact.
+          </div>
+          <div>
+            <label
+              className="field-label"
+              htmlFor="layout-dimension-label-position"
+            >
+              Label position mm
+            </label>
+            <input
+              id="layout-dimension-label-position"
+              className="field-input"
+              inputMode="decimal"
+              value={
+                dimension.labelPositionMm ??
+                Number(((dimension.startMm + dimension.endMm) / 2).toFixed(2))
+              }
+              onChange={(event) =>
+                updateNumericDimension(
+                  "labelPositionMm",
+                  event.currentTarget.value
+                )
+              }
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="field-label" htmlFor="layout-dimension-start">
+                Start mm
+              </label>
+              <input
+                id="layout-dimension-start"
+                className="field-input"
+                inputMode="decimal"
+                value={dimension.startMm}
+                onChange={(event) =>
+                  updateNumericDimension("startMm", event.currentTarget.value)
                 }
               />
             </div>
+            <div>
+              <label className="field-label" htmlFor="layout-dimension-end">
+                End mm
+              </label>
+              <input
+                id="layout-dimension-end"
+                className="field-input"
+                inputMode="decimal"
+                value={dimension.endMm}
+                onChange={(event) =>
+                  updateNumericDimension("endMm", event.currentTarget.value)
+                }
+              />
+            </div>
+            <div>
+              <label className="field-label" htmlFor="layout-dimension-offset">
+                Offset mm
+              </label>
+              <input
+                id="layout-dimension-offset"
+                className="field-input"
+                inputMode="decimal"
+                value={dimension.offsetMm}
+                onChange={(event) =>
+                  updateNumericDimension("offsetMm", event.currentTarget.value)
+                }
+              />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              checked={dimension.showValue ?? true}
+              onChange={(event) =>
+                updateDimension({ showValue: event.currentTarget.checked })
+              }
+            />
+            Show value
+          </label>
+          <div>
+            <label className="field-label" htmlFor="layout-dimension-label">
+              Label override
+            </label>
+            <input
+              id="layout-dimension-label"
+              className="field-input"
+              value={dimension.labelOverride ?? ""}
+              placeholder={layoutDimensionValueLabel(resolvedPlacement)}
+              onChange={(event) =>
+                updateDimension({
+                  labelOverride: event.currentTarget.value || undefined
+                })
+              }
+            />
           </div>
         </div>
       </section>
@@ -1076,15 +1573,25 @@ function SelectedPlacementLayoutEditor({
   const currentBackplane = backplanes.find(
     (candidate) => candidate.id === placement.layoutParentId
   );
-  const layoutDimensions = placement.layoutDimensions ?? {
+  const normalizedPlacement = normalizeLayoutHelperDimensionsForSymbol(
+    placement,
+    symbol
+  );
+  const layoutDimensions = normalizedPlacement.layoutDimensions ?? {
     lengthMm: symbol.metadata.physicalWidthMm ?? symbol.metadata.viewBox.width,
     widthMm: symbol.metadata.physicalHeightMm ?? symbol.metadata.viewBox.height
   };
+  const canEditDimensions = shouldAutosizeLayoutSymbolToBackplane(symbol);
+  const resolvedLabel = resolveLayoutLabel({ placement, symbol });
 
   const updateDimension = (
     key: "lengthMm" | "widthMm",
     value: string
   ) => {
+    if (!canEditDimensions) {
+      return;
+    }
+
     const parsed = Number(value);
 
     if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -1107,6 +1614,17 @@ function SelectedPlacementLayoutEditor({
     });
   };
 
+  const updateLayoutLabel = (
+    updates: Partial<NonNullable<typeof placement.layoutLabel>>
+  ) => {
+    onPlacementChange(placement.id, {
+      layoutLabel: {
+        ...(placement.layoutLabel ?? {}),
+        ...updates
+      }
+    });
+  };
+
   const updateParentBackplane = (backplaneId: string) => {
     const backplane = backplanes.find((candidate) => candidate.id === backplaneId);
 
@@ -1121,7 +1639,8 @@ function SelectedPlacementLayoutEditor({
     const updated = autosizeLayoutHelperToBackplane({
       placement,
       backplane,
-      symbol
+      symbol,
+      sheet: model.sheet
     });
 
     onPlacementChange(placement.id, {
@@ -1189,6 +1708,49 @@ function SelectedPlacementLayoutEditor({
             <span>This layout item is not assigned to a backplane.</span>
           </div>
         ) : null}
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-bold uppercase text-slate-500">
+                Label
+              </div>
+              <div className="mt-0.5 text-xs text-slate-500">
+                Generated from item tag.
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                checked={resolvedLabel.visible}
+                onChange={(event) =>
+                  updateLayoutLabel({ visible: event.currentTarget.checked })
+                }
+              />
+              Show
+            </label>
+          </div>
+          <label className="field-label" htmlFor="layout-symbol-label-position">
+            Position
+          </label>
+          <select
+            id="layout-symbol-label-position"
+            className="field-input"
+            value={resolvedLabel.position}
+            disabled={!resolvedLabel.visible}
+            onChange={(event) =>
+              updateLayoutLabel({
+                position: event.currentTarget.value as LayoutLabelPosition
+              })
+            }
+          >
+            {layoutLabelPositions.map((position) => (
+              <option key={position} value={position}>
+                {layoutLabelPositionLabels[position]}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="field-label" htmlFor="layout-symbol-length">
@@ -1199,6 +1761,8 @@ function SelectedPlacementLayoutEditor({
               className="field-input"
               inputMode="decimal"
               value={layoutDimensions.lengthMm}
+              readOnly={!canEditDimensions}
+              disabled={!canEditDimensions}
               onChange={(event) =>
                 updateDimension("lengthMm", event.currentTarget.value)
               }
@@ -1213,12 +1777,20 @@ function SelectedPlacementLayoutEditor({
               className="field-input"
               inputMode="decimal"
               value={layoutDimensions.widthMm}
+              readOnly={!canEditDimensions}
+              disabled={!canEditDimensions}
               onChange={(event) =>
                 updateDimension("widthMm", event.currentTarget.value)
               }
             />
           </div>
         </div>
+        {!canEditDimensions ? (
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
+            Fixed-size layout symbol. Dimensions come from the approved symbol
+            metadata.
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -1233,7 +1805,11 @@ function SelectedTerminalBlockEditor({
   packageModel: DrawingPackageModel;
   onTerminalBlockChange: (
     assetId: string,
-    terminalBlock: TerminalBlockPlacement
+    updates: {
+      terminalBlock?: TerminalBlockPlacement;
+      title?: string;
+      description?: string;
+    }
   ) => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -1255,7 +1831,11 @@ function SelectedTerminalBlockEditor({
 
   const assetId = placementAssetId(placement);
   const config = normalizeTerminalBlockPlacement(placement.terminalBlock);
+  const physicalSize = getTerminalBlockGroupPhysicalSize(config);
   const terminals = terminalBlockTerminals(config);
+  const packageAsset = packageModel.assets.find(
+    (asset) => asset.id === assetId
+  );
   const terminalBlockAsset = terminalBlockCatalog.find(
     (candidate) => candidate.assetId === assetId
   );
@@ -1273,10 +1853,12 @@ function SelectedTerminalBlockEditor({
   const updateConfig = (updates: Partial<TerminalBlockPlacement>) => {
     onTerminalBlockChange(
       assetId,
-      normalizeTerminalBlockPlacement({
-        ...config,
-        ...updates
-      })
+      {
+        terminalBlock: normalizeTerminalBlockPlacement({
+          ...config,
+          ...updates
+        })
+      }
     );
   };
 
@@ -1311,6 +1893,40 @@ function SelectedTerminalBlockEditor({
         id="selected-terminal-block-editor"
         className={isExpanded ? "space-y-3 p-4" : "hidden"}
       >
+        <div>
+          <label className="field-label" htmlFor="selected-terminal-name">
+            Group name
+          </label>
+          <input
+            id="selected-terminal-name"
+            className="field-input"
+            value={packageAsset?.title ?? placement.title ?? ""}
+            onChange={(event) =>
+              onTerminalBlockChange(assetId, {
+                title: event.currentTarget.value
+              })
+            }
+          />
+        </div>
+        <div>
+          <label
+            className="field-label"
+            htmlFor="selected-terminal-description"
+          >
+            Description
+          </label>
+          <textarea
+            id="selected-terminal-description"
+            className="field-input min-h-20 resize-y"
+            value={packageAsset?.description ?? ""}
+            placeholder="Optional engineering description"
+            onChange={(event) =>
+              onTerminalBlockChange(assetId, {
+                description: event.currentTarget.value
+              })
+            }
+          />
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="field-label" htmlFor="selected-terminal-count">
@@ -1320,12 +1936,12 @@ function SelectedTerminalBlockEditor({
               id="selected-terminal-count"
               className="field-input"
               type="number"
-              min={1}
+              min={2}
               max={80}
               value={config.count}
               onChange={(event) =>
                 updateConfig({
-                  count: Number(event.currentTarget.value) || 1
+                  count: Number(event.currentTarget.value) || 2
                 })
               }
             />
@@ -1341,18 +1957,15 @@ function SelectedTerminalBlockEditor({
               min={1}
               max={9999}
               value={config.startNumber}
-              onChange={(event) =>
-                updateConfig({
-                  startNumber: Number(event.currentTarget.value) || 1
-                })
-              }
+              readOnly
             />
           </div>
         </div>
 
         <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
           Referenced on {sheetReferenceText}. Terminal range{" "}
-          {config.startNumber} - {config.startNumber + config.count - 1}.
+          {config.startNumber} - {config.startNumber + config.count - 1}. Physical
+          size {physicalSize.lengthMm} x {physicalSize.widthMm} mm.
         </div>
 
         <div className="space-y-2">
@@ -1606,6 +2219,284 @@ function SelectedNoteEditor({
           >
             <Trash2 aria-hidden="true" size={14} />
             Delete note
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PanelPatternEditor({
+  packageModel,
+  model,
+  selectedConnectionId,
+  onPanelPatternChange,
+  onLegendVisibilityChange,
+  onConnectionRemove,
+  onConnectionRouteReset
+}: {
+  packageModel: DrawingPackageModel;
+  model: DrawingModel;
+  selectedConnectionId?: string;
+  onPanelPatternChange?: (
+    patternId: string,
+    updates: { label?: string; description?: string }
+  ) => void;
+  onLegendVisibilityChange?: (visible: boolean) => void;
+  onConnectionRemove: (connectionId: string) => void;
+  onConnectionRouteReset: (connectionId: string) => void;
+}) {
+  const connection = model.connections.find(
+    (candidate) => candidate.id === selectedConnectionId
+  );
+  if (!connection?.panelPatternId) return null;
+  const bridge = packageModel.panelWiring?.bridges.find(
+    (candidate) => candidate.id === connection.panelPatternId
+  );
+  const bond = packageModel.panelWiring?.bonds.find(
+    (candidate) => candidate.id === connection.panelPatternId
+  );
+  const pattern: PanelConnectionPatternRecord | undefined = bridge
+    ? { recordType: "bridge", record: bridge }
+    : bond
+      ? { recordType: "bond", record: bond }
+      : undefined;
+  if (!pattern) return null;
+  const topology = pattern.recordType === "bridge"
+    ? pattern.record.definition?.topology ?? "legacy"
+    : pattern.record.kind;
+  const domain = pattern.recordType === "bridge"
+    ? pattern.record.domain ?? "unknown"
+    : pattern.record.kind;
+  const members = pattern.recordType === "bridge"
+    ? pattern.record.members
+    : pattern.record.endpoints.flatMap((endpoint) =>
+        endpoint.kind === "terminal" ? [endpoint.terminal] : []
+      );
+  const ownedWires = packageModel.panelWiring?.internalWires.filter(
+    (wire) => wire.ownerPatternId === pattern.record.id
+  ) ?? [];
+  const assetTag = (assetId: string) =>
+    packageModel.assets.find((asset) => asset.id === assetId)?.tag ?? assetId;
+  const legendVisible = model.placements.find(
+    isGeneratedPanelPatternLegendPlacement
+  )?.panelPatternLegend.visible ?? false;
+
+  return (
+    <section className="tool-panel overflow-hidden">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <h2 className="text-sm font-bold">Connection Pattern</h2>
+        <p className="mt-1 text-[11px] text-slate-500">
+          {pattern.record.patternCode ?? pattern.record.id} / {topology.replaceAll("_", " ")}
+        </p>
+      </div>
+      <div className="space-y-4 p-4 text-xs">
+        <dl className="grid grid-cols-2 gap-2">
+          <div className="rounded border border-slate-200 bg-slate-50 p-2">
+            <dt className="text-[10px] font-bold uppercase text-slate-500">Domain</dt>
+            <dd className="mt-1 capitalize text-slate-900">{domain.replaceAll("_", " ")}</dd>
+          </div>
+          <div className="rounded border border-slate-200 bg-slate-50 p-2">
+            <dt className="text-[10px] font-bold uppercase text-slate-500">Owned wires</dt>
+            <dd className="mt-1 text-slate-900">{ownedWires.length}</dd>
+          </div>
+        </dl>
+        <div>
+          <span className="field-label">Members</span>
+          <div className="mt-1 max-h-28 space-y-1 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 font-mono text-[11px]">
+            {members.map((member, index) => (
+              <div key={`${member.assetId}:${member.terminalKey}:${member.side}:${index}`}>
+                {assetTag(member.assetId)}:{member.terminalKey}/{member.side}
+              </div>
+            ))}
+          </div>
+        </div>
+        {onPanelPatternChange ? (
+          <>
+            <label className="block">
+              <span className="field-label">Label</span>
+              <input
+                key={`${pattern.record.id}:label:${pattern.record.label ?? ""}`}
+                className="field-input mt-1"
+                defaultValue={pattern.record.label ?? ""}
+                onBlur={(event) =>
+                  onPanelPatternChange(pattern.record.id, {
+                    label: event.currentTarget.value.trim() || undefined,
+                    description: pattern.record.description
+                  })
+                }
+              />
+            </label>
+            <label className="block">
+              <span className="field-label">Description</span>
+              <textarea
+                key={`${pattern.record.id}:description:${pattern.record.description ?? ""}`}
+                className="field-input mt-1 min-h-20"
+                defaultValue={pattern.record.description ?? ""}
+                onBlur={(event) =>
+                  onPanelPatternChange(pattern.record.id, {
+                    label: pattern.record.label,
+                    description: event.currentTarget.value.trim() || undefined
+                  })
+                }
+              />
+            </label>
+          </>
+        ) : null}
+        {onLegendVisibilityChange ? (
+          <label className="flex items-center gap-2 text-slate-700">
+            <input
+              type="checkbox"
+              checked={legendVisible}
+              onChange={(event) =>
+                onLegendVisibilityChange(event.currentTarget.checked)
+              }
+            />
+            Show connection legend
+          </label>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="icon-button" onClick={() => onConnectionRouteReset(connection.id)}>
+            <RefreshCw aria-hidden="true" size={14} /> Reset route
+          </button>
+          <button type="button" className="icon-button icon-button-danger" onClick={() => onConnectionRemove(connection.id)}>
+            <Trash2 aria-hidden="true" size={14} /> Remove pattern
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function InternalWireEditor({
+  packageModel,
+  model,
+  selectedConnectionId,
+  onInternalWireChange,
+  onConnectionRemove,
+  onConnectionRouteReset
+}: {
+  packageModel: DrawingPackageModel;
+  model: DrawingModel;
+  selectedConnectionId?: string;
+  onInternalWireChange?: (
+    wireRecordId: string,
+    updates: { wireId: string; attributes?: PanelWireAttributes }
+  ) => void;
+  onConnectionRemove: (connectionId: string) => void;
+  onConnectionRouteReset: (connectionId: string) => void;
+}) {
+  const connection = model.connections.find(
+    (candidate) => candidate.id === selectedConnectionId
+  );
+  const wire = connection?.panelConnectionId
+    ? packageModel.panelWiring?.internalWires.find(
+        (candidate) => candidate.id === connection.panelConnectionId
+      )
+    : undefined;
+  if (!connection || !wire || wire.ownerPatternId || !onInternalWireChange) {
+    return null;
+  }
+  const assetTag = (assetId: string) =>
+    packageModel.assets?.find((asset) => asset.id === assetId)?.tag ?? assetId;
+  const updateAttributes = (
+    key: keyof PanelWireAttributes,
+    value: string
+  ) => {
+    onInternalWireChange(wire.id, {
+      wireId: wire.wireId,
+      attributes: {
+        ...wire.attributes,
+        [key]: value.trim() || undefined
+      }
+    });
+  };
+
+  return (
+    <section className="tool-panel overflow-hidden">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <h2 className="text-sm font-bold">Internal Wire</h2>
+        <p className="mt-1 text-[11px] text-slate-500">
+          Physical panel wire with a route occurrence on this sheet.
+        </p>
+      </div>
+      <div className="space-y-4 p-4 text-xs">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-2.5">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">From</span>
+            <span className="mt-1 block font-semibold text-slate-900">
+              {assetTag(wire.from.assetId)}:{wire.from.terminalKey}
+            </span>
+            <span className="text-slate-500">{wire.from.side}</span>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-2.5">
+            <span className="block text-[10px] font-bold uppercase text-slate-500">To</span>
+            <span className="mt-1 block font-semibold text-slate-900">
+              {assetTag(wire.to.assetId)}:{wire.to.terminalKey}
+            </span>
+            <span className="text-slate-500">{wire.to.side}</span>
+          </div>
+        </div>
+        <div>
+          <label className="field-label" htmlFor={`internal-wire-id-${wire.id}`}>
+            Wire ID
+          </label>
+          <input
+            key={`${wire.id}:${wire.wireId}`}
+            id={`internal-wire-id-${wire.id}`}
+            className="field-input"
+            defaultValue={wire.wireId}
+            onBlur={(event) => {
+              const wireId = event.currentTarget.value.trim();
+              if (wireId && wireId !== wire.wireId) {
+                onInternalWireChange(wire.id, {
+                  wireId,
+                  attributes: wire.attributes
+                });
+              }
+            }}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {([
+            ["color", "Color"],
+            ["size", "Size"],
+            ["wireType", "Wire type"],
+            ["description", "Description"]
+          ] as const).map(([key, label]) => (
+            <div key={key}>
+              <label className="field-label" htmlFor={`internal-wire-${key}-${wire.id}`}>
+                {label}
+              </label>
+              <input
+                key={`${wire.id}:${key}:${wire.attributes?.[key] ?? ""}`}
+                id={`internal-wire-${key}-${wire.id}`}
+                className="field-input"
+                defaultValue={wire.attributes?.[key] ?? ""}
+                onBlur={(event) => updateAttributes(key, event.currentTarget.value)}
+              />
+            </div>
+          ))}
+        </div>
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-600">
+          Route mode: <strong>{connection.route?.mode ?? "auto"}</strong>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => onConnectionRouteReset(connection.id)}
+          >
+            <RefreshCw aria-hidden="true" size={14} />
+            Reset route
+          </button>
+          <button
+            type="button"
+            className="icon-button icon-button-danger"
+            onClick={() => onConnectionRemove(connection.id)}
+          >
+            <Trash2 aria-hidden="true" size={14} />
+            Remove wire
           </button>
         </div>
       </div>

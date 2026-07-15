@@ -9,7 +9,8 @@ export function PlacementTitleOverlay({
   viewportZoom,
   onPlacementTitlePointerDown,
   onPlacementTitlePointerMove,
-  onPlacementTitlePointerEnd
+  onPlacementTitlePointerEnd,
+  onPlacementTitlePointerCancel
 }: {
   selectedPlacementTitle: PlacementTitleLabel | null;
   viewportZoom: number;
@@ -19,6 +20,7 @@ export function PlacementTitleOverlay({
   ) => void;
   onPlacementTitlePointerMove: (event: PointerEvent<SVGCircleElement>) => void;
   onPlacementTitlePointerEnd: () => void;
+  onPlacementTitlePointerCancel: () => void;
 }) {
   if (!selectedPlacementTitle) {
     return null;
@@ -45,7 +47,7 @@ export function PlacementTitleOverlay({
         }
         onPointerMove={onPlacementTitlePointerMove}
         onPointerUp={onPlacementTitlePointerEnd}
-        onPointerCancel={onPlacementTitlePointerEnd}
+        onPointerCancel={onPlacementTitlePointerCancel}
       >
         <title>Drag symbol tag and title</title>
       </circle>

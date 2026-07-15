@@ -4,8 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
+  ClipboardList,
   DraftingCompass,
   LibraryBig,
+  PackageSearch,
   PanelLeftClose,
   PanelLeftOpen,
   Plus
@@ -26,6 +28,19 @@ const navItems = [
     icon: DraftingCompass,
     isActive: (pathname: string) =>
       pathname === "/drawings" || pathname.startsWith("/drawings/")
+  },
+  {
+    href: "/bom",
+    label: "BOM Creator",
+    icon: ClipboardList,
+    isActive: (pathname: string) => pathname === "/bom"
+  },
+  {
+    href: "/bom/items",
+    label: "Items Library",
+    icon: PackageSearch,
+    isActive: (pathname: string) =>
+      pathname === "/bom/items" || pathname.startsWith("/bom/items/")
   },
   {
     href: "/symbols/new",
