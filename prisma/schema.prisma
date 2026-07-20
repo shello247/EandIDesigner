@@ -120,32 +120,35 @@ model SymbolDocument {
 }
 
 model BomItem {
-  id                   String                  @id @default(cuid())
-  itemKey              String                  @unique
-  displayName          String
-  description          String?
-  category             String
-  unit                 String
-  manufacturer         String?
-  partNumber           String?
-  model                String?
-  notes                String?
-  supplierName         String?
-  supplierContactName  String?
-  supplierEmail        String?
-  supplierPhone        String?
-  supplierWebsite      String?
-  supplierSku          String?
-  unitCost             Float?
-  currency             String?
-  leadTimeDays         Int?
-  minimumOrderQuantity Float?
-  costNotes            String?
-  status               String                  @default("active")
-  createdAt            DateTime                @default(now())
-  updatedAt            DateTime                @updatedAt
-  images               BomItemImage[]
-  templateLines        SymbolBomTemplateLine[]
+  id                    String                  @id @default(cuid())
+  itemKey               String                  @unique
+  displayName           String
+  description           String?
+  category              String
+  unit                  String
+  manufacturer          String?
+  partNumber            String?
+  model                 String?
+  notes                 String?
+  supplierName          String?
+  supplierContactName   String?
+  supplierEmail         String?
+  supplierPhone         String?
+  supplierWebsite       String?
+  supplierSku           String?
+  unitCost              Float?
+  currency              String?
+  leadTimeDays          Int?
+  minimumOrderQuantity  Float?
+  costNotes             String?
+  productUrl            String?
+  productUrlExtractedAt DateTime?
+  status                String                  @default("active")
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  images                BomItemImage[]
+  documents             BomItemDocument[]
+  templateLines         SymbolBomTemplateLine[]
 
   @@index([status])
   @@index([category])
@@ -196,6 +199,22 @@ model BomItemImage {
 
   @@index([itemId])
   @@index([itemId, sortOrder])
+}
+
+model BomItemDocument {
+  id        String   @id @default(cuid())
+  itemId    String
+  item      BomItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  title     String
+  fileName  String
+  mimeType  String
+  sizeBytes Int
+  dataUrl   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([itemId])
+  @@index([itemId, createdAt])
 }
 
 model SymbolBomTemplate {

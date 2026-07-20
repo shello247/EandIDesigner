@@ -66,6 +66,8 @@ async function createBomItem(
 
   await page.getByRole("button", { name: "Next", exact: true }).click();
 
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+
   if (input.supplierName) {
     await page.locator("#bom-supplier-name").fill(input.supplierName);
   }
@@ -159,6 +161,7 @@ test("creates symbol mini BOM items and generates a drawing BOM", async ({
       page.getByRole("dialog", { name: `Edit ${itemLabels.spare}` })
     ).toBeVisible();
     await page.locator("#bom-display-name").fill(`${itemLabels.spare} Edited`);
+    await page.getByRole("button", { name: "Next", exact: true }).click();
     await page.getByRole("button", { name: "Next", exact: true }).click();
     await page.getByRole("button", { name: "Next", exact: true }).click();
     await page.getByRole("button", { name: "Save item" }).click();

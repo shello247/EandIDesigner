@@ -141,10 +141,24 @@ export function roleFromSymbol(symbol: ApprovedDrawingSymbol): DrawingPlacementR
     return "device";
   }
 
+  const panelAssetType = symbol.metadata.panelWiring?.assetType;
+
+  if (panelAssetType === "terminal_block") {
+    return "terminal_block";
+  }
+
+  if (panelAssetType && panelAssetType !== "other") {
+    return "device";
+  }
+
   return roleFromSymbolCategory(symbol.category);
 }
 
 export function defaultPlacementScale(symbol: ApprovedDrawingSymbol): number {
+  if (symbol.metadata.panelWiring?.schematicScale) {
+    return symbol.metadata.panelWiring.schematicScale;
+  }
+
   if (symbol.category === "cable_assembly") {
     return 0.5;
   }
@@ -157,6 +171,12 @@ export function defaultPlacementScale(symbol: ApprovedDrawingSymbol): number {
 }
 
 export function tagPrefixForSymbol(symbol: ApprovedDrawingSymbol): string {
+  const configuredPrefix = symbol.metadata.panelWiring?.tagPrefix.trim();
+
+  if (configuredPrefix) {
+    return configuredPrefix;
+  }
+
   const descriptor = symbolDescriptor(symbol);
 
   if (

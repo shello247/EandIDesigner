@@ -30,6 +30,7 @@ import {
   updateLayoutDimensionPlacement
 } from "../logic/services/drawing-layout-dimensions";
 import {
+  getBackplaneCenteredPosition,
   getBackplaneDisplayBounds,
   resolveBackplaneLayoutScale,
   resolveDrawingBackplaneScaleLabel,
@@ -636,13 +637,32 @@ describe("drawing asset containment", () => {
         widthMm: 1829
       }
     };
+    const squareBackplane = {
+      ...smallBackplane,
+      layoutDimensions: {
+        lengthMm: 600,
+        widthMm: 600
+      }
+    };
 
     expect(resolveBackplaneLayoutScale(sheet, smallBackplane).label).toBe("1:2");
+    expect(resolveBackplaneLayoutScale(sheet, squareBackplane).label).toBe("1:3");
     expect(resolveBackplaneLayoutScale(sheet, largeBackplane).label).toBe("1:10");
     expect(getBackplaneDisplayBounds(sheet, smallBackplane)).toMatchObject({
       width: 125,
       height: 125
     });
+    expect(getBackplaneDisplayBounds(sheet, squareBackplane)).toMatchObject({
+      width: 200,
+      height: 200
+    });
+    expect(
+      getBackplaneCenteredPosition({
+        sheet,
+        backplane: squareBackplane,
+        area: { x: 20, y: 30, width: 380, height: 210 }
+      })
+    ).toEqual({ x: 110, y: 35 });
   });
 
   it("moves selected backplanes with assigned layout children", () => {

@@ -29,6 +29,7 @@ function approvedSymbol(input: {
   physicalWidthMm?: number;
   physicalHeightMm?: number;
   mountingType?: ApprovedDrawingSymbol["metadata"]["mountingType"];
+  panelWiring?: ApprovedDrawingSymbol["metadata"]["panelWiring"];
 }): ApprovedDrawingSymbol {
   return {
     symbolId: `symbol_${input.key}`,
@@ -47,6 +48,7 @@ function approvedSymbol(input: {
       physicalWidthMm: input.physicalWidthMm,
       physicalHeightMm: input.physicalHeightMm,
       mountingType: input.mountingType,
+      panelWiring: input.panelWiring,
       resizable: input.panelCategory === "rail",
       viewBox: { x: 0, y: 0, width: 10, height: 10 },
       anchors: [],
@@ -145,6 +147,31 @@ describe("symbol library context", () => {
         (symbol) => symbol.symbolKey
       )
     ).not.toContain("layout_symbol_without_size");
+  });
+
+  it("exposes a dimensioned I/O module in the panel layout library", () => {
+    const ioModule = approvedSymbol({
+      key: "allen_bradley_2085_if4",
+      name: "2085-IF4 4-Channel Analog Input Module",
+      category: "other",
+      layoutUsage: "both",
+      panelCategory: "controller",
+      physicalWidthMm: 28,
+      physicalHeightMm: 90,
+      mountingType: "din_rail",
+      panelWiring: {
+        assetType: "io_module",
+        tagPrefix: "AI",
+        schematicScale: 90 / 511
+      }
+    });
+    const available = getSymbolsForLibraryContext([ioModule], "wiring");
+    const groups = groupSymbolsForLibrary([ioModule], "wiring");
+
+    expect(available).toContainEqual(ioModule);
+    expect(
+      groups.find((group) => group.key === "panel_layout")?.symbols
+    ).toContainEqual(ioModule);
   });
 
   it("groups wiring symbols by engineering library category", () => {

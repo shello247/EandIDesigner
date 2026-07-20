@@ -191,7 +191,12 @@ export function BomItemsLibraryShell({
     });
   };
 
-  const handleSaved = (item: BomItemDetail) => {
+  const handleSaved = () => {
+    setWizard(null);
+    setMessage("BOM item saved.");
+  };
+
+  const handlePersisted = (item: BomItemDetail) => {
     const row = toListRow(item);
 
     if (matchesAppliedFilters(row, result.appliedFilters)) {
@@ -204,8 +209,6 @@ export function BomItemsLibraryShell({
       setRemovedItemIds((current) => new Set(current).add(row.id));
     }
 
-    setWizard(null);
-    setMessage("BOM item saved.");
     router.refresh();
   };
 
@@ -272,6 +275,7 @@ export function BomItemsLibraryShell({
           mode={wizard.mode}
           item={wizard.item}
           onClose={() => setWizard(null)}
+          onPersisted={handlePersisted}
           onSaved={handleSaved}
         />
       ) : null}

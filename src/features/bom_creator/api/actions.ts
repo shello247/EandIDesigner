@@ -5,8 +5,10 @@ import {
   createBomItemCategory,
   createBomItemManufacturer,
   createBomItem,
+  deleteBomItemDocument,
   deleteBomItem,
   saveSymbolBomTemplate,
+  uploadBomItemDocument,
   updateBomItem
 } from "../data/mutations";
 import {
@@ -22,6 +24,10 @@ import { saveSymbolBomTemplateInputSchema } from "../data/schema";
 import type {
   BomItemDeleteResult,
   BomItemDetail,
+  BomItemDocumentDeleteInput,
+  BomItemDocumentMetadata,
+  BomItemExtractionInput,
+  BomItemExtractionResult,
   BomItemFormOptions,
   BomItemInput,
   BomItemOption,
@@ -36,6 +42,11 @@ import type {
 import {
   validateSymbolBomTemplateItemIds
 } from "../logic/use_cases/symbol-bom-template-use-cases";
+import { extractBomItemFromUrl } from "../logic/use_cases/extract-bom-item-from-url";
+import {
+  MAX_BOM_ITEM_DOCUMENT_BYTES,
+  validateBomItemPdf
+} from "../logic/services/bom-item-document-limits";
 import type { ActionResult } from "../types";
 
 function toErrorMessage(error: unknown): string {
@@ -60,6 +71,15 @@ function revalidateBomPaths(input: { symbolId?: string; itemId?: string } = {}) 
   if (input.itemId) {
     revalidatePath(`/bom/items/${input.itemId}`);
   }
+}
+
+function formDataString(formData: FormData, name: string): string {
+  const value = formData.get(name);
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function documentTitleFromFileName(fileName: string): string {
+  return fileName.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ").trim();
 }
 
 export async function createBomItemCategoryAction(
@@ -98,6 +118,89 @@ export async function createBomItemAction(
 
     revalidateBomPaths({ itemId: item.id });
     return { ok: true, data: item };
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
+export async function extractBomItemFromUrlAction(
+  input: BomItemExtractionInput
+): Promise<ActionResult<BomItemExtractionResult>> {
+  try {
+    return { ok: true, data: await extractBomItemFromUrl(input) };
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
+export async function uploadBomItemDocumentAction(
+  formData: FormData
+): Promise<ActionResult<BomItemDocumentMetadata>> {
+  try {
+    const itemId = formDataString(formData, "itemId");
+    const titleInput = formDataString(formData, "title");
+    const fileValue = formData.get("documentFile");
+
+    if (
+      !fileValue ||
+      typeof fileValue !== "object" ||
+      !("arrayBuffer" in fileValue) ||
+      !("name" in fileValue) ||
+      !("size" in fileValue) ||
+      !("type" in fileValue)
+    ) {
+      return { ok: false, error: "Choose a PDF document to upload." };
+    }
+
+    const file = fileValue as File;
+    if (file.size <= 0) {
+      return { ok: false, error: "Choose a PDF document to upload." };
+    }
+    if (file.size > MAX_BOM_ITEM_DOCUMENT_BYTES) {
+      return { ok: false, error: "Each PDF document must be 25 MB or smaller." };
+    }
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const validation = validateBomItemPdf({
+      fileName: file.name,
+      mimeType: file.type || "application/pdf",
+      sizeBytes: file.size,
+      bytes: buffer
+    });
+
+    if (!validation.ok) {
+      return {
+        ok: false,
+        error: validation.violations[0]?.message ?? "PDF document is invalid."
+      };
+    }
+
+    const document = await uploadBomItemDocument({
+      itemId,
+      title: titleInput || documentTitleFromFileName(file.name) || "Document",
+      fileName: file.name,
+      mimeType: "application/pdf",
+      sizeBytes: buffer.byteLength,
+      dataUrl: `data:application/pdf;base64,${buffer.toString("base64")}`
+    });
+
+    if (!document) {
+      return { ok: false, error: "BOM item document could not be uploaded." };
+    }
+
+    revalidateBomPaths({ itemId: document.itemId });
+    return { ok: true, data: document };
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
+export async function deleteBomItemDocumentAction(
+  input: BomItemDocumentDeleteInput
+): Promise<ActionResult<{ id: string; itemId: string }>> {
+  try {
+    const document = await deleteBomItemDocument(input);
+    revalidateBomPaths({ itemId: document.itemId });
+    return { ok: true, data: document };
   } catch (error) {
     return { ok: false, error: toErrorMessage(error) };
   }

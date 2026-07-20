@@ -3,6 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 const e2eDatabaseUrl = process.env.DATABASE_URL ?? "file:./test-e2e.db";
 process.env.DATABASE_URL = e2eDatabaseUrl;
 process.env.OPENAI_TERMINAL_MAP_MOCK ??= "true";
+process.env.OPENAI_BOM_ITEM_EXTRACTION_MOCK ??= "true";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -20,7 +21,8 @@ export default defineConfig({
     timeout: 120000,
     env: {
       DATABASE_URL: e2eDatabaseUrl,
-      OPENAI_TERMINAL_MAP_MOCK: "true"
+      OPENAI_TERMINAL_MAP_MOCK: "true",
+      OPENAI_BOM_ITEM_EXTRACTION_MOCK: "true"
     }
   },
   projects: [

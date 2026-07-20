@@ -333,6 +333,8 @@ async function main() {
       "leadTimeDays" INTEGER,
       "minimumOrderQuantity" REAL,
       "costNotes" TEXT,
+      "productUrl" TEXT,
+      "productUrlExtractedAt" DATETIME,
       "status" TEXT NOT NULL DEFAULT 'active',
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL
@@ -362,6 +364,12 @@ async function main() {
     '"minimumOrderQuantity" REAL'
   );
   await addColumnIfMissing("BomItem", "costNotes", '"costNotes" TEXT');
+  await addColumnIfMissing("BomItem", "productUrl", '"productUrl" TEXT');
+  await addColumnIfMissing(
+    "BomItem",
+    "productUrlExtractedAt",
+    '"productUrlExtractedAt" DATETIME'
+  );
 
   await execute(`
     CREATE UNIQUE INDEX IF NOT EXISTS "BomItem_itemKey_key"
@@ -478,6 +486,33 @@ async function main() {
   await execute(`
     CREATE INDEX IF NOT EXISTS "BomItemImage_itemId_sortOrder_idx"
     ON "BomItemImage"("itemId", "sortOrder");
+  `);
+
+  await execute(`
+    CREATE TABLE IF NOT EXISTS "BomItemDocument" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "itemId" TEXT NOT NULL,
+      "title" TEXT NOT NULL,
+      "fileName" TEXT NOT NULL,
+      "mimeType" TEXT NOT NULL,
+      "sizeBytes" INTEGER NOT NULL,
+      "dataUrl" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL,
+      CONSTRAINT "BomItemDocument_itemId_fkey"
+        FOREIGN KEY ("itemId") REFERENCES "BomItem" ("id")
+        ON DELETE CASCADE ON UPDATE CASCADE
+    );
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "BomItemDocument_itemId_idx"
+    ON "BomItemDocument"("itemId");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "BomItemDocument_itemId_createdAt_idx"
+    ON "BomItemDocument"("itemId", "createdAt");
   `);
 
   await execute(`

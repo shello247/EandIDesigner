@@ -5,12 +5,20 @@ import {
   dataUrlMimeType,
   validateBomItemImageBudget
 } from "../logic/services/bom-item-image-budget";
+import { MAX_BOM_ITEM_DOCUMENT_BYTES } from "../logic/services/bom-item-document-limits";
 
 export {
   MAX_BOM_ITEM_IMAGE_BYTES,
   MAX_BOM_ITEM_IMAGES,
   MAX_BOM_ITEM_TOTAL_IMAGE_BYTES
 } from "../logic/services/bom-item-image-budget";
+export {
+  MAX_BOM_ITEM_DOCUMENT_BYTES,
+  MAX_BOM_ITEM_DOCUMENTS,
+  MAX_BOM_ITEM_TOTAL_DOCUMENT_BYTES
+} from "../logic/services/bom-item-document-limits";
+
+export const MAX_BOM_ITEM_PRODUCT_URL_LENGTH = 2048;
 
 export const bomItemStatusSchema = z.enum(["active", "archived"]);
 
@@ -68,6 +76,43 @@ const optionalIntegerSchema = (maxValue: number) =>
         : value,
     z.coerce.number().int().nonnegative().max(maxValue).optional()
   );
+
+function isHttpUrlWithoutCredentials(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.username.length === 0 &&
+      url.password.length === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+const optionalProductUrlSchema = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim().length === 0
+      ? undefined
+      : value,
+  z
+    .string()
+    .trim()
+    .max(MAX_BOM_ITEM_PRODUCT_URL_LENGTH)
+    .refine(
+      isHttpUrlWithoutCredentials,
+      "Product URL must be an HTTP or HTTPS webpage without embedded credentials."
+    )
+    .optional()
+);
+
+const optionalIsoDateTimeSchema = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim().length === 0
+      ? undefined
+      : value,
+  z.string().datetime().optional()
+);
 
 const bomItemImageMetadataFieldsSchema = z.object({
   caption: optionalTextSchema(240),
@@ -204,7 +249,120 @@ export const bomItemWritableFieldsSchema = z
 
 export const bomItemInputSchema = bomItemWritableFieldsSchema
   .extend({
+    productUrl: optionalProductUrlSchema,
+    productUrlExtractedAt: optionalIsoDateTimeSchema,
     images: bomItemNewImagesInputSchema.default([])
+  })
+  .strict();
+
+const nullableExtractedTextSchema = (maxLength: number) =>
+  z.string().trim().max(maxLength).nullable();
+
+export const bomItemExtractionInputSchema = z
+  .object({
+    productUrl: z
+      .string()
+      .trim()
+      .min(1)
+      .max(MAX_BOM_ITEM_PRODUCT_URL_LENGTH)
+      .refine(
+        isHttpUrlWithoutCredentials,
+        "Product URL must be an HTTP or HTTPS webpage without embedded credentials."
+      )
+  })
+  .strict();
+
+export const bomItemExtractedValuesSchema = z
+  .object({
+    displayName: nullableExtractedTextSchema(200),
+    description: nullableExtractedTextSchema(600),
+    category: nullableExtractedTextSchema(80),
+    unit: nullableExtractedTextSchema(40),
+    manufacturer: nullableExtractedTextSchema(160),
+    partNumber: nullableExtractedTextSchema(160),
+    model: nullableExtractedTextSchema(160),
+    notes: nullableExtractedTextSchema(1000),
+    supplierName: nullableExtractedTextSchema(200),
+    supplierContactName: nullableExtractedTextSchema(160),
+    supplierEmail: nullableExtractedTextSchema(200),
+    supplierPhone: nullableExtractedTextSchema(80),
+    supplierWebsite: nullableExtractedTextSchema(240),
+    supplierSku: nullableExtractedTextSchema(160),
+    unitCost: z.number().nonnegative().max(1_000_000_000).nullable(),
+    currency: nullableExtractedTextSchema(12),
+    leadTimeDays: z.number().int().nonnegative().max(10_000).nullable(),
+    minimumOrderQuantity: z
+      .number()
+      .nonnegative()
+      .max(1_000_000_000)
+      .nullable(),
+    costNotes: nullableExtractedTextSchema(1000)
+  })
+  .strict();
+
+export const bomItemExtractionModelOutputSchema = z
+  .object({
+    sourceTitle: nullableExtractedTextSchema(240),
+    confidence: z.enum(["high", "medium", "low"]),
+    values: bomItemExtractedValuesSchema,
+    warnings: z.array(z.string().trim().min(1).max(500)).max(20)
+  })
+  .strict();
+
+export const bomItemExtractionSourceSchema = z
+  .object({
+    title: z.string().trim().min(1).max(500),
+    url: z.string().trim().url().max(MAX_BOM_ITEM_PRODUCT_URL_LENGTH)
+  })
+  .strict();
+
+export const bomItemExtractionResultSchema = z
+  .object({
+    productUrl: z.string().trim().url().max(MAX_BOM_ITEM_PRODUCT_URL_LENGTH),
+    sourceTitle: optionalTextSchema(240),
+    extractedAt: z.string().datetime(),
+    confidence: z.enum(["high", "medium", "low"]),
+    values: bomItemExtractedValuesSchema,
+    sources: z.array(bomItemExtractionSourceSchema).max(20),
+    warnings: z.array(z.string().trim().min(1).max(500)).max(30)
+  })
+  .strict();
+
+export const bomItemDocumentUploadInputSchema = z
+  .object({
+    itemId: z.string().trim().min(1),
+    title: z.string().trim().min(1).max(240),
+    fileName: z.string().trim().min(1).max(240),
+    mimeType: z.literal("application/pdf"),
+    sizeBytes: z.number().int().positive().max(MAX_BOM_ITEM_DOCUMENT_BYTES),
+    dataUrl: z
+      .string()
+      .trim()
+      .startsWith(
+        "data:application/pdf;base64,",
+        "BOM item documents must contain base64 PDF data."
+      )
+  })
+  .strict();
+
+export const bomItemDocumentDeleteInputSchema = z
+  .object({
+    itemId: z.string().trim().min(1),
+    documentId: z.string().trim().min(1)
+  })
+  .strict();
+
+export const bomItemDocumentMetadataSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    itemId: z.string().trim().min(1),
+    documentUrl: z.string().trim().min(1),
+    title: z.string().trim().min(1).max(240),
+    fileName: z.string().trim().min(1).max(240),
+    mimeType: z.literal("application/pdf"),
+    sizeBytes: z.number().int().positive(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime()
   })
   .strict();
 
@@ -345,6 +503,8 @@ export const bomItemUpdateInputSchema = bomItemWritableFieldsSchema
   .extend({
     id: z.string().trim().min(1),
     status: bomItemStatusSchema.optional(),
+    productUrl: optionalProductUrlSchema,
+    productUrlExtractedAt: optionalIsoDateTimeSchema,
     images: bomItemImagesInputSchema.optional()
   })
   .strict();
@@ -397,7 +557,10 @@ export const bomItemUsageSchema = z.object({
 });
 
 export const bomItemDetailSchema = bomItemSummarySchema.extend({
+  productUrl: optionalProductUrlSchema,
+  productUrlExtractedAt: optionalIsoDateTimeSchema,
   images: z.array(bomItemImageSummarySchema),
+  documents: z.array(bomItemDocumentMetadataSchema),
   usage: z.array(bomItemUsageSchema)
 });
 
@@ -532,6 +695,38 @@ export type GeneratedBomWarningCode = z.infer<
 >;
 export type BomItemInput = z.infer<typeof bomItemInputSchema>;
 export type BomItemUpdateInput = z.infer<typeof bomItemUpdateInputSchema>;
+export type BomItemExtractionInput = z.infer<
+  typeof bomItemExtractionInputSchema
+>;
+export type BomItemExtractedValues = z.infer<
+  typeof bomItemExtractedValuesSchema
+>;
+export type BomItemExtractionModelOutput = z.infer<
+  typeof bomItemExtractionModelOutputSchema
+>;
+export type BomItemExtractionResult = z.infer<
+  typeof bomItemExtractionResultSchema
+>;
+export type BomItemExtractionSource = z.infer<
+  typeof bomItemExtractionSourceSchema
+>;
+export type BomItemDocumentUploadInput = z.infer<
+  typeof bomItemDocumentUploadInputSchema
+>;
+export type BomItemDocumentDeleteInput = z.infer<
+  typeof bomItemDocumentDeleteInputSchema
+>;
+export type BomItemDocumentMetadata = z.infer<
+  typeof bomItemDocumentMetadataSchema
+>;
+export type BomItemDocumentPayload = {
+  id: string;
+  bytes: ArrayBuffer;
+  mimeType: "application/pdf";
+  fileName: string;
+  contentLength: number;
+  etag: string;
+};
 export type BomItemDeleteResult = z.infer<typeof bomItemDeleteResultSchema>;
 export type BomItemOptionInput = z.infer<typeof bomItemOptionInputSchema>;
 export type BomItemOption = z.infer<typeof bomItemOptionSchema>;

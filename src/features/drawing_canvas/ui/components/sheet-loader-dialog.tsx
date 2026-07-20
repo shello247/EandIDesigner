@@ -11,6 +11,7 @@ import {
   FolderInput,
   Layers,
   Search,
+  Trash2,
   X
 } from "lucide-react";
 import type { DrawingSectionMoveDirection } from "../../logic/commands/drawing-section-commands";
@@ -40,7 +41,8 @@ export function SheetLoaderDialog({
   onCancel,
   onLoadSheet,
   onMoveSection,
-  onMoveSheetToSection
+  onMoveSheetToSection,
+  onRequestDeleteSheet
 }: {
   groups: SheetLoaderGroup[];
   activeSheetId: string;
@@ -54,6 +56,7 @@ export function SheetLoaderDialog({
     sheetId: string,
     targetSectionId: string | "front_matter"
   ) => void;
+  onRequestDeleteSheet: (sheetId: string) => void;
 }) {
   const titleId = "sheet-loader-dialog-title";
   const descriptionId = "sheet-loader-dialog-description";
@@ -77,6 +80,11 @@ export function SheetLoaderDialog({
     [groups, query]
   );
   const sectionGroups = groups.filter((group) => group.kind === "section");
+  const sheetCount = groups.reduce(
+    (total, group) =>
+      total + group.rows.length + (group.kind === "section" ? 1 : 0),
+    0
+  );
 
   const toggleGroup = (groupId: string) => {
     setCollapsedGroupIds((current) => {
@@ -146,7 +154,7 @@ export function SheetLoaderDialog({
                 <th className="min-w-52 py-2 pr-3">Name</th>
                 <th className="w-32 py-2 pr-3">Type</th>
                 <th className="min-w-56 py-2 pr-3">Description</th>
-                <th className="w-56 min-w-56 py-2 text-right whitespace-nowrap">
+                <th className="w-60 min-w-60 py-2 text-right whitespace-nowrap">
                   Action
                 </th>
               </tr>
@@ -183,6 +191,8 @@ export function SheetLoaderDialog({
                     onLoadSheet={onLoadSheet}
                     onMoveSection={onMoveSection}
                     onRequestMoveSheet={setMoveCandidate}
+                    canDeleteSheet={sheetCount > 1}
+                    onRequestDeleteSheet={onRequestDeleteSheet}
                   />
                 );
               })}
@@ -228,7 +238,9 @@ function GroupRows({
   onToggle,
   onLoadSheet,
   onMoveSection,
-  onRequestMoveSheet
+  onRequestMoveSheet,
+  canDeleteSheet,
+  onRequestDeleteSheet
 }: {
   group: SheetLoaderGroup;
   isCollapsed: boolean;
@@ -245,6 +257,8 @@ function GroupRows({
     direction: DrawingSectionMoveDirection
   ) => void;
   onRequestMoveSheet: (row: SheetLoaderRow) => void;
+  canDeleteSheet: boolean;
+  onRequestDeleteSheet: (sheetId: string) => void;
 }) {
   return (
     <>
@@ -289,55 +303,55 @@ function GroupRows({
               </p>
             </div>
             {group.kind === "section" ? (
-              <div className="flex shrink-0 flex-nowrap items-center gap-2 whitespace-nowrap">
+              <div className="flex shrink-0 flex-nowrap items-center gap-1 whitespace-nowrap">
                 <button
                   type="button"
-                  className="icon-button h-7 w-7 p-0"
+                  className="icon-button h-9 w-9 shrink-0 !p-0"
                   disabled={!canMoveSectionUp}
                   onClick={() => onMoveSection(group.id, "first")}
                   aria-label={`Move Section ${group.sectionNumber} first`}
                   title="Move section first"
                 >
-                  <ChevronsUp aria-hidden="true" size={13} />
+                  <ChevronsUp aria-hidden="true" size={20} strokeWidth={2.25} />
                 </button>
                 <button
                   type="button"
-                  className="icon-button h-7 w-7 p-0"
+                  className="icon-button h-9 w-9 shrink-0 !p-0"
                   disabled={!canMoveSectionUp}
                   onClick={() => onMoveSection(group.id, -1)}
                   aria-label={`Move Section ${group.sectionNumber} up`}
                   title="Move section up"
                 >
-                  <ChevronUp aria-hidden="true" size={13} />
+                  <ChevronUp aria-hidden="true" size={20} strokeWidth={2.25} />
                 </button>
                 <button
                   type="button"
-                  className="icon-button h-7 w-7 p-0"
+                  className="icon-button h-9 w-9 shrink-0 !p-0"
                   disabled={!canMoveSectionDown}
                   onClick={() => onMoveSection(group.id, 1)}
                   aria-label={`Move Section ${group.sectionNumber} down`}
                   title="Move section down"
                 >
-                  <ChevronDown aria-hidden="true" size={13} />
+                  <ChevronDown aria-hidden="true" size={20} strokeWidth={2.25} />
                 </button>
                 <button
                   type="button"
-                  className="icon-button h-7 w-7 p-0"
+                  className="icon-button h-9 w-9 shrink-0 !p-0"
                   disabled={!canMoveSectionDown}
                   onClick={() => onMoveSection(group.id, "last")}
                   aria-label={`Move Section ${group.sectionNumber} last`}
                   title="Move section last"
                 >
-                  <ChevronsDown aria-hidden="true" size={13} />
+                  <ChevronsDown aria-hidden="true" size={20} strokeWidth={2.25} />
                 </button>
                 {titlePageIsActive ? (
-                  <span className="inline-flex h-7 w-20 items-center justify-center rounded-md border border-sky-300 bg-sky-100 px-2 text-[11px] font-bold text-sky-800">
+                  <span className="inline-flex h-9 w-20 shrink-0 items-center justify-center rounded-md border border-sky-300 bg-sky-100 px-2 text-[11px] font-bold text-sky-800">
                     Active
                   </span>
                 ) : (
                   <button
                     type="button"
-                    className="icon-button h-7 w-20 justify-center px-2"
+                    className="icon-button h-9 w-20 shrink-0 justify-center px-2"
                     onClick={() => onLoadSheet(group.titlePage.sheetId)}
                   >
                     Load title
@@ -358,6 +372,8 @@ function GroupRows({
               canMove={canMoveSheet}
               onLoadSheet={onLoadSheet}
               onRequestMove={onRequestMoveSheet}
+              canDelete={canDeleteSheet}
+              onRequestDelete={onRequestDeleteSheet}
             />
           ))
         : null}
@@ -378,7 +394,9 @@ function SheetRow({
   indented,
   canMove,
   onLoadSheet,
-  onRequestMove
+  onRequestMove,
+  canDelete,
+  onRequestDelete
 }: {
   row: SheetLoaderRow;
   active: boolean;
@@ -386,6 +404,8 @@ function SheetRow({
   canMove: boolean;
   onLoadSheet: (sheetId: string) => void;
   onRequestMove: (row: SheetLoaderRow) => void;
+  canDelete: boolean;
+  onRequestDelete: (sheetId: string) => void;
 }) {
   return (
     <tr
@@ -422,6 +442,16 @@ function SheetRow({
             title="Move to section"
           >
             <FolderInput aria-hidden="true" size={14} />
+          </button>
+          <button
+            type="button"
+            className="icon-button icon-button-danger h-8 w-8 p-0"
+            disabled={!canDelete}
+            onClick={() => onRequestDelete(row.sheetId)}
+            aria-label={`Delete ${row.name}`}
+            title="Delete sheet"
+          >
+            <Trash2 aria-hidden="true" size={14} />
           </button>
           {active ? (
             <span className="inline-flex h-8 w-20 items-center justify-center rounded-md border border-sky-300 bg-sky-100 px-3 text-xs font-bold text-sky-800">

@@ -65,7 +65,10 @@ Supported now:
   backplane is a generated Symbol Library item under Panel Layout, not a
   physical asset.
 - Scaled physical panel layouts: backplanes store real millimetre dimensions and
-  render at a standard drawing scale such as `1:2` or `1:10`.
+  render at the largest supported automatic drawing scale that fits the sheet,
+  including intermediate `1:3` and `1:4` scales that avoid excessive whitespace.
+  Dimension changes recenter the result in its panel, and `Fit panel` can
+  recenter an existing layout without changing its physical dimensions.
 - Associated Panel Assets work queue for placing existing panel assets, such as
   `TB-101` through `TB-104` already assigned to `JB001`, onto a backplane
   without creating duplicate physical assets.

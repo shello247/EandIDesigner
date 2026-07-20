@@ -4,6 +4,44 @@ import {
   deleteE2eDrawing
 } from "./drawing-fixtures";
 
+test("deletes the first front-matter sheet from the Sheet Loader", async ({
+  page
+}) => {
+  const drawingId = await createE2eSectionedDrawingPackage();
+
+  try {
+    await page.goto(`/drawings/${drawingId}`);
+    await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible();
+    await page.getByRole("button", { name: "Open sheet loader" }).click();
+
+    const loader = page.getByRole("dialog", { name: "Sheet Loader" });
+    const coverRow = loader.getByRole("row").filter({ hasText: "Package Cover" });
+    await coverRow.getByRole("button", { name: "Delete Package Cover" }).click();
+
+    const confirmation = page.getByRole("dialog", { name: "Delete sheet" });
+    await expect(confirmation).toContainText("Sheet 1 of 6");
+    await confirmation
+      .getByRole("button", { name: "Delete sheet", exact: true })
+      .click();
+
+    await expect(loader.getByText("Package Cover", { exact: true })).toHaveCount(0);
+    await expect(loader.getByText("Front Matter", { exact: true })).toHaveCount(0);
+    await loader.getByRole("button", { name: "Close sheet loader" }).click();
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByTestId("drawing-toast")).toContainText("Drawing saved.");
+    await page.reload();
+    await page.getByRole("button", { name: "Open sheet loader" }).click();
+    await expect(
+      page.getByRole("dialog", { name: "Sheet Loader" }).getByText("Package Cover", {
+        exact: true
+      })
+    ).toHaveCount(0);
+  } finally {
+    await deleteE2eDrawing(drawingId);
+  }
+});
+
 test("organizes drawing package sections without duplicating numbers or deleting members", async ({
   page
 }) => {
