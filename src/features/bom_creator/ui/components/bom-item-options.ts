@@ -1,19 +1,12 @@
-export const bomCategoryOptions = [
-  "cable",
-  "cable_gland",
-  "sealant",
-  "wire_end",
-  "label",
-  "terminal",
-  "breaker",
-  "panel",
-  "accessory",
-  "other"
-];
+import {
+  BOM_ITEM_CATEGORY_OPTIONS,
+  BOM_ITEM_CURRENCY_OPTIONS,
+  BOM_ITEM_UNIT_OPTIONS
+} from "../../logic/services/bom-item-options";
 
-export const bomUnitOptions = ["each", "m", "ft", "set", "tube", "roll", "pack"];
-
-export const bomCurrencyOptions = ["USD", "TTD", "EUR", "GBP", "CAD"];
+export const bomCategoryOptions = [...BOM_ITEM_CATEGORY_OPTIONS];
+export const bomUnitOptions = [...BOM_ITEM_UNIT_OPTIONS];
+export const bomCurrencyOptions = [...BOM_ITEM_CURRENCY_OPTIONS];
 
 export function categoryLabel(value: string): string {
   return value.replace(/_/g, " ");

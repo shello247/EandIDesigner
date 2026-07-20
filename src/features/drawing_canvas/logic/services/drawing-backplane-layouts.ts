@@ -98,7 +98,9 @@ export function isLayoutHelperPlacement(
   return Boolean(placement && placement.layoutKind === "layout_helper");
 }
 
-function backplaneDefaultBounds(panelPlacement: DrawingPlacement): Bounds {
+export function getBackplanePlacementArea(
+  panelPlacement: DrawingPlacement
+): Bounds {
   const panelBounds = getPanelEnclosureBounds(panelPlacement);
   const headerHeight = panelHeaderHeight(panelBounds);
   const x = panelBounds.x + BACKPLANE_MARGIN;
@@ -128,7 +130,7 @@ export function createBackplanePlacement({
   panelPlacement: DrawingPlacement;
   id?: string;
 }): DrawingPlacement {
-  const bounds = backplaneDefaultBounds(panelPlacement);
+  const bounds = getBackplanePlacementArea(panelPlacement);
 
   return {
     id,
