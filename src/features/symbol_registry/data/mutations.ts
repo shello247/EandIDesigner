@@ -4,6 +4,7 @@ import {
   createEngineerNoteInputSchema,
   parseMetadataJson,
   saveSymbolDraftInputSchema,
+  symbolStatusSchema,
   stringifyMetadata,
   type CreateEngineerNoteInput,
   type SaveSymbolDraftInput,
@@ -13,11 +14,18 @@ import {
   type SymbolPanelWiringCapabilityUpdateInput,
   terminalMapUpdateInputSchema,
   type TerminalMapUpdateInput,
+  updateSymbolNetworkProfileInputSchema,
+  type UpdateSymbolNetworkProfileInput,
   uploadSymbolDocumentInputSchema,
   type UploadSymbolDocumentInput,
   type ValidationIssue
 } from "./schema";
 import { createSymbolPackage } from "../logic/use_cases/export-symbol-package";
+import {
+  assertSymbolVersionEditable,
+  isSymbolVersionEditable
+} from "../logic/services/symbol-version-lifecycle";
+import { canApproveSymbolVersion } from "../logic/use_cases/approve-symbol-version";
 import { validateSymbol } from "../logic/use_cases/validate-symbol";
 import { getSymbolDetail, getSymbolVersionForExport } from "./queries";
 
@@ -67,6 +75,25 @@ async function getNextVersionNumber(symbolId: string): Promise<number> {
   });
 
   return (latest?.versionNumber ?? 0) + 1;
+}
+
+function assertStoredVersionEditable(version: {
+  status: string;
+  symbol: { status: string };
+}) {
+  if (version.symbol.status === "archived") {
+    throw new Error("Archived symbols are immutable.");
+  }
+
+  assertSymbolVersionEditable(symbolStatusSchema.parse(version.status));
+}
+
+function validationErrorMessage(validation: ReturnType<typeof validateSymbol>) {
+  const blockingIssue = validation.issues.find(
+    (issue) => issue.severity === "blocking"
+  );
+
+  return blockingIssue?.message ?? "Symbol metadata is invalid.";
 }
 
 export async function saveSymbolDraft(input: SaveSymbolDraftInput) {
@@ -141,16 +168,21 @@ export async function validateSymbolVersion(versionId: string) {
     throw new Error("Symbol version was not found.");
   }
 
-  const metadata = parseMetadataJson(version.metadataJson);
-  const validation = validateSymbol(version.svg, metadata);
+  const metadataInput: unknown = JSON.parse(version.metadataJson);
+  const validation = validateSymbol(version.svg, metadataInput);
 
-  await prisma.symbolVersion.update({
-    where: { id: version.id },
-    data: {
-      svg: validation.sanitizedSvg,
-      metadataJson: stringifyMetadata(validation.metadata ?? metadata)
-    }
-  });
+  if (
+    isSymbolVersionEditable(symbolStatusSchema.parse(version.status)) &&
+    validation.metadata
+  ) {
+    await prisma.symbolVersion.update({
+      where: { id: version.id },
+      data: {
+        svg: validation.sanitizedSvg,
+        metadataJson: stringifyMetadata(validation.metadata)
+      }
+    });
+  }
 
   await replaceValidationIssues({
     symbolId: version.symbolId,
@@ -176,6 +208,8 @@ export async function updateSymbolTerminalMap(input: TerminalMapUpdateInput) {
     throw new Error("Symbol version was not found.");
   }
 
+  assertStoredVersionEditable(version);
+
   const metadata = parseMetadataJson(version.metadataJson);
   const updatedMetadata = {
     ...metadata,
@@ -185,8 +219,6 @@ export async function updateSymbolTerminalMap(input: TerminalMapUpdateInput) {
     }))
   };
   const validation = validateSymbol(version.svg, updatedMetadata);
-  const nextVersionStatus =
-    version.status === "approved" ? "needs_review" : version.status;
   const nextSymbolStatus =
     version.symbol.status === "archived" ? "archived" : "needs_review";
 
@@ -194,7 +226,7 @@ export async function updateSymbolTerminalMap(input: TerminalMapUpdateInput) {
     prisma.symbolVersion.update({
       where: { id: version.id },
       data: {
-        status: nextVersionStatus,
+        status: version.status,
         svg: validation.sanitizedSvg,
         metadataJson: stringifyMetadata(validation.metadata ?? updatedMetadata)
       }
@@ -226,6 +258,8 @@ export async function updateSymbolLayoutMetadata(
   if (!version) {
     throw new Error("Symbol version was not found.");
   }
+
+  assertStoredVersionEditable(version);
 
   const metadata = parseMetadataJson(version.metadataJson);
   const updatedMetadata = {
@@ -287,8 +321,6 @@ export async function updateSymbolPanelWiringCapability(
     panelWiring: parsed.panelWiring
   };
   const validation = validateSymbol(version.svg, updatedMetadata);
-  const nextVersionStatus =
-    version.status === "approved" ? "needs_review" : version.status;
   const nextSymbolStatus =
     version.symbol.status === "archived" ? "archived" : "needs_review";
 
@@ -296,7 +328,7 @@ export async function updateSymbolPanelWiringCapability(
     prisma.symbolVersion.update({
       where: { id: version.id },
       data: {
-        status: nextVersionStatus,
+        status: version.status,
         svg: validation.sanitizedSvg,
         metadataJson: stringifyMetadata(validation.metadata ?? updatedMetadata)
       }
@@ -304,6 +336,71 @@ export async function updateSymbolPanelWiringCapability(
     prisma.symbol.update({
       where: { id: version.symbolId },
       data: { status: nextSymbolStatus }
+    })
+  ]);
+
+  await replaceValidationIssues({
+    symbolId: version.symbolId,
+    versionId: version.id,
+    issues: validation.issues
+  });
+
+  return getSymbolDetail(version.symbolId);
+}
+
+export async function updateSymbolNetworkProfile(
+  input: UpdateSymbolNetworkProfileInput
+) {
+  const parsed = updateSymbolNetworkProfileInputSchema.parse(input);
+  const version = await prisma.symbolVersion.findUnique({
+    where: { id: parsed.versionId },
+    include: { symbol: true }
+  });
+
+  if (!version) {
+    throw new Error("Symbol version was not found.");
+  }
+
+  assertStoredVersionEditable(version);
+
+  const metadata = parseMetadataJson(version.metadataJson);
+  if (
+    version.symbol.category !== "network_device" ||
+    metadata.category !== "network_device"
+  ) {
+    throw new Error("Network profile updates are only valid for network symbols.");
+  }
+
+  const manufacturer = parsed.manufacturer?.trim() || undefined;
+  const model = parsed.model?.trim() || undefined;
+  const updatedMetadata = {
+    ...metadata,
+    manufacturer,
+    model,
+    networkProfile: parsed.networkProfile
+  };
+  const validation = validateSymbol(version.svg, updatedMetadata);
+
+  if (!validation.metadata) {
+    throw new Error(validationErrorMessage(validation));
+  }
+
+  await prisma.$transaction([
+    prisma.symbolVersion.update({
+      where: { id: version.id },
+      data: {
+        status: "needs_review",
+        svg: validation.sanitizedSvg,
+        metadataJson: stringifyMetadata(validation.metadata)
+      }
+    }),
+    prisma.symbol.update({
+      where: { id: version.symbolId },
+      data: {
+        manufacturer: manufacturer ?? null,
+        model: model ?? null,
+        status: "needs_review"
+      }
     })
   ]);
 
@@ -357,15 +454,19 @@ export async function uploadSymbolDocument(input: UploadSymbolDocumentInput) {
 
 export async function approveSymbolVersion(versionId: string) {
   const version = await prisma.symbolVersion.findUnique({
-    where: { id: versionId }
+    where: { id: versionId },
+    include: { symbol: true }
   });
 
   if (!version) {
     throw new Error("Symbol version was not found.");
   }
 
-  const metadata = parseMetadataJson(version.metadataJson);
-  const validation = validateSymbol(version.svg, metadata);
+  assertStoredVersionEditable(version);
+
+  const metadataInput: unknown = JSON.parse(version.metadataJson);
+  const approval = canApproveSymbolVersion(version.svg, metadataInput);
+  const validation = approval.result;
 
   await replaceValidationIssues({
     symbolId: version.symbolId,
@@ -373,7 +474,7 @@ export async function approveSymbolVersion(versionId: string) {
     issues: validation.issues
   });
 
-  if (validation.blockingIssueCount > 0) {
+  if (!approval.ok || !validation.metadata) {
     throw new Error("Blocking validation issues must be resolved before approval.");
   }
 
@@ -390,7 +491,7 @@ export async function approveSymbolVersion(versionId: string) {
       data: {
         status: "approved",
         svg: validation.sanitizedSvg,
-        metadataJson: stringifyMetadata(validation.metadata ?? metadata)
+        metadataJson: stringifyMetadata(validation.metadata)
       }
     }),
     prisma.symbol.update({

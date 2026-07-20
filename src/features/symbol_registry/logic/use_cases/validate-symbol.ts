@@ -4,6 +4,7 @@ import {
   type ValidationIssue
 } from "../../data/schema";
 import { validateAnchors } from "../services/anchor-validator";
+import { validateNetworkProfile } from "../services/network-profile-validator";
 import { areViewBoxesEqual, inspectSvg } from "@/shared/svg/svg-inspector";
 import { sanitizeSvg } from "@/shared/svg/svg-sanitizer";
 
@@ -47,6 +48,7 @@ export function validateSymbol(
 
   const metadata = metadataResult.data;
   issues.push(...validateAnchors(metadata));
+  issues.push(...validateNetworkProfile(metadata));
 
   if (inspection.viewBox && !areViewBoxesEqual(inspection.viewBox, metadata.viewBox)) {
     issues.push({

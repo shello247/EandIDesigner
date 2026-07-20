@@ -5,6 +5,7 @@ import type {
   ValidationIssue
 } from "@/features/symbol_registry/data/schema";
 import type { SvgViewBox } from "@/shared/svg/svg-inspector";
+import type { SvgImportNetworkPortDraft } from "../data/schema";
 
 export type SvgImportSourceAsset = {
   fileName: string;
@@ -18,6 +19,7 @@ export type SvgImportPreview = {
   viewBox: SvgViewBox;
   anchors: SymbolAnchor[];
   terminals: SymbolTerminal[];
+  networkPorts: SvgImportNetworkPortDraft[];
   issues: ValidationIssue[];
   sourceAsset: SvgImportSourceAsset;
 };
@@ -27,4 +29,3 @@ export type SvgSymbolImportDraft = {
   sourceAsset: SvgImportSourceAsset;
   metadata: SymbolMetadata;
 };
-

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ClipboardList,
   DraftingCompass,
   LibraryBig,
+  Network,
   PackageSearch,
   PanelLeftClose,
   PanelLeftOpen,
@@ -28,6 +29,13 @@ const navItems = [
     icon: DraftingCompass,
     isActive: (pathname: string) =>
       pathname === "/drawings" || pathname.startsWith("/drawings/")
+  },
+  {
+    href: "/networking",
+    label: "Networking",
+    icon: Network,
+    isActive: (pathname: string) =>
+      pathname === "/networking" || pathname.startsWith("/networking/")
   },
   {
     href: "/bom",
@@ -53,6 +61,17 @@ const navItems = [
 export function AppSidebar() {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
+
+  useEffect(() => {
+    const compactViewport = window.matchMedia("(max-width: 767px)");
+    const synchronizeSidebar = () => setIsCollapsed(compactViewport.matches);
+
+    synchronizeSidebar();
+    compactViewport.addEventListener("change", synchronizeSidebar);
+
+    return () =>
+      compactViewport.removeEventListener("change", synchronizeSidebar);
+  }, []);
 
   return (
     <aside

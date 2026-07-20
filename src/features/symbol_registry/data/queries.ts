@@ -1,11 +1,18 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import {
+  approvedNetworkVersionIdsSchema,
   parseMetadataJson,
   symbolCategorySchema,
   symbolStatusSchema,
   type ValidationIssue
 } from "./schema";
+import {
+  buildApprovedNetworkSymbol,
+  buildApprovedNetworkSymbolCatalogItem,
+  type ApprovedNetworkSymbol,
+  type ApprovedNetworkSymbolCatalogItem
+} from "../logic/services/network-symbol-catalog";
 import type {
   SymbolDetail,
   SymbolDocumentSummary,
@@ -140,29 +147,38 @@ export const listSymbols = cache(async (): Promise<SymbolListItem[]> => {
         orderBy: { versionNumber: "desc" },
         take: 1,
         select: {
+          id: true,
           versionNumber: true
         }
       },
       validationIssues: {
         where: { severity: "blocking" },
-        select: { id: true }
+        select: { id: true, versionId: true }
       }
     },
     orderBy: { updatedAt: "desc" }
   });
 
-  return rows.map((row) => ({
-    id: row.id,
-    symbolKey: row.symbolKey,
-    displayName: row.displayName,
-    manufacturer: row.manufacturer,
-    model: row.model,
-    category: symbolCategorySchema.parse(row.category),
-    status: symbolStatusSchema.parse(row.status),
-    latestVersionNumber: row.versions[0]?.versionNumber,
-    blockingIssueCount: row.validationIssues.length,
-    updatedAt: row.updatedAt.toISOString()
-  }));
+  return rows.map((row) => {
+    const latestVersion = row.versions[0];
+
+    return {
+      id: row.id,
+      symbolKey: row.symbolKey,
+      displayName: row.displayName,
+      manufacturer: row.manufacturer,
+      model: row.model,
+      category: symbolCategorySchema.parse(row.category),
+      status: symbolStatusSchema.parse(row.status),
+      latestVersionNumber: latestVersion?.versionNumber,
+      blockingIssueCount: latestVersion
+        ? row.validationIssues.filter(
+            (issue) => issue.versionId === latestVersion.id
+          ).length
+        : 0,
+      updatedAt: row.updatedAt.toISOString()
+    };
+  });
 });
 
 export const getSymbolDetail = cache(
@@ -221,7 +237,9 @@ export const getSymbolDetail = cache(
         status: symbolStatusSchema.parse(version.status),
         createdAt: version.createdAt.toISOString()
       })),
-      validationIssues: row.validationIssues.map(toValidationIssue),
+      validationIssues: row.validationIssues
+        .filter((issue) => issue.versionId === latestVersion?.id)
+        .map(toValidationIssue),
       engineerNotes: row.engineerNotes.map(toEngineerNoteSummary),
       documents: row.documents.map(toDocumentSummary)
     };
@@ -289,6 +307,250 @@ export async function listDrawingSymbolVersions() {
         metadata: parseMetadataJson(version.metadataJson)
       }
     ];
+  });
+}
+
+export const listNetworkSymbolCatalog = cache(
+  async (): Promise<ApprovedNetworkSymbolCatalogItem[]> => {
+    const rows = await prisma.symbol.findMany({
+      where: {
+        status: "approved",
+        category: "network_device"
+      },
+      select: {
+        id: true,
+        symbolKey: true,
+        displayName: true,
+        manufacturer: true,
+        model: true,
+        versions: {
+          where: { status: "approved" },
+          orderBy: { versionNumber: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            versionNumber: true,
+            metadataJson: true
+          }
+        }
+      },
+      orderBy: [{ displayName: "asc" }, { symbolKey: "asc" }]
+    });
+
+    return rows
+      .flatMap((symbol) => {
+        const version = symbol.versions[0];
+
+        if (!version) {
+          return [];
+        }
+
+        const item = buildApprovedNetworkSymbolCatalogItem({
+          symbolId: symbol.id,
+          symbolKey: symbol.symbolKey,
+          displayName: symbol.displayName,
+          manufacturer: symbol.manufacturer,
+          model: symbol.model,
+          versionId: version.id,
+          versionNumber: version.versionNumber,
+          metadataJson: version.metadataJson
+        });
+
+        return item ? [item] : [];
+      })
+      .sort(
+        (first, second) =>
+          first.displayName.localeCompare(second.displayName) ||
+          first.symbolKey.localeCompare(second.symbolKey) ||
+          first.versionId.localeCompare(second.versionId)
+      );
+  }
+);
+
+function toApprovedNetworkSymbol(version: {
+  id: string;
+  versionNumber: number;
+  svg: string;
+  metadataJson: string;
+  symbol: {
+    id: string;
+    symbolKey: string;
+    displayName: string;
+    manufacturer: string | null;
+    model: string | null;
+  };
+}): ApprovedNetworkSymbol | null {
+  return buildApprovedNetworkSymbol({
+    symbolId: version.symbol.id,
+    symbolKey: version.symbol.symbolKey,
+    displayName: version.symbol.displayName,
+    manufacturer: version.symbol.manufacturer,
+    model: version.symbol.model,
+    versionId: version.id,
+    versionNumber: version.versionNumber,
+    svg: version.svg,
+    metadataJson: version.metadataJson
+  });
+}
+
+const NETWORK_VERSION_QUERY_CHUNK_SIZE = 400;
+
+export async function listApprovedNetworkSymbolVersionsByIds(
+  versionIds: readonly string[]
+): Promise<ApprovedNetworkSymbol[]> {
+  const uniqueVersionIds = approvedNetworkVersionIdsSchema.parse(versionIds);
+
+  if (uniqueVersionIds.length === 0) {
+    return [];
+  }
+
+  const results: ApprovedNetworkSymbol[] = [];
+
+  for (
+    let offset = 0;
+    offset < uniqueVersionIds.length;
+    offset += NETWORK_VERSION_QUERY_CHUNK_SIZE
+  ) {
+    const chunk = uniqueVersionIds.slice(
+      offset,
+      offset + NETWORK_VERSION_QUERY_CHUNK_SIZE
+    );
+    const rows = await prisma.symbolVersion.findMany({
+      where: {
+        id: { in: chunk },
+        status: "approved",
+        symbol: {
+          status: "approved",
+          category: "network_device"
+        }
+      },
+      select: {
+        id: true,
+        versionNumber: true,
+        svg: true,
+        metadataJson: true,
+        symbol: {
+          select: {
+            id: true,
+            symbolKey: true,
+            displayName: true,
+            manufacturer: true,
+            model: true
+          }
+        }
+      }
+    });
+
+    for (const row of rows) {
+      const symbol = toApprovedNetworkSymbol(row);
+      if (symbol) {
+        results.push(symbol);
+      }
+    }
+  }
+
+  return results.sort(
+    (first, second) =>
+      first.displayName.localeCompare(second.displayName) ||
+      first.symbolKey.localeCompare(second.symbolKey) ||
+      first.versionId.localeCompare(second.versionId)
+  );
+}
+
+export async function getApprovedNetworkSymbolSvgAsset(versionId: string) {
+  const parsedVersionIds = approvedNetworkVersionIdsSchema.safeParse([versionId]);
+
+  if (!parsedVersionIds.success) {
+    return null;
+  }
+
+  const parsedVersionId = parsedVersionIds.data[0];
+
+  if (!parsedVersionId) {
+    return null;
+  }
+  const version = await prisma.symbolVersion.findFirst({
+    where: {
+      id: parsedVersionId,
+      status: "approved",
+      symbol: {
+        status: "approved",
+        category: "network_device"
+      }
+    },
+    select: {
+      id: true,
+      versionNumber: true,
+      svg: true,
+      metadataJson: true,
+      symbol: {
+        select: {
+          id: true,
+          symbolKey: true,
+          displayName: true,
+          manufacturer: true,
+          model: true
+        }
+      }
+    }
+  });
+
+  if (!version || !toApprovedNetworkSymbol(version)) {
+    return null;
+  }
+
+  return { versionId: version.id, svg: version.svg };
+}
+
+export async function listNetworkSymbolVersions(): Promise<
+  ApprovedNetworkSymbol[]
+> {
+  const rows = await prisma.symbol.findMany({
+    where: {
+      status: "approved",
+      category: "network_device"
+    },
+    select: {
+      id: true,
+      symbolKey: true,
+      displayName: true,
+      manufacturer: true,
+      model: true,
+      versions: {
+        where: { status: "approved" },
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+        select: {
+          id: true,
+          versionNumber: true,
+          svg: true,
+          metadataJson: true
+        }
+      }
+    },
+    orderBy: [{ displayName: "asc" }]
+  });
+
+  return rows.flatMap((symbol) => {
+    const version = symbol.versions[0];
+
+    if (!version) {
+      return [];
+    }
+
+    const item = buildApprovedNetworkSymbol({
+      symbolId: symbol.id,
+      symbolKey: symbol.symbolKey,
+      displayName: symbol.displayName,
+      manufacturer: symbol.manufacturer,
+      model: symbol.model,
+      versionId: version.id,
+      versionNumber: version.versionNumber,
+      svg: version.svg,
+      metadataJson: version.metadataJson
+    });
+
+    return item ? [item] : [];
   });
 }
 

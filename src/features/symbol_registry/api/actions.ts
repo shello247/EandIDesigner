@@ -9,6 +9,7 @@ import {
   exportSymbolPackage,
   saveSymbolDraft,
   updateSymbolLayoutMetadata,
+  updateSymbolNetworkProfile,
   updateSymbolPanelWiringCapability,
   updateSymbolTerminalMap,
   uploadSymbolDocument,
@@ -22,6 +23,7 @@ import {
 import type {
   SaveSymbolDraftInput,
   SymbolLayoutMetadataUpdateInput,
+  UpdateSymbolNetworkProfileInput,
   SymbolPanelWiringCapabilityUpdateInput,
   TerminalMapUpdateInput
 } from "../data/schema";
@@ -134,6 +136,22 @@ export async function updateSymbolLayoutMetadataAction(
     const updated = await updateSymbolLayoutMetadata(input);
     if (!updated) {
       return { ok: false, error: "Layout metadata could not be updated." };
+    }
+    revalidatePath("/symbols");
+    revalidatePath(`/symbols/${updated.id}`);
+    return { ok: true, data: updated };
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
+export async function updateSymbolNetworkProfileAction(
+  input: UpdateSymbolNetworkProfileInput
+): Promise<ActionResult<SymbolDetail>> {
+  try {
+    const updated = await updateSymbolNetworkProfile(input);
+    if (!updated) {
+      return { ok: false, error: "Network profile could not be updated." };
     }
     revalidatePath("/symbols");
     revalidatePath(`/symbols/${updated.id}`);

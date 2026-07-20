@@ -3,6 +3,8 @@ import { sanitizeSvg } from "../logic/services/svg-sanitizer";
 import { normalizeTerminalMapVerificationOutput } from "../logic/services/openai-terminal-map-verifier";
 import { validateSymbol } from "../logic/use_cases/validate-symbol";
 import {
+  isDrawingSymbolCategory,
+  symbolMetadataSchema,
   symbolCategorySchema,
   type SymbolMetadata
 } from "../data/schema";
@@ -125,5 +127,167 @@ describe("symbol registry validation", () => {
     expect(result.issues[0].terminalKey).toBeUndefined();
     expect(result.issues[0].evidence).toBeUndefined();
     expect(result.issues[0].suggestedFix).toBeUndefined();
+  });
+
+  it("accepts network device metadata with port anchors", () => {
+    const metadata = symbolMetadataSchema.parse({
+      symbolKey: "industrial_switch",
+      displayName: "Industrial Switch",
+      category: "network_device",
+      viewBox: { x: 0, y: 0, width: 120, height: 80 },
+      terminals: [],
+      anchors: [
+        { key: "ETH1", x: 20, y: 60, kind: "network_port" },
+        { key: "ETH2", x: 40, y: 60, kind: "network_port" }
+      ],
+      networkProfile: {
+        deviceType: "switch",
+        managed: true,
+        ports: [
+          {
+            key: "ETH1",
+            label: "Ethernet 1",
+            anchorKey: "ETH1",
+            media: "copper",
+            speedMbps: 1000,
+            protocolHints: ["Ethernet"]
+          }
+        ]
+      }
+    });
+
+    expect(metadata.networkProfile?.deviceType).toBe("switch");
+    expect(metadata.networkProfile?.ports[0].protocolHints).toEqual([
+      "Ethernet"
+    ]);
+  });
+
+  it("requires a network profile for network device symbols", () => {
+    const result = symbolMetadataSchema.safeParse({
+      ...validMetadata,
+      category: "network_device",
+      terminals: [],
+      anchors: []
+    });
+
+    expect(result.success).toBe(false);
+    expect(
+      result.error?.issues.some(
+        (issue) => issue.message === "Network device symbols require a network profile."
+      )
+    ).toBe(true);
+  });
+
+  it("rejects a network profile on non-network symbols", () => {
+    const result = symbolMetadataSchema.safeParse({
+      ...validMetadata,
+      networkProfile: {
+        deviceType: "switch",
+        ports: []
+      }
+    });
+
+    expect(result.success).toBe(false);
+    expect(
+      result.error?.issues.some(
+        (issue) =>
+          issue.message ===
+          "Network profile is only valid for network device symbols."
+      )
+    ).toBe(true);
+  });
+
+  it("normalizes network keys and rejects duplicates after normalization", () => {
+    const result = symbolMetadataSchema.safeParse({
+      symbolKey: "industrial_switch",
+      displayName: "Industrial Switch",
+      category: "network_device",
+      viewBox: { x: 0, y: 0, width: 100, height: 100 },
+      terminals: [],
+      anchors: [{ key: "eth1", x: 20, y: 60, kind: "network_port" }],
+      networkProfile: {
+        deviceType: "switch",
+        ports: [
+          {
+            key: "eth1",
+            label: "Ethernet 1",
+            anchorKey: "eth1",
+            media: "copper"
+          },
+          {
+            key: "ETH1",
+            label: "Ethernet 1 duplicate",
+            anchorKey: "ETH1",
+            media: "copper"
+          }
+        ]
+      }
+    });
+
+    expect(result.success).toBe(false);
+    expect(
+      result.error?.issues.some((issue) =>
+        issue.message.includes('Network port key "ETH1" is duplicated.')
+      )
+    ).toBe(true);
+  });
+
+  it("rejects network ports that reference missing anchors", () => {
+    const result = validateSymbol(validSvg, {
+      symbolKey: "industrial_switch",
+      displayName: "Industrial Switch",
+      category: "network_device",
+      viewBox: { x: 0, y: 0, width: 100, height: 100 },
+      terminals: [],
+      anchors: [{ key: "ETH1", x: 20, y: 60, kind: "network_port" }],
+      networkProfile: {
+        deviceType: "switch",
+        ports: [
+          {
+            key: "ETH2",
+            label: "Ethernet 2",
+            anchorKey: "ETH2",
+            media: "copper"
+          }
+        ]
+      }
+    });
+
+    expect(result.blockingIssueCount).toBeGreaterThan(0);
+    expect(result.issues.map((issue) => issue.code)).toContain(
+      "METADATA_INVALID"
+    );
+  });
+
+  it("rejects network ports that reference non-network anchors", () => {
+    const result = validateSymbol(validSvg, {
+      symbolKey: "industrial_switch",
+      displayName: "Industrial Switch",
+      category: "network_device",
+      viewBox: { x: 0, y: 0, width: 100, height: 100 },
+      terminals: [],
+      anchors: [{ key: "ETH1", x: 20, y: 60, kind: "terminal" }],
+      networkProfile: {
+        deviceType: "switch",
+        ports: [
+          {
+            key: "ETH1",
+            label: "Ethernet 1",
+            anchorKey: "ETH1",
+            media: "copper"
+          }
+        ]
+      }
+    });
+
+    expect(result.blockingIssueCount).toBeGreaterThan(0);
+    expect(result.issues.map((issue) => issue.code)).toContain(
+      "METADATA_INVALID"
+    );
+  });
+
+  it("keeps network devices out of the drawing symbol category set", () => {
+    expect(isDrawingSymbolCategory("instrument")).toBe(true);
+    expect(isDrawingSymbolCategory("network_device")).toBe(false);
   });
 });

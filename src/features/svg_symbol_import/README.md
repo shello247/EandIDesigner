@@ -13,11 +13,13 @@ here, reviewed, then approved in the symbol registry.
 2. Export one clean SVG per symbol.
 3. Import the SVG through `/symbols/new`.
 4. Review parsed metadata, terminals, anchors, and preview.
-5. For panel layout symbols, enter layout usage, physical width/height in mm,
+5. For network devices, select the device type and managed status, then review
+   each detected port's label, anchor, media, speed, and protocol hints.
+6. For panel layout symbols, enter layout usage, physical width/height in mm,
    mounting type, panel category, and whether the symbol is resizable.
-6. Save as `needs_review`.
-7. Approve the symbol after manual review.
-8. Use the approved symbol in the drawing canvas.
+7. Save as `needs_review`.
+8. Approve the symbol after manual review.
+9. Use the approved symbol in its compatible canvas.
 
 ## Figma SVG Standard
 
@@ -38,6 +40,28 @@ here, reviewed, then approved in the symbol registry.
 - Real panel layout dimensions are entered in EI Designer during import/review;
   do not rely on SVG pixels as millimetres.
 
+## Network Port Marker Contract
+
+- The canonical Figma layer name is `network_port:<PORT_KEY>`, for example
+  `network_port:ETH1`.
+- `port:<PORT_KEY>` is accepted as a compatibility alias, but new symbols
+  should use the canonical name.
+- Port keys are normalized to uppercase and may contain only letters, numbers,
+  periods, underscores, and hyphens. Keys must be unique after normalization.
+- Use a separate circle, ellipse, or rectangle layer for each marker. A named
+  group is supported only when it contains exactly one direct marker primitive
+  and no production geometry.
+- Marker names may be exported through `data-name`, `aria-label`,
+  `inkscape:label`, `name`, or `id`.
+- A direct marker and one parent group may use `translate(...)` or
+  `matrix(a b c d e f)` transforms. Other marker transforms are rejected.
+- Network marker geometry is metadata-only. It is removed from the sanitized
+  preview and stored `SymbolVersion.svg`; the importer draws its own anchor
+  overlay at the detected coordinates.
+- The uploaded source asset remains unchanged for engineering traceability.
+- Network port anchors do not create electrical terminal-map rows. Electrical
+  terminal and anchor markers keep their existing behavior.
+
 ## Anchor And Terminal Notes
 
 - Anchors are the connection points used by the drawing canvas.
@@ -54,6 +78,16 @@ strips unsafe constructs such as scripts, event handlers, `foreignObject`,
 external references, and unsafe URLs.
 
 The imported SVG must have a root `<svg>` with a valid `viewBox`.
+
+Network device imports require a device type and explicit media for every port.
+Managed status may be managed, unmanaged, or unspecified. Missing profiles,
+duplicate port keys, and missing or non-network anchor references are rejected.
+
+## Next Phase
+
+Network-specific symbol review and approval is implemented in
+`symbol_registry`. Network canvas placement and link authoring remain outside
+this importer phase and are the next networking workflow increment.
 
 ## Tests
 

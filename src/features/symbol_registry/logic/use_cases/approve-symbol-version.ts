@@ -1,7 +1,6 @@
 import { validateSymbol } from "./validate-symbol";
-import type { SymbolMetadata } from "../../data/schema";
 
-export function canApproveSymbolVersion(svg: string, metadata: SymbolMetadata) {
+export function canApproveSymbolVersion(svg: string, metadata: unknown) {
   const result = validateSymbol(svg, metadata);
 
   return {
