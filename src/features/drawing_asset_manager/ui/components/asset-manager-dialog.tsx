@@ -41,6 +41,13 @@ const ASSET_GROUPS: Array<{
   { type: "junction_box", title: "Junction Boxes" },
   { type: "terminal_block", title: "Terminal Blocks" },
   { type: "breaker", title: "Breakers" },
+  { type: "fuse", title: "Fuses" },
+  { type: "relay", title: "Relays" },
+  { type: "power_supply", title: "Power Supplies" },
+  { type: "isolator", title: "Isolators" },
+  { type: "converter", title: "Converters" },
+  { type: "io_module", title: "I/O Modules" },
+  { type: "earth_bar", title: "Earth Bars" },
   { type: "cable", title: "Cables" },
   { type: "other", title: "Other Assets" }
 ];
@@ -69,6 +76,7 @@ function assetMatchesSearch(
   return [
     asset.tag,
     asset.title,
+    asset.description ?? "",
     asset.symbolName ?? "",
     asset.symbolKey ?? "",
     ...uniqueSheetLabels(asset)
@@ -85,6 +93,7 @@ function symbolOptionLabel(symbol: ApprovedDrawingSymbol): string {
 export function AssetManagerDialog({
   model,
   symbols,
+  initialAssetId,
   onCancel,
   onCreateAsset,
   onUpdateAsset,
@@ -92,6 +101,7 @@ export function AssetManagerDialog({
 }: {
   model: DrawingModel;
   symbols: ApprovedDrawingSymbol[];
+  initialAssetId?: string;
   onCancel: () => void;
   onCreateAsset: (input: ManagedAssetCreateInput) => void;
   onUpdateAsset: (assetId: string, updates: ManagedAssetUpdateInput) => void;
@@ -105,7 +115,9 @@ export function AssetManagerDialog({
   );
   const [query, setQuery] = useState("");
   const [selectedAssetId, setSelectedAssetId] = useState(
-    catalog[0]?.id ?? ""
+    initialAssetId && catalog.some((asset) => asset.id === initialAssetId)
+      ? initialAssetId
+      : catalog[0]?.id ?? ""
   );
   const [isCreating, setIsCreating] = useState(catalog.length === 0);
   const [createType, setCreateType] = useState<DrawingAssetType>("instrument");
@@ -640,7 +652,43 @@ export function AssetManagerDialog({
                       }}
                     />
                   </div>
+
+                  <div className="sm:col-span-2">
+                    <label
+                      className="field-label"
+                      htmlFor="selected-asset-description"
+                    >
+                      Description
+                    </label>
+                    <textarea
+                      id="selected-asset-description"
+                      className="field-input min-h-20 resize-y"
+                      value={selectedAsset.description ?? ""}
+                      maxLength={400}
+                      placeholder="Optional engineering description"
+                      onChange={(event) =>
+                        updateSelectedAsset({
+                          description: event.currentTarget.value
+                        })
+                      }
+                    />
+                  </div>
                 </div>
+
+                {selectedAsset.terminalBlock ? (
+                  <section className="border-y border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+                    <div className="font-bold uppercase text-slate-500">
+                      Terminal block group
+                    </div>
+                    <div className="mt-1 font-semibold text-slate-900">
+                      {selectedAsset.terminalBlock.count} terminals / range{" "}
+                      {selectedAsset.terminalBlock.startNumber} -{" "}
+                      {selectedAsset.terminalBlock.startNumber +
+                        selectedAsset.terminalBlock.count -
+                        1}
+                    </div>
+                  </section>
+                ) : null}
 
                 <section className="rounded-md border border-slate-200">
                   <div className="border-b border-slate-200 px-4 py-3">

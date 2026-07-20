@@ -6,11 +6,13 @@ import { ChevronDown, Hash, PackagePlus, Plus } from "lucide-react";
 export function DrawingCanvasAddMenu({
   onAddPanel,
   onAddTerminalBlock,
-  onAddSheet
+  onAddSheet,
+  showDrawingItems = true
 }: {
   onAddPanel: () => void;
   onAddTerminalBlock: () => void;
   onAddSheet: () => void;
+  showDrawingItems?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const menuId = useId();
@@ -79,7 +81,7 @@ export function DrawingCanvasAddMenu({
         className={isOpen ? "drawing-canvas-add-menu-panel" : "hidden"}
         role="menu"
       >
-        <button
+        {showDrawingItems ? <button
           type="button"
           className="drawing-canvas-add-menu-item"
           role="menuitem"
@@ -92,8 +94,8 @@ export function DrawingCanvasAddMenu({
               Add a visible panel box
             </span>
           </span>
-        </button>
-        <button
+        </button> : null}
+        {showDrawingItems ? <button
           type="button"
           className="drawing-canvas-add-menu-item"
           role="menuitem"
@@ -106,7 +108,7 @@ export function DrawingCanvasAddMenu({
               Add a modular TB strip
             </span>
           </span>
-        </button>
+        </button> : null}
         <button
           type="button"
           className="drawing-canvas-add-menu-item"
@@ -117,7 +119,7 @@ export function DrawingCanvasAddMenu({
           <span>
             <span className="block font-semibold">Sheet</span>
             <span className="block text-[10px] font-medium text-slate-500">
-              Add drawing or section page
+              Add drawing, section, or panel page
             </span>
           </span>
         </button>

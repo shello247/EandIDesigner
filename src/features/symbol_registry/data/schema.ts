@@ -10,9 +10,9 @@ export const symbolStatusSchema = z.enum([
 export const symbolCategorySchema = z.enum([
   "instrument",
   "monitor",
+  "network_device",
   "terminal_block",
   "cable_assembly",
-  "network_device",
   "gland",
   "other"
 ]);
@@ -137,11 +137,54 @@ export const symbolAnchorSchema = z
       : anchor
   );
 
+export const symbolTerminalPanelSideSchema = z.enum([
+  "external",
+  "internal",
+  "single"
+]);
+
+export const symbolElectricalDomainSchema = z.enum([
+  "signal",
+  "power",
+  "neutral",
+  "shield",
+  "protective_earth",
+  "signal_ground"
+]);
+
+export const symbolPanelWiringAssetTypeSchema = z.enum([
+  "instrument",
+  "controller",
+  "terminal_block",
+  "breaker",
+  "fuse",
+  "relay",
+  "power_supply",
+  "isolator",
+  "converter",
+  "io_module",
+  "earth_bar",
+  "other"
+]);
+
+export const symbolPanelWiringCapabilitySchema = z.object({
+  assetType: symbolPanelWiringAssetTypeSchema,
+  tagPrefix: z.string().trim().min(1).max(24),
+  schematicScale: z.number().positive().optional()
+});
+
+export const symbolTerminalBlockModuleSchema = z.object({
+  kind: z.literal("feed_through"),
+  defaultForGeneratedGroups: z.boolean().default(false)
+});
+
 export const symbolTerminalSchema = z.object({
   key: z.string().trim().min(1).max(80),
   label: z.string().trim().min(1).max(120),
   function: z.string().trim().max(200).optional(),
   anchorKey: z.string().trim().min(1).max(80),
+  panelSide: symbolTerminalPanelSideSchema.optional(),
+  electricalDomains: z.array(symbolElectricalDomainSchema).optional(),
   requiredForWiring: z.boolean()
 });
 
@@ -151,7 +194,8 @@ export const symbolLayoutMetadataSchema = z.object({
   physicalHeightMm: z.number().positive().optional(),
   mountingType: symbolPanelMountingTypeSchema.optional(),
   panelCategory: symbolPanelCategorySchema.optional(),
-  resizable: z.boolean().default(false)
+  resizable: z.boolean().default(false),
+  terminalBlockModule: symbolTerminalBlockModuleSchema.optional()
 });
 
 export const symbolNetworkPortSchema = z.object({
@@ -182,6 +226,8 @@ export const symbolMetadataSchema = z
     mountingType: symbolPanelMountingTypeSchema.optional(),
     panelCategory: symbolPanelCategorySchema.optional(),
     resizable: z.boolean().optional(),
+    terminalBlockModule: symbolTerminalBlockModuleSchema.optional(),
+    panelWiring: symbolPanelWiringCapabilitySchema.optional(),
     networkProfile: symbolNetworkProfileSchema.optional(),
     viewBox: viewBoxSchema,
     terminals: z.array(symbolTerminalSchema),
@@ -290,6 +336,11 @@ export const approvedNetworkVersionIdsSchema = z
   .max(5000)
   .transform((versionIds) => [...new Set(versionIds)]);
 
+export const symbolPanelWiringCapabilityUpdateInputSchema = z.object({
+  versionId: z.string().trim().min(1),
+  panelWiring: symbolPanelWiringCapabilitySchema.optional()
+});
+
 export const terminalMapVerificationIssueSchema = z.object({
   severity: validationIssueSeveritySchema,
   terminalKey: z.string().trim().max(80).optional(),
@@ -396,12 +447,24 @@ export type SymbolPanelMountingType = z.infer<
   typeof symbolPanelMountingTypeSchema
 >;
 export type SymbolPanelCategory = z.infer<typeof symbolPanelCategorySchema>;
+export type SymbolPanelWiringAssetType = z.infer<
+  typeof symbolPanelWiringAssetTypeSchema
+>;
+export type SymbolPanelWiringCapability = z.infer<
+  typeof symbolPanelWiringCapabilitySchema
+>;
 export type SymbolLayoutMetadata = z.infer<typeof symbolLayoutMetadataSchema>;
 export type SymbolNetworkPort = z.infer<typeof symbolNetworkPortSchema>;
 export type SymbolNetworkProfile = z.infer<typeof symbolNetworkProfileSchema>;
 export type SymbolMetadata = z.infer<typeof symbolMetadataSchema>;
 export type SymbolAnchor = z.infer<typeof symbolAnchorSchema>;
 export type SymbolTerminal = z.infer<typeof symbolTerminalSchema>;
+export type SymbolTerminalPanelSide = z.infer<
+  typeof symbolTerminalPanelSideSchema
+>;
+export type SymbolElectricalDomain = z.infer<
+  typeof symbolElectricalDomainSchema
+>;
 export type ValidationIssue = z.infer<typeof validationIssueSchema>;
 export type SaveSymbolDraftInput = z.infer<typeof saveSymbolDraftInputSchema>;
 export type TerminalMapUpdateInput = z.infer<
@@ -415,6 +478,9 @@ export type UpdateSymbolNetworkProfileInput = z.infer<
 >;
 export type ApprovedNetworkVersionIds = z.infer<
   typeof approvedNetworkVersionIdsSchema
+>;
+export type SymbolPanelWiringCapabilityUpdateInput = z.infer<
+  typeof symbolPanelWiringCapabilityUpdateInputSchema
 >;
 export type TerminalMapVerificationIssue = z.infer<
   typeof terminalMapVerificationIssueSchema

@@ -38,7 +38,7 @@ export type TerminalBlockAssetCatalogItem = {
   placementRefs: TerminalBlockAssetPlacementRef[];
 };
 
-const DEFAULT_TERMINAL_BLOCK_SCALE = 0.34;
+export const TERMINAL_BLOCK_SCHEMATIC_SCALE = 0.34;
 
 export function createTerminalBlockPlacement({
   model,
@@ -60,7 +60,7 @@ export function createTerminalBlockPlacement({
   const normalizedConfig = normalizeTerminalBlockPlacement(terminalBlock);
   const viewBox = terminalBlockViewBox(normalizedConfig);
   const placementId = `tb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const scale = DEFAULT_TERMINAL_BLOCK_SCALE;
+  const scale = TERMINAL_BLOCK_SCHEMATIC_SCALE;
   const width = viewBox.width * scale;
   const height = viewBox.height * scale;
   const normalizedTag =
@@ -93,7 +93,7 @@ export function buildTerminalBlockAssetCatalog(
   (model.assets ?? [])
     .filter((asset) => asset.type === "terminal_block")
     .forEach((asset) => {
-      const config = normalizeTerminalBlockPlacement(undefined);
+      const config = normalizeTerminalBlockPlacement(asset.terminalBlock);
 
       catalog.set(asset.id, {
         assetId: asset.id,
@@ -122,6 +122,12 @@ export function buildTerminalBlockAssetCatalog(
         const current = catalog.get(assetId);
 
         if (current) {
+          if (!current.config.moduleTemplate && placement.terminalBlock) {
+            current.config = config;
+            current.terminalLabels = terminalBlockTerminals(config).map(
+              (terminal) => terminal.label
+            );
+          }
           current.placementRefs.push(placementRef);
           return;
         }

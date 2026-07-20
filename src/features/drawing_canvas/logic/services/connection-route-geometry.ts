@@ -2,6 +2,7 @@ import type {
   DrawingConnection,
   DrawingConnectionRoute,
   DrawingEndpoint,
+  DrawingPlacement,
   DrawingSheetCanvasModel as DrawingModel,
   DrawingRoutePoint
 } from "../../data/schema";
@@ -12,6 +13,14 @@ import {
   getPlacementById,
   getSymbolForPlacement
 } from "./drawing-connections";
+import {
+  isBackplanePlacement,
+  isLayoutHelperPlacement
+} from "./drawing-backplane-layouts";
+import {
+  getBackplaneDisplayBounds,
+  resolveLayoutHelperDisplayPlacement
+} from "./drawing-backplane-scale";
 
 export type RouteSegment = {
   from: DrawingRoutePoint;
@@ -37,6 +46,28 @@ type EndpointContext = {
   side: EndpointSide;
   isCableEndpoint: boolean;
 };
+
+function resolvePlacementForRouting(
+  model: DrawingModel,
+  placement: DrawingPlacement
+): DrawingPlacement {
+  const parentBackplane =
+    isLayoutHelperPlacement(placement) && placement.layoutParentId
+      ? model.placements.find(
+          (candidate) =>
+            candidate.id === placement.layoutParentId &&
+            isBackplanePlacement(candidate)
+        )
+      : undefined;
+
+  return parentBackplane
+    ? resolveLayoutHelperDisplayPlacement({
+        sheet: model.sheet,
+        placement,
+        backplane: parentBackplane
+      })
+    : placement;
+}
 
 function routePointId(connectionId: string, suffix: string): string {
   return `${connectionId}_${suffix}`;
@@ -85,7 +116,7 @@ export function getEndpointWorldPoint(
   }
 
   return getAnchorWorldPoint(
-    resolved.placement,
+    resolvePlacementForRouting(model, resolved.placement),
     resolved.symbol.metadata,
     resolved.anchor
   );
@@ -102,12 +133,13 @@ function getEndpointContext(
     return null;
   }
 
+  const routePlacement = resolvePlacementForRouting(model, resolved.placement);
   const point = getAnchorWorldPoint(
-    resolved.placement,
+    routePlacement,
     resolved.symbol.metadata,
     resolved.anchor
   );
-  const bounds = getPlacementBounds(resolved.placement, resolved.symbol.metadata);
+  const bounds = getPlacementBounds(routePlacement, resolved.symbol.metadata);
   const distances: Array<{ side: EndpointSide; value: number }> = [
     { side: "top", value: Math.abs(point.y - bounds.y) },
     {
@@ -439,7 +471,10 @@ export function getPlacementObstacles(
       return [];
     }
 
-    const bounds = getPlacementBounds(placement, symbol.metadata);
+    const routePlacement = resolvePlacementForRouting(model, placement);
+    const bounds = isBackplanePlacement(placement)
+      ? getBackplaneDisplayBounds(model.sheet, placement)
+      : getPlacementBounds(routePlacement, symbol.metadata);
 
     return [
       {

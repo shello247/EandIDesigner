@@ -224,7 +224,7 @@ export function renderConnectionRouteSvg(input: {
       : "";
 
   return `
-    <g data-connection-id="${input.escapeXml(input.connection.id)}" data-route-style="orthogonal">
+    <g data-connection-id="${input.escapeXml(input.connection.id)}"${input.connection.panelConnectionId ? ` data-panel-wire-id="${input.escapeXml(input.connection.panelConnectionId)}"` : ""} data-route-style="orthogonal">
       <path d="${rendered.pathData}" fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>
       ${labelSvg}
     </g>

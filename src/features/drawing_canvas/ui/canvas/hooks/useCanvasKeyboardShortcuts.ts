@@ -15,10 +15,13 @@ export function useCanvasKeyboardShortcuts({
   connectionMode,
   selection,
   canDeleteSelectedRoutePoint,
+  hasSelectedConnection,
   onConnectionCancel,
+  onGestureCancel,
   onClearSelection,
   onCopySelection,
   onDeleteSelectedRoutePoint,
+  onDeleteSelectedConnection,
   onDeleteSelection,
   onNudgeSelected,
   onPasteSelection,
@@ -28,10 +31,13 @@ export function useCanvasKeyboardShortcuts({
   connectionMode: "idle" | "connecting";
   selection: DrawingCanvasSelection;
   canDeleteSelectedRoutePoint: boolean;
+  hasSelectedConnection: boolean;
   onConnectionCancel: () => void;
+  onGestureCancel: () => void;
   onClearSelection: () => void;
   onCopySelection: () => void;
   onDeleteSelectedRoutePoint: () => void;
+  onDeleteSelectedConnection: () => void;
   onDeleteSelection: () => void;
   onNudgeSelected: (direction: "up" | "down" | "left" | "right") => void;
   onPasteSelection: () => void;
@@ -93,6 +99,7 @@ export function useCanvasKeyboardShortcuts({
 
       if (event.key === "Escape") {
         event.preventDefault();
+        onGestureCancel();
         if (connectionMode === "connecting") {
           onConnectionCancel();
           return;
@@ -112,6 +119,15 @@ export function useCanvasKeyboardShortcuts({
       }
 
       if (
+        hasSelectedConnection &&
+        (event.key === "Delete" || event.key === "Backspace")
+      ) {
+        event.preventDefault();
+        onDeleteSelectedConnection();
+        return;
+      }
+
+      if (
         (selection.placementIds.length > 0 || selection.annotationIds.length > 0) &&
         (event.key === "Delete" || event.key === "Backspace")
       ) {
@@ -122,10 +138,13 @@ export function useCanvasKeyboardShortcuts({
     [
       canDeleteSelectedRoutePoint,
       connectionMode,
+      hasSelectedConnection,
       onClearSelection,
       onConnectionCancel,
+      onGestureCancel,
       onCopySelection,
       onDeleteSelectedRoutePoint,
+      onDeleteSelectedConnection,
       onDeleteSelection,
       onNudgeSelected,
       onPasteSelection,

@@ -12,6 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:panel-perf": "tsx scripts/panel-performance.ts",
+    "benchmark:bom": "tsx scripts/benchmark-bom-generation.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
@@ -24,6 +26,7 @@
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
+    "exceljs": "^4.4.0",
     "lucide-react": "1.21.0",
     "next": "16.2.9",
     "openai": "6.45.0",

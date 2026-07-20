@@ -8,7 +8,8 @@ import {
   type SymbolCategory,
   type SymbolLayoutUsage,
   type SymbolPanelCategory,
-  type SymbolPanelMountingType
+  type SymbolPanelMountingType,
+  type SymbolPanelWiringAssetType
 } from "@/features/symbol_registry/data/schema";
 import type { SvgViewBox } from "@/shared/svg/svg-inspector";
 import type { SvgImportNetworkProfileDraft } from "../../data/schema";
@@ -55,6 +56,10 @@ export function buildImportedSymbolMetadata(input: {
   mountingType?: SymbolPanelMountingType | "";
   panelCategory?: SymbolPanelCategory | "";
   resizable?: boolean;
+  panelWiringEnabled?: boolean;
+  panelWiringAssetType?: SymbolPanelWiringAssetType;
+  panelWiringTagPrefix?: string;
+  panelWiringSchematicScale?: string | number;
   viewBox: SvgViewBox;
   anchors: SymbolAnchor[];
   terminals: SymbolTerminal[];
@@ -85,6 +90,15 @@ export function buildImportedSymbolMetadata(input: {
     panelCategory: isNetworkDevice ? undefined : input.panelCategory || undefined,
     resizable: isNetworkDevice ? false : input.resizable ?? false,
     networkProfile,
+    panelWiring: !isNetworkDevice && input.panelWiringEnabled
+      ? {
+          assetType: input.panelWiringAssetType ?? "other",
+          tagPrefix: input.panelWiringTagPrefix?.trim().toUpperCase() || "EQ",
+          schematicScale: normalizePositiveNumber(
+            input.panelWiringSchematicScale
+          )
+        }
+      : undefined,
     viewBox: input.viewBox,
     anchors: input.anchors.map((anchor) => ({
       ...anchor,

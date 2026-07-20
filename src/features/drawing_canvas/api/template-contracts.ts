@@ -33,3 +33,4 @@ export {
   isGeneratedPanelEnclosurePlacement
 } from "../logic/services/drawing-asset-containment";
 export { deriveWireId } from "../logic/services/drawing-identification";
+export { remapLayoutDimensionAttachmentPlacementIds } from "../logic/services/drawing-layout-dimensions";

@@ -10,7 +10,8 @@ export function RouteLabelOverlay({
   viewportZoom,
   onRouteLabelPointerDown,
   onRouteLabelPointerMove,
-  onRouteLabelPointerEnd
+  onRouteLabelPointerEnd,
+  onRouteLabelPointerCancel
 }: {
   selectedConnectionSegment: ConnectionSegment | null;
   viewportZoom: number;
@@ -20,6 +21,7 @@ export function RouteLabelOverlay({
   ) => void;
   onRouteLabelPointerMove: (event: PointerEvent<SVGCircleElement>) => void;
   onRouteLabelPointerEnd: () => void;
+  onRouteLabelPointerCancel: () => void;
 }) {
   if (!selectedConnectionSegment?.label) {
     return null;
@@ -48,7 +50,7 @@ export function RouteLabelOverlay({
         onPointerDown={(event) => onRouteLabelPointerDown(handlePoint, event)}
         onPointerMove={onRouteLabelPointerMove}
         onPointerUp={onRouteLabelPointerEnd}
-        onPointerCancel={onRouteLabelPointerEnd}
+        onPointerCancel={onRouteLabelPointerCancel}
       >
         <title>Drag wire label</title>
       </circle>

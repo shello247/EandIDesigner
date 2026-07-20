@@ -4,9 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  ClipboardList,
   DraftingCompass,
   LibraryBig,
   Network,
+  PackageSearch,
   PanelLeftClose,
   PanelLeftOpen,
   Plus
@@ -34,6 +36,19 @@ const navItems = [
     icon: Network,
     isActive: (pathname: string) =>
       pathname === "/networking" || pathname.startsWith("/networking/")
+  },
+  {
+    href: "/bom",
+    label: "BOM Creator",
+    icon: ClipboardList,
+    isActive: (pathname: string) => pathname === "/bom"
+  },
+  {
+    href: "/bom/items",
+    label: "Items Library",
+    icon: PackageSearch,
+    isActive: (pathname: string) =>
+      pathname === "/bom/items" || pathname.startsWith("/bom/items/")
   },
   {
     href: "/symbols/new",

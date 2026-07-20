@@ -22,6 +22,7 @@ model Symbol {
   validationIssues SymbolValidationIssue[]
   engineerNotes    SymbolEngineerNote[]
   documents        SymbolDocument[]
+  bomTemplate      SymbolBomTemplate?
 
   @@index([status])
   @@index([category])
@@ -116,6 +117,113 @@ model SymbolDocument {
   @@index([symbolId])
   @@index([versionId])
   @@index([createdAt])
+}
+
+model BomItem {
+  id                   String                  @id @default(cuid())
+  itemKey              String                  @unique
+  displayName          String
+  description          String?
+  category             String
+  unit                 String
+  manufacturer         String?
+  partNumber           String?
+  model                String?
+  notes                String?
+  supplierName         String?
+  supplierContactName  String?
+  supplierEmail        String?
+  supplierPhone        String?
+  supplierWebsite      String?
+  supplierSku          String?
+  unitCost             Float?
+  currency             String?
+  leadTimeDays         Int?
+  minimumOrderQuantity Float?
+  costNotes            String?
+  status               String                  @default("active")
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  images               BomItemImage[]
+  templateLines        SymbolBomTemplateLine[]
+
+  @@index([status])
+  @@index([category])
+  @@index([manufacturer])
+  @@index([supplierName])
+  @@index([status, displayName, itemKey])
+  @@index([status, category, displayName, itemKey])
+  @@index([status, manufacturer, displayName, itemKey])
+}
+
+model BomItemKeySequence {
+  scope     String   @id
+  lastValue Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model BomItemCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
+model BomItemManufacturer {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
+model BomItemImage {
+  id        String   @id @default(cuid())
+  itemId    String
+  item      BomItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  fileName  String
+  mimeType  String
+  sizeBytes Int
+  dataUrl   String
+  caption   String?
+  isPrimary Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([itemId])
+  @@index([itemId, sortOrder])
+}
+
+model SymbolBomTemplate {
+  id        String                  @id @default(cuid())
+  symbolId  String                  @unique
+  symbol    Symbol                  @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+  notes     String?
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+  lines     SymbolBomTemplateLine[]
+
+  @@index([updatedAt])
+}
+
+model SymbolBomTemplateLine {
+  id           String            @id @default(cuid())
+  templateId   String
+  template     SymbolBomTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  itemId       String
+  item         BomItem           @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  lineNumber   Int
+  quantityRule String
+  quantity     Float             @default(1)
+  notes        String?
+
+  @@unique([templateId, lineNumber])
+  @@index([itemId])
+  @@index([quantityRule])
 }
 
 model Drawing {

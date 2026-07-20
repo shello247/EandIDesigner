@@ -19,7 +19,8 @@ import {
   isGeneratedPanelEnclosurePlacement,
   normalizeAssetTag,
   PANEL_ENCLOSURE_TAG_PREFIX,
-  placementAssetId
+  placementAssetId,
+  remapLayoutDimensionAttachmentPlacementIds
 } from "@/features/drawing_canvas/api/template-contracts";
 import {
   drawingSheetTemplateModelSchema,
@@ -537,7 +538,7 @@ export function instantiateTemplateSheet(input: {
         });
       }
 
-      return {
+      return remapLayoutDimensionAttachmentPlacementIds({
         ...placement,
         id,
         assetId: resolution?.assetId ?? createDrawingAssetId(id),
@@ -546,7 +547,7 @@ export function instantiateTemplateSheet(input: {
           ? placementIdMap.get(placement.layoutParentId)
           : undefined,
         tag: resolution?.tag ?? placement.tag
-      };
+      }, (placementId) => placementIdMap.get(placementId));
     }
   );
 

@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { terminalBlockPlacementSchema } from "@/features/drawing_terminal_blocks/data/schema";
+import {
+  panelDrawingContextSchema,
+  panelWiringPackageDataSchema
+} from "@/features/drawing_panel_wiring/api/contracts";
 
 export const drawingStatusSchema = z.enum([
   "draft",
@@ -23,6 +27,13 @@ export const drawingAssetTypeSchema = z.enum([
   "junction_box",
   "terminal_block",
   "breaker",
+  "fuse",
+  "relay",
+  "power_supply",
+  "isolator",
+  "converter",
+  "io_module",
+  "earth_bar",
   "cable",
   "other"
 ]);
@@ -32,6 +43,7 @@ export const drawingAssetRecordSchema = z.object({
   tag: z.string().trim().min(1).max(120),
   type: drawingAssetTypeSchema,
   title: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(400).optional(),
   symbolId: z.string().trim().min(1).optional(),
   versionId: z.string().trim().min(1).optional(),
   metadata: z
@@ -39,7 +51,8 @@ export const drawingAssetRecordSchema = z.object({
       generatedKind: z.string().trim().max(80).optional(),
       symbolKey: z.string().trim().max(160).optional()
     })
-    .optional()
+    .optional(),
+  terminalBlock: terminalBlockPlacementSchema.optional()
 });
 
 export const drawingEndpointSchema = z.object({
@@ -73,6 +86,22 @@ export const drawingPlacementSchema = z.object({
   containerAssetId: z.string().trim().min(1).optional(),
   layoutKind: z.enum(["backplane", "layout_helper"]).optional(),
   layoutParentId: z.string().trim().min(1).optional(),
+  panelReference: z
+    .object({
+      panelAssetId: z.string().trim().min(1),
+      referenceKind: z.enum([
+        "shield",
+        "protective_earth",
+        "signal_ground"
+      ]),
+      key: z.string().trim().min(1).max(120).optional()
+    })
+    .optional(),
+  panelPatternLegend: z
+    .object({
+      visible: z.boolean().default(true)
+    })
+    .optional(),
   symbolId: z.string().trim().min(1),
   versionId: z.string().trim().min(1),
   role: placementRoleSchema,
@@ -86,6 +115,63 @@ export const drawingPlacementSchema = z.object({
     .object({
       lengthMm: z.number().positive(),
       widthMm: z.number().positive()
+    })
+    .optional(),
+  layoutScale: z
+    .object({
+      mode: z.enum(["auto", "manual"]).default("auto"),
+      value: z.number().positive().optional()
+    })
+    .optional(),
+  layoutPosition: z
+    .object({
+      xMm: z.number().finite(),
+      yMm: z.number().finite()
+    })
+    .optional(),
+  layoutLabel: z
+    .object({
+      visible: z.boolean().optional(),
+      position: z
+        .enum([
+          "center",
+          "top-left",
+          "top-center",
+          "top-right",
+          "bottom-left",
+          "bottom-center",
+          "bottom-right"
+        ])
+        .optional()
+    })
+    .optional(),
+  layoutDimension: z
+    .object({
+      orientation: z.enum(["horizontal", "vertical"]),
+      startMm: z.number().finite(),
+      endMm: z.number().finite(),
+      offsetMm: z.number().finite(),
+      startWitnessMm: z.number().finite().optional(),
+      endWitnessMm: z.number().finite().optional(),
+      labelPositionMm: z.number().finite().optional(),
+      startAttachment: z
+        .object({
+          targetKind: z.enum(["backplane", "usable", "placement"]),
+          placementId: z.string().trim().min(1).optional(),
+          edge: z.enum(["top", "right", "bottom", "left"]),
+          ratio: z.number().min(0).max(1)
+        })
+        .optional(),
+      endAttachment: z
+        .object({
+          targetKind: z.enum(["backplane", "usable", "placement"]),
+          placementId: z.string().trim().min(1).optional(),
+          edge: z.enum(["top", "right", "bottom", "left"]),
+          ratio: z.number().min(0).max(1)
+        })
+        .optional(),
+      labelOverride: z.string().trim().max(80).optional(),
+      showValue: z.boolean().optional()
     })
     .optional(),
   labelPosition: z
@@ -113,6 +199,16 @@ export const drawingPlacementSchema = z.object({
   terminalBlock: terminalBlockPlacementSchema.optional()
 });
 
+export function isNonAssetDrawingPlacement(
+  placement: DrawingPlacement
+): boolean {
+  return Boolean(
+    (placement.layoutKind && placement.role === "other") ||
+      placement.panelReference ||
+      placement.panelPatternLegend
+  );
+}
+
 export const drawingConnectionSchema = z.object({
   id: z.string().trim().min(1),
   from: drawingEndpointSchema,
@@ -121,6 +217,9 @@ export const drawingConnectionSchema = z.object({
   wireId: z.string().trim().max(80).optional(),
   cablePlacementId: z.string().trim().min(1).optional(),
   conductorKey: z.string().trim().max(80).optional(),
+  panelConnectionId: z.string().trim().min(1).optional(),
+  panelPatternId: z.string().trim().min(1).optional(),
+  panelPatternSegmentId: z.string().trim().min(1).optional(),
   route: drawingConnectionRouteSchema.optional()
 });
 
@@ -191,6 +290,7 @@ const drawingPackageSheetInputSchema = z.object({
     .default("drawing"),
   description: z.string().trim().max(400).optional(),
   sectionTitlePage: drawingSectionTitlePageSchema.optional(),
+  panelDrawingContext: panelDrawingContextSchema.optional(),
   page: drawingSheetPageSchema,
   placements: z.array(drawingPlacementSchema),
   connections: z.array(drawingConnectionSchema),
@@ -208,6 +308,7 @@ export const drawingPackageModelSchema = z.object({
   version: z.literal(2),
   titleBlock: drawingTitleBlockSchema,
   assets: z.array(drawingAssetRecordSchema).default([]),
+  panelWiring: panelWiringPackageDataSchema.optional(),
   sheets: z.array(drawingPackageSheetSchema).min(1)
 });
 
@@ -221,7 +322,12 @@ export const createDrawingInputSchema = z.object({
 export const saveDrawingInputSchema = z.object({
   drawingId: z.string().trim().min(1),
   title: z.string().trim().min(1).max(200),
-  model: drawingPackageModelSchema
+  model: drawingPackageModelSchema,
+  expectedUpdatedAt: z
+    .string()
+    .trim()
+    .refine((value) => !Number.isNaN(Date.parse(value)), "Invalid drawing revision.")
+    .optional()
 });
 
 export type DrawingStatus = z.infer<typeof drawingStatusSchema>;
@@ -325,12 +431,21 @@ export function ensureDrawingModelAssetIds(model: DrawingModel): DrawingModel {
     ...model,
     sheets: model.sheets.map((sheet) => ({
       ...sheet,
-      placements: sheet.placements.map((placement) => ({
-        ...placement,
-        assetId:
-          placement.assetId?.trim() ||
-          createStablePlacementAssetId(placement.id)
-      }))
+      placements: sheet.placements.map((placement) => {
+        if (isNonAssetDrawingPlacement(placement)) {
+          return {
+            ...placement,
+            assetId: undefined
+          };
+        }
+
+        return {
+          ...placement,
+          assetId:
+            placement.assetId?.trim() ||
+            createStablePlacementAssetId(placement.id)
+        };
+      })
     }))
   };
 }
@@ -390,6 +505,7 @@ function assetRecordFromPlacement(placement: DrawingPlacement): DrawingAssetReco
     title: inferDrawingAssetTitleFromPlacement(placement),
     symbolId: placement.symbolId,
     versionId: placement.versionId,
+    terminalBlock: placement.terminalBlock,
     metadata: placement.enclosure?.kind
       ? { generatedKind: placement.enclosure.kind }
       : undefined
@@ -402,13 +518,25 @@ function placementAssetIdForSchema(placement: DrawingPlacement): string {
 
 export function ensureDrawingModelAssets(model: DrawingModel): DrawingModel {
   const assets = new Map<string, DrawingAssetRecord>();
+  const nonAssetPlacementIds = new Set(
+    model.sheets.flatMap((sheet) =>
+      sheet.placements
+        .filter(isNonAssetDrawingPlacement)
+        .map(placementAssetIdForSchema)
+    )
+  );
 
   for (const asset of model.assets ?? []) {
+    if (nonAssetPlacementIds.has(asset.id)) continue;
     assets.set(asset.id, drawingAssetRecordSchema.parse(asset));
   }
 
   for (const sheet of model.sheets) {
     for (const placement of sheet.placements) {
+      if (isNonAssetDrawingPlacement(placement)) {
+        continue;
+      }
+
       const assetId = placementAssetIdForSchema(placement);
 
       if (!assets.has(assetId)) {

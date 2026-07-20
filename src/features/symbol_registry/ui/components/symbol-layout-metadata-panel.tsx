@@ -79,7 +79,12 @@ export function SymbolLayoutMetadataPanel({
     metadata.panelCategory ?? ""
   );
   const [resizable, setResizable] = useState(metadata.resizable ?? false);
+  const [defaultTerminalBlockModule, setDefaultTerminalBlockModule] = useState(
+    metadata.terminalBlockModule?.defaultForGeneratedGroups ?? false
+  );
   const panelLayoutEnabled = layoutUsage !== "wiring";
+  const terminalModuleEligible =
+    metadata.category === "terminal_block" && panelCategory === "termination";
 
   const save = () => {
     startTransition(async () => {
@@ -90,7 +95,14 @@ export function SymbolLayoutMetadataPanel({
         physicalHeightMm: parsePositiveInput(physicalHeightMm),
         mountingType: mountingType || undefined,
         panelCategory: panelCategory || undefined,
-        resizable
+        resizable,
+        terminalBlockModule:
+          terminalModuleEligible && defaultTerminalBlockModule
+            ? {
+                kind: "feed_through",
+                defaultForGeneratedGroups: true
+              }
+            : undefined
       });
 
       setMessage(result.ok ? "Layout metadata saved." : result.error);
@@ -212,6 +224,28 @@ export function SymbolLayoutMetadataPanel({
           />
           Resizable in panel layouts
         </label>
+        {metadata.category === "terminal_block" ? (
+          <label className="flex items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            <input
+              className="mt-0.5"
+              type="checkbox"
+              checked={defaultTerminalBlockModule}
+              disabled={isPending || !panelLayoutEnabled || !terminalModuleEligible}
+              onChange={(event) =>
+                setDefaultTerminalBlockModule(event.currentTarget.checked)
+              }
+            />
+            <span>
+              <span className="block font-semibold">
+                Default terminal group module
+              </span>
+              <span className="mt-0.5 block leading-5 text-slate-500">
+                Repeat this approved feed-through terminal when building terminal
+                block groups.
+              </span>
+            </span>
+          </label>
+        ) : null}
         {panelLayoutEnabled &&
         (!parsePositiveInput(physicalWidthMm) ||
           !parsePositiveInput(physicalHeightMm)) ? (

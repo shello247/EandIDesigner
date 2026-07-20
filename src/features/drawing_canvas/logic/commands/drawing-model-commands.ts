@@ -6,6 +6,7 @@ import type {
   DrawingSheetCanvasModel
 } from "../../data/schema";
 import { placementAssetId } from "../services/drawing-asset-identity";
+import { clearLayoutDimensionAttachmentToPlacement } from "../services/drawing-layout-dimensions";
 
 export function addPlacement(
   model: DrawingSheetCanvasModel,
@@ -65,10 +66,16 @@ export function deletePlacement(
     placements: model.placements
       .filter((placement) => placement.id !== placementId)
       .map((placement) => {
+        const withoutDeletedDimensionAttachment =
+          clearLayoutDimensionAttachmentToPlacement(placement, placementId);
         const withoutDeletedContainer =
-          deletedAssetId && placement.containerAssetId === deletedAssetId
-            ? { ...placement, containerAssetId: undefined }
-            : placement;
+          deletedAssetId &&
+          withoutDeletedDimensionAttachment.containerAssetId === deletedAssetId
+            ? {
+                ...withoutDeletedDimensionAttachment,
+                containerAssetId: undefined
+              }
+            : withoutDeletedDimensionAttachment;
 
         return deletedLayoutParentId &&
           withoutDeletedContainer.layoutParentId === deletedLayoutParentId

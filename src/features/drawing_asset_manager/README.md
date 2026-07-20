@@ -15,11 +15,15 @@ placements when parsed or saved.
 - Groups assets by engineering type: instruments, controllers, panels,
   junction boxes, terminal blocks, breakers, cables, and other assets.
 - Shows sheet associations by sheet number and sheet name.
+- Includes Detailed Panel contexts and electrical occurrences as references
+  without counting another physical asset.
 - Creates unplaced package assets that can later be referenced by placement
   flows.
 - Deletes only unplaced assets that are not used as containers.
 - Does not show connections and does not manage occurrence relinking. The
   selected-placement Asset Identity / Asset Link workflow owns that.
+- In read-only Detailed Panel deployments, protected panel assets remain
+  viewable and server save guards prevent mutation bypass.
 
 ## Public Use Cases
 

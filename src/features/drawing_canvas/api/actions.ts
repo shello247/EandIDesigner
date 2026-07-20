@@ -2,16 +2,49 @@
 
 import { revalidatePath } from "next/cache";
 import {
-  approveDrawing,
   createDrawing,
   deleteDrawing,
-  saveDrawing
+  DrawingRevisionConflictError,
+  saveDrawing,
+  saveDrawingReviewState
 } from "../data/mutations";
 import type { SaveDrawingInput } from "../data/schema";
-import type { ActionResult, DrawingDetail } from "../types";
+import type {
+  ActionResult,
+  DrawingApprovalOutcome,
+  DrawingDetail
+} from "../types";
+import { listSymbolsForDrawing } from "@/features/symbol_registry/api/public";
+import { detailedPanelDrawingsEnabled } from "@/features/drawing_panel_wiring/api/release";
+import { buildDrawingApprovalDecision } from "../logic/services/drawing-approval-quality";
+import { getDrawingDetail } from "../data/queries";
+import {
+  containsDetailedPanelDrawings,
+  hasDetailedPanelMutation
+} from "../logic/services/drawing-detailed-panel-release";
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unexpected server error.";
+}
+
+function toActionError(error: unknown): ActionResult<never> {
+  if (error instanceof DrawingRevisionConflictError) {
+    return {
+      ok: false,
+      error: error.message,
+      code: "conflict",
+      latestUpdatedAt: error.latestUpdatedAt
+    };
+  }
+  return { ok: false, error: toErrorMessage(error) };
+}
+
+async function detailedPanelMutationBlocked(
+  input: SaveDrawingInput
+): Promise<boolean> {
+  if (detailedPanelDrawingsEnabled()) return false;
+  const current = await getDrawingDetail(input.drawingId);
+  return current ? hasDetailedPanelMutation(current.model, input.model) : true;
 }
 
 export async function createDrawingAction(
@@ -32,7 +65,7 @@ export async function createDrawingAction(
     revalidatePath("/drawings");
     return { ok: true, data: drawing };
   } catch (error) {
-    return { ok: false, error: toErrorMessage(error) };
+    return toActionError(error);
   }
 }
 
@@ -40,6 +73,13 @@ export async function saveDrawingAction(
   input: SaveDrawingInput
 ): Promise<ActionResult<DrawingDetail>> {
   try {
+    if (await detailedPanelMutationBlocked(input)) {
+      return {
+        ok: false,
+        code: "unavailable",
+        error: "Detailed Panel Drawings are read-only in this deployment."
+      };
+    }
     const drawing = await saveDrawing(input);
 
     if (!drawing) {
@@ -50,25 +90,44 @@ export async function saveDrawingAction(
     revalidatePath(`/drawings/${drawing.id}`);
     return { ok: true, data: drawing };
   } catch (error) {
-    return { ok: false, error: toErrorMessage(error) };
+    return toActionError(error);
   }
 }
 
 export async function approveDrawingAction(
-  drawingId: string
-): Promise<ActionResult<DrawingDetail>> {
+  input: SaveDrawingInput
+): Promise<ActionResult<DrawingApprovalOutcome>> {
   try {
-    const drawing = await approveDrawing(drawingId);
+    if (
+      !detailedPanelDrawingsEnabled() &&
+      containsDetailedPanelDrawings(input.model)
+    ) {
+      return {
+        ok: false,
+        code: "unavailable",
+        error: "Detailed Panel packages cannot be approved while the feature is read-only."
+      };
+    }
+    const symbols = await listSymbolsForDrawing();
+    const decision = buildDrawingApprovalDecision(input.model, symbols);
+    const drawing = await saveDrawingReviewState(input, decision.status);
 
     if (!drawing) {
       return { ok: false, error: "Drawing could not be approved." };
     }
 
     revalidatePath("/drawings");
-    revalidatePath(`/drawings/${drawingId}`);
-    return { ok: true, data: drawing };
+    revalidatePath(`/drawings/${input.drawingId}`);
+    return {
+      ok: true,
+      data: {
+        drawing,
+        quality: decision.quality,
+        approved: decision.quality.canApprove
+      }
+    };
   } catch (error) {
-    return { ok: false, error: toErrorMessage(error) };
+    return toActionError(error);
   }
 }
 

@@ -5,10 +5,16 @@ import type {
 import type { ApprovedDrawingSymbol } from "../../types";
 import {
   getPanelEnclosureBounds,
-  getPanelEnclosureTitle,
-  isGeneratedPanelEnclosurePlacement
+  getPanelEnclosureTitle
 } from "./drawing-asset-containment";
 import { placementAssetId } from "./drawing-asset-identity";
+import {
+  getBackplaneDisplayBounds,
+  getBackplaneDisplayUsableBounds,
+  getBackplanePhysicalUsableBounds,
+  resolveBackplaneLayoutScale,
+  resolveLayoutHelperDisplayPlacement
+} from "./drawing-backplane-scale";
 
 export const GENERATED_BACKPLANE_SYMBOL_ID = "__generated_backplane__";
 export const GENERATED_BACKPLANE_VERSION_ID = "generated_backplane_v1";
@@ -17,7 +23,6 @@ export const BACKPLANE_LABEL = "Backplane";
 
 const BACKPLANE_MARGIN = 4;
 const BACKPLANE_HEADER_CLEARANCE = 2;
-const BACKPLANE_USABLE_MARGIN = 3;
 const MIN_BACKPLANE_WIDTH = 25;
 const MIN_BACKPLANE_HEIGHT = 18;
 
@@ -30,14 +35,6 @@ type Bounds = {
 
 function round(value: number): number {
   return Number(value.toFixed(2));
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
 
 function panelHeaderHeight(bounds: Bounds): number {
@@ -146,6 +143,9 @@ export function createBackplanePlacement({
     rotation: 0,
     scale: 1,
     layoutKind: "backplane",
+    layoutScale: {
+      mode: "auto"
+    },
     layoutDimensions: {
       lengthMm: bounds.width,
       widthMm: bounds.height
@@ -163,14 +163,7 @@ export function getBackplaneBounds(placement: DrawingPlacement): Bounds {
 }
 
 export function getBackplaneUsableBounds(placement: DrawingPlacement): Bounds {
-  const bounds = getBackplaneBounds(placement);
-
-  return {
-    x: round(bounds.x + BACKPLANE_USABLE_MARGIN),
-    y: round(bounds.y + BACKPLANE_USABLE_MARGIN),
-    width: round(Math.max(1, bounds.width - BACKPLANE_USABLE_MARGIN * 2)),
-    height: round(Math.max(1, bounds.height - BACKPLANE_USABLE_MARGIN * 2))
-  };
+  return getBackplanePhysicalUsableBounds(placement);
 }
 
 export function getBackplanesForSheet(
@@ -191,70 +184,20 @@ export function getLayoutChildrenForBackplane(
   );
 }
 
-function findParentPanel(
-  model: DrawingSheetCanvasModel,
-  backplane: DrawingPlacement
-): DrawingPlacement | undefined {
-  return model.placements.find(
-    (placement) =>
-      isGeneratedPanelEnclosurePlacement(placement) &&
-      backplane.containerAssetId &&
-      placementAssetId(placement) === backplane.containerAssetId
-  );
-}
-
-function clampBackplaneToPanel(
-  model: DrawingSheetCanvasModel,
-  placement: DrawingPlacement,
-  updates: Bounds
-): Bounds {
-  const panel = findParentPanel(model, placement);
-
-  if (!panel) {
-    return {
-      x: round(updates.x),
-      y: round(updates.y),
-      width: round(Math.max(MIN_BACKPLANE_WIDTH, updates.width)),
-      height: round(Math.max(MIN_BACKPLANE_HEIGHT, updates.height))
-    };
-  }
-
-  const defaultBounds = backplaneDefaultBounds(panel);
-  const maxRight = defaultBounds.x + defaultBounds.width;
-  const maxBottom = defaultBounds.y + defaultBounds.height;
-  const width = Math.min(
-    Math.max(MIN_BACKPLANE_WIDTH, updates.width),
-    defaultBounds.width
-  );
-  const height = Math.min(
-    Math.max(MIN_BACKPLANE_HEIGHT, updates.height),
-    defaultBounds.height
-  );
-  const x = Math.max(defaultBounds.x, Math.min(maxRight - width, updates.x));
-  const y = Math.max(defaultBounds.y, Math.min(maxBottom - height, updates.y));
-
-  return {
-    x: round(x),
-    y: round(y),
-    width: round(width),
-    height: round(height)
-  };
-}
-
 export function resizeBackplane(
   model: DrawingSheetCanvasModel,
   placement: DrawingPlacement,
   updates: Bounds
 ): DrawingPlacement {
-  const clamped = clampBackplaneToPanel(model, placement, updates);
+  const scale = resolveBackplaneLayoutScale(model.sheet, placement);
 
   return {
     ...placement,
-    x: clamped.x,
-    y: clamped.y,
+    x: round(updates.x),
+    y: round(updates.y),
     layoutDimensions: {
-      lengthMm: clamped.width,
-      widthMm: clamped.height
+      lengthMm: round(Math.max(MIN_BACKPLANE_WIDTH, updates.width / scale.factor)),
+      widthMm: round(Math.max(MIN_BACKPLANE_HEIGHT, updates.height / scale.factor))
     }
   };
 }
@@ -271,34 +214,111 @@ export function assignPlacementToBackplane(
   };
 }
 
+export function shouldAutosizeLayoutSymbolToBackplane(
+  symbol: ApprovedDrawingSymbol
+): boolean {
+  return (
+    symbol.metadata.resizable === true ||
+    symbol.metadata.panelCategory === "rail" ||
+    symbol.metadata.panelCategory === "ducting"
+  );
+}
+
+export function normalizeLayoutHelperDimensionsForSymbol(
+  placement: DrawingPlacement,
+  symbol: ApprovedDrawingSymbol
+): DrawingPlacement {
+  if (
+    !isLayoutHelperPlacement(placement) ||
+    placement.layoutDimension ||
+    shouldAutosizeLayoutSymbolToBackplane(symbol)
+  ) {
+    return placement;
+  }
+
+  const lengthMm =
+    symbol.metadata.physicalWidthMm ??
+    placement.layoutDimensions?.lengthMm ??
+    symbol.metadata.viewBox.width;
+  const widthMm =
+    symbol.metadata.physicalHeightMm ??
+    placement.layoutDimensions?.widthMm ??
+    symbol.metadata.viewBox.height;
+
+  return {
+    ...placement,
+    layoutDimensions: {
+      lengthMm: round(lengthMm),
+      widthMm: round(widthMm)
+    }
+  };
+}
+
 export function autosizeLayoutHelperToBackplane({
   placement,
   backplane,
-  symbol
+  symbol,
+  sheet
 }: {
   placement: DrawingPlacement;
   backplane: DrawingPlacement;
   symbol: ApprovedDrawingSymbol;
+  sheet?: DrawingSheetCanvasModel["sheet"];
 }): DrawingPlacement {
   const usable = getBackplaneUsableBounds(backplane);
   const widthMm =
     placement.layoutDimensions?.widthMm ??
     symbol.metadata.physicalHeightMm ??
     symbol.metadata.viewBox.height;
-  const lengthMm = usable.width;
+  const requestedLengthMm =
+    placement.layoutDimensions?.lengthMm ??
+    symbol.metadata.physicalWidthMm ??
+    symbol.metadata.viewBox.width;
+  const shouldAutosize = shouldAutosizeLayoutSymbolToBackplane(symbol);
+  const lengthMm = shouldAutosize ? usable.width : requestedLengthMm;
+  const x = shouldAutosize
+    ? usable.x
+    : Math.min(
+        usable.x + 8,
+        usable.x + Math.max(0, usable.width - lengthMm)
+      );
   const y = Math.min(
     usable.y + 8,
     usable.y + Math.max(0, usable.height - widthMm)
   );
-
-  return {
-    ...assignPlacementToBackplane(placement, backplane),
-    x: usable.x,
-    y: round(y),
+  const physicalPlacement = {
+    ...assignPlacementToBackplane(
+      normalizeLayoutHelperDimensionsForSymbol(placement, symbol),
+      backplane
+    ),
+    layoutPosition: {
+      xMm: round(x),
+      yMm: round(y)
+    },
     layoutDimensions: {
       lengthMm: round(lengthMm),
       widthMm: round(widthMm)
     }
+  };
+
+  if (sheet) {
+    const displayPlacement = resolveLayoutHelperDisplayPlacement({
+        sheet,
+        placement: physicalPlacement,
+        backplane
+      });
+
+    return {
+      ...physicalPlacement,
+      x: displayPlacement.x,
+      y: displayPlacement.y
+    };
+  }
+
+  return {
+    ...physicalPlacement,
+    x: round(backplane.x + x),
+    y: round(backplane.y + y)
   };
 }
 
@@ -321,21 +341,20 @@ export function containedPlacementIdsForBackplanes(
 }
 
 export function renderBackplanePlacement(
-  placement: DrawingPlacement
+  placement: DrawingPlacement,
+  sheet: DrawingSheetCanvasModel["sheet"]
 ): string {
   if (!isBackplanePlacement(placement)) {
     return "";
   }
 
-  const bounds = getBackplaneBounds(placement);
-  const usable = getBackplaneUsableBounds(placement);
-  const label = `${placement.tag}${placement.title ? ` / ${placement.title}` : ""}`;
+  const bounds = getBackplaneDisplayBounds(sheet, placement);
+  const usable = getBackplaneDisplayUsableBounds(sheet, placement);
 
   return `
     <g data-placement-id="${placement.id}" data-backplane="true" pointer-events="none">
       <rect x="${bounds.x}" y="${bounds.y}" width="${bounds.width}" height="${bounds.height}" fill="#f8fafc" fill-opacity="0.42" stroke="#334155" stroke-width="0.36"/>
       <rect x="${usable.x}" y="${usable.y}" width="${usable.width}" height="${usable.height}" fill="none" stroke="#94a3b8" stroke-width="0.24" stroke-dasharray="2.4 2"/>
-      <text x="${bounds.x + 3}" y="${bounds.y + 5}" font-family="Arial, Helvetica, sans-serif" font-size="2.8" font-weight="700" fill="#334155">${escapeXml(label)}</text>
     </g>
   `;
 }

@@ -1,28 +1,21 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useState } from "react";
-import { FileText, LayoutDashboard, NotebookPen } from "lucide-react";
-import type {
-  SymbolCategory,
-  SymbolStatus,
-  ValidationIssue
-} from "../../data/schema";
-import type {
-  SymbolDocumentSummary,
-  SymbolEngineerNoteSummary,
-  SymbolVersionSummary
-} from "../../types";
+import { FileText, LayoutDashboard, NotebookPen, PackageSearch } from "lucide-react";
+import type { SymbolDetail, SymbolVersionSummary } from "../../types";
 import { EngineerNotesPanel } from "./engineer-notes-panel";
 import { NetworkProfilePanel } from "./network-profile-panel";
 import { SvgPreviewPanel } from "./svg-preview-panel";
 import { SymbolDocumentsPanel } from "./symbol-documents-panel";
 import { SymbolLayoutMetadataPanel } from "./symbol-layout-metadata-panel";
+import { SymbolPanelWiringCapabilityPanel } from "./symbol-panel-wiring-capability-panel";
 import { TerminalMapTable } from "./terminal-map-table";
 import { ValidationPanel } from "./validation-panel";
 
-type WorkspaceTab = "overview" | "engineer_notes" | "documents";
+type WorkspaceTab = "overview" | "bom" | "engineer_notes" | "documents";
 
-const tabs: Array<{
+const baseTabs: Array<{
   key: WorkspaceTab;
   label: string;
   icon: typeof LayoutDashboard;
@@ -33,31 +26,26 @@ const tabs: Array<{
 ];
 
 export function SymbolWorkspaceTabs({
-  symbolId,
-  category,
-  symbolStatus,
-  manufacturer,
-  model,
+  symbol,
   latest,
-  validationIssues,
-  engineerNotes,
-  documents
+  bomPanel
 }: {
-  symbolId: string;
-  category: SymbolCategory;
-  symbolStatus: SymbolStatus;
-  manufacturer?: string | null;
-  model?: string | null;
+  symbol: SymbolDetail;
   latest: SymbolVersionSummary;
-  validationIssues: ValidationIssue[];
-  engineerNotes: SymbolEngineerNoteSummary[];
-  documents: SymbolDocumentSummary[];
+  bomPanel?: ReactNode;
 }) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
+  const tabs = bomPanel
+    ? [
+        baseTabs[0],
+        { key: "bom" as const, label: "BOM", icon: PackageSearch },
+        ...baseTabs.slice(1)
+      ]
+    : baseTabs;
   const editable =
-    symbolStatus !== "archived" &&
+    symbol.status !== "archived" &&
     (latest.status === "draft" || latest.status === "needs_review");
-  const isNetworkSymbol = category === "network_device";
+  const isNetworkSymbol = symbol.category === "network_device";
 
   return (
     <div className="space-y-5">
@@ -105,8 +93,8 @@ export function SymbolWorkspaceTabs({
             {isNetworkSymbol ? (
               <NetworkProfilePanel
                 versionId={latest.id}
-                manufacturer={manufacturer}
-                model={model}
+                manufacturer={symbol.manufacturer}
+                model={symbol.model}
                 profile={latest.metadata.networkProfile}
                 anchors={latest.metadata.anchors}
                 editable={editable}
@@ -118,6 +106,10 @@ export function SymbolWorkspaceTabs({
                   metadata={latest.metadata}
                   readOnly={!editable}
                 />
+                <SymbolPanelWiringCapabilityPanel
+                  versionId={latest.id}
+                  metadata={latest.metadata}
+                />
                 <TerminalMapTable
                   versionId={latest.id}
                   metadata={latest.metadata}
@@ -125,26 +117,28 @@ export function SymbolWorkspaceTabs({
                 />
               </>
             )}
-            <ValidationPanel issues={validationIssues} />
+            <ValidationPanel issues={symbol.validationIssues} />
           </div>
         </div>
       ) : null}
 
       {activeTab === "engineer_notes" ? (
         <EngineerNotesPanel
-          symbolId={symbolId}
+          symbolId={symbol.id}
           versionId={latest.id}
-          notes={engineerNotes}
+          notes={symbol.engineerNotes}
         />
       ) : null}
 
       {activeTab === "documents" ? (
         <SymbolDocumentsPanel
-          symbolId={symbolId}
+          symbolId={symbol.id}
           versionId={latest.id}
-          documents={documents}
+          documents={symbol.documents}
         />
       ) : null}
+
+      {activeTab === "bom" ? bomPanel : null}
     </div>
   );
 }

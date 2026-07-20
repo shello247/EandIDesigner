@@ -13,7 +13,8 @@ export function useRouteLabelDrag({
   onConnectionRouteChange,
   setSelectedRoutePointId,
   onGestureStart,
-  onGestureEnd
+  onGestureEnd,
+  onGestureCancel
 }: {
   model: DrawingModel;
   connectionSegments: ConnectionSegment[];
@@ -27,6 +28,7 @@ export function useRouteLabelDrag({
   setSelectedRoutePointId: (pointId: string | null) => void;
   onGestureStart: () => void;
   onGestureEnd: () => void;
+  onGestureCancel: () => void;
 }) {
   const routeLabelDragStateRef = useRef<RouteLabelDragState | null>(null);
 
@@ -106,9 +108,15 @@ export function useRouteLabelDrag({
     onGestureEnd();
   }, [onGestureEnd]);
 
+  const cancelRouteLabelDrag = useCallback(() => {
+    routeLabelDragStateRef.current = null;
+    onGestureCancel();
+  }, [onGestureCancel]);
+
   return {
     updateDraggedRouteLabel,
     handleRouteLabelPointerDown,
-    endRouteLabelDrag
+    endRouteLabelDrag,
+    cancelRouteLabelDrag
   };
 }

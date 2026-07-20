@@ -6,6 +6,7 @@ import type {
   DrawingSheetCanvasModel
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
+import { isTerminalBlockModuleSymbol } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
 import { replaceSheetFromCanvasModel, toSheetCanvasModel } from "../commands/drawing-sheet-commands";
 import {
   resolveCopiedPlacementAsset,
@@ -13,6 +14,7 @@ import {
   type CopiedAssetResolutionMap
 } from "./drawing-asset-resolution";
 import { deriveWireId } from "./drawing-identification";
+import { remapLayoutDimensionAttachmentPlacementIds } from "./drawing-layout-dimensions";
 import {
   EMPTY_CANVAS_SELECTION,
   isCanvasSelectionEmpty,
@@ -132,6 +134,28 @@ function connectionCablePlacementId(
   return undefined;
 }
 
+function remapLayoutParentId(
+  placement: DrawingPlacement,
+  placementIdMap: Map<string, string>,
+  target: DrawingPackageSheet
+): string | undefined {
+  if (!placement.layoutParentId) {
+    return undefined;
+  }
+
+  const copiedParentId = placementIdMap.get(placement.layoutParentId);
+
+  if (copiedParentId) {
+    return copiedParentId;
+  }
+
+  return target.placements.some(
+    (candidate) => candidate.id === placement.layoutParentId
+  )
+    ? placement.layoutParentId
+    : undefined;
+}
+
 export function copySelectionToClipboard(params: {
   model: DrawingModel;
   sheetId: string;
@@ -186,10 +210,109 @@ export function pasteClipboardToSheet(params: {
     };
   }
 
+  const copiedSingularTerminalModule = params.clipboard.placements.find(
+    (placement) => {
+      const symbol = params.symbols.find(
+        (candidate) =>
+          candidate.symbolId === placement.symbolId &&
+          candidate.versionId === placement.versionId
+      );
+
+      return isTerminalBlockModuleSymbol(symbol);
+    }
+  );
+
+  if (copiedSingularTerminalModule) {
+    throw new Error(
+      "Individual terminal modules cannot be pasted. Use Terminal Block Group."
+    );
+  }
+
+  const source = params.model.sheets.find(
+    (sheet) => sheet.id === params.clipboard.sourceSheetId
+  );
+  const copiedAssetPlacements = params.clipboard.placements.filter(
+    (placement) => Boolean(placement.assetId)
+  );
+  const targetPanelAssetId = target.panelDrawingContext?.panelAssetId;
+  const sourcePanelAssetId = source?.panelDrawingContext?.panelAssetId;
+  const copiedPatternIds = new Set(
+    params.clipboard.connections.flatMap((connection) =>
+      connection.panelPatternId ? [connection.panelPatternId] : []
+    )
+  );
+
+  if (copiedPatternIds.size > 0) {
+    if (!targetPanelAssetId || targetPanelAssetId !== sourcePanelAssetId) {
+      throw new Error(
+        "Connection patterns can only be represented on another Detailed Panel Drawing for the same physical panel."
+      );
+    }
+    const duplicatePattern = target.connections.find(
+      (connection) =>
+        connection.panelPatternId && copiedPatternIds.has(connection.panelPatternId)
+    );
+    if (duplicatePattern) {
+      throw new Error(
+        "This physical connection pattern is already represented on the target sheet."
+      );
+    }
+  }
+
+  if (copiedAssetPlacements.length > 0 && (targetPanelAssetId || sourcePanelAssetId)) {
+    if (!targetPanelAssetId || !sourcePanelAssetId) {
+      throw new Error(
+        "Detailed Panel equipment must already exist in the panel inventory. Add it from the Panel Work Queue."
+      );
+    }
+    if (targetPanelAssetId !== sourcePanelAssetId) {
+      throw new Error(
+        "Detailed Panel components cannot be pasted into a different physical panel."
+      );
+    }
+    if (target.id === source?.id) {
+      throw new Error(
+        "A physical asset can appear only once on a Detailed Panel Drawing. Choose another existing asset from the Panel Work Queue."
+      );
+    }
+    const targetAssetIds = new Set(
+      target.placements.flatMap((placement) =>
+        placement.assetId ? [placement.assetId] : []
+      )
+    );
+    const duplicate = copiedAssetPlacements.find(
+      (placement) => placement.assetId && targetAssetIds.has(placement.assetId)
+    );
+    if (duplicate) {
+      throw new Error(
+        `${duplicate.tag} is already represented on the target Detailed Panel Drawing.`
+      );
+    }
+    if (
+      copiedAssetPlacements.some(
+        (placement) => placement.containerAssetId !== targetPanelAssetId
+      )
+    ) {
+      throw new Error(
+        "Only components associated with this physical panel can be pasted here."
+      );
+    }
+  }
+
   const idPrefix = sanitizeIdPart(params.idPrefix ?? createPasteIdPrefix(target));
   const placementIdMap = new Map<string, string>();
   const reservedTags = new Set<string>();
-  const assetMapping = params.assetMapping ?? new Map();
+  const assetMapping = new Map(params.assetMapping ?? []);
+  if (targetPanelAssetId && sourcePanelAssetId === targetPanelAssetId) {
+    for (const placement of copiedAssetPlacements) {
+      if (placement.assetId) {
+        assetMapping.set(placement.assetId, {
+          assetId: placement.assetId,
+          tag: placement.tag
+        });
+      }
+    }
+  }
   const duplicateMode = params.duplicateMode ?? "same-system";
 
   params.clipboard.placements.forEach((placement, index) => {
@@ -209,15 +332,18 @@ export function pasteClipboardToSheet(params: {
       newPlacementId: id
     });
 
-    return {
+    return remapLayoutDimensionAttachmentPlacementIds({
       ...placement,
       id,
       assetId: assetResolution.assetId,
       tag: assetResolution.tag,
-      layoutParentId: placement.layoutParentId
-        ? placementIdMap.get(placement.layoutParentId)
-        : undefined
-    };
+      layoutParentId: remapLayoutParentId(placement, placementIdMap, target)
+    }, (placementId) =>
+      placementIdMap.get(placementId) ??
+      (target.placements.some((candidate) => candidate.id === placementId)
+        ? placementId
+        : undefined)
+    );
   });
 
   const pastedConnections = params.clipboard.connections.map(

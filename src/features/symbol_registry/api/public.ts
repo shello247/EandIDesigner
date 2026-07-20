@@ -4,7 +4,8 @@ import {
   listApprovedNetworkSymbolVersionsByIds as listApprovedNetworkSymbolVersionsByIdsQuery,
   listDrawingSymbolVersions,
   listNetworkSymbolCatalog,
-  listNetworkSymbolVersions
+  listNetworkSymbolVersions,
+  listSymbolIdentitiesByIds
 } from "../data/queries";
 import type { SaveSymbolDraftInput } from "../data/schema";
 import type {
@@ -28,13 +29,19 @@ export type {
   SymbolNetworkProfile,
   SymbolPanelCategory,
   SymbolPanelMountingType,
-  SymbolTerminal
+  SymbolPanelWiringAssetType,
+  SymbolPanelWiringCapability,
+  SymbolTerminal,
+  SymbolTerminalPanelSide
 } from "../data/schema";
 export {
   networkDeviceTypeSchema,
   networkPortMediaSchema,
   symbolCategorySchema,
-  symbolMetadataSchema
+  symbolMetadataSchema,
+  symbolPanelWiringAssetTypeSchema,
+  symbolPanelWiringCapabilitySchema,
+  symbolTerminalPanelSideSchema
 } from "../data/schema";
 
 export async function saveSymbolDraftToRegistry(input: SaveSymbolDraftInput) {
@@ -71,3 +78,6 @@ export async function listNetworkSymbolsForMapping(): Promise<
 > {
   return listNetworkSymbolVersions();
 }
+
+export { listSymbolIdentitiesByIds };
+export type { SymbolIdentity } from "../types";

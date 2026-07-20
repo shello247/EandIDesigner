@@ -5,6 +5,7 @@ import { validateSymbol } from "../logic/use_cases/validate-symbol";
 import {
   isDrawingSymbolCategory,
   symbolMetadataSchema,
+  symbolCategorySchema,
   type SymbolMetadata
 } from "../data/schema";
 
@@ -29,6 +30,12 @@ const validMetadata: SymbolMetadata = {
 };
 
 describe("symbol registry validation", () => {
+  it("accepts stored network device symbols", () => {
+    expect(symbolCategorySchema.parse("network_device")).toBe(
+      "network_device"
+    );
+  });
+
   it("accepts a valid symbol", () => {
     const result = validateSymbol(validSvg, validMetadata);
 

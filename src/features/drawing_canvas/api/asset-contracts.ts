@@ -7,7 +7,10 @@ import type {
   DrawingPlacement,
   DrawingSheetCanvasModel
 } from "../data/schema";
-import { drawingAssetTypeSchema } from "../data/schema";
+import {
+  drawingAssetTypeSchema,
+  isNonAssetDrawingPlacement
+} from "../data/schema";
 import type { ApprovedDrawingSymbol } from "../types";
 import {
   allocateNextTagFromPrefix,
@@ -40,6 +43,7 @@ export type {
 };
 
 export {
+  isNonAssetDrawingPlacement,
   allocateNextTagFromPrefix,
   assertUniqueAssetTag,
   createDrawingAssetId,

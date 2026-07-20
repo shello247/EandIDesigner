@@ -10,6 +10,7 @@ import {
   saveSymbolDraft,
   updateSymbolLayoutMetadata,
   updateSymbolNetworkProfile,
+  updateSymbolPanelWiringCapability,
   updateSymbolTerminalMap,
   uploadSymbolDocument,
   validateSymbolVersion
@@ -23,6 +24,7 @@ import type {
   SaveSymbolDraftInput,
   SymbolLayoutMetadataUpdateInput,
   UpdateSymbolNetworkProfileInput,
+  SymbolPanelWiringCapabilityUpdateInput,
   TerminalMapUpdateInput
 } from "../data/schema";
 import { verifyTerminalMapWithAi } from "../logic/services/openai-terminal-map-verifier";
@@ -150,6 +152,22 @@ export async function updateSymbolNetworkProfileAction(
     const updated = await updateSymbolNetworkProfile(input);
     if (!updated) {
       return { ok: false, error: "Network profile could not be updated." };
+    }
+    revalidatePath("/symbols");
+    revalidatePath(`/symbols/${updated.id}`);
+    return { ok: true, data: updated };
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
+export async function updateSymbolPanelWiringCapabilityAction(
+  input: SymbolPanelWiringCapabilityUpdateInput
+): Promise<ActionResult<SymbolDetail>> {
+  try {
+    const updated = await updateSymbolPanelWiringCapability(input);
+    if (!updated) {
+      return { ok: false, error: "Detailed Panel metadata could not be updated." };
     }
     revalidatePath("/symbols");
     revalidatePath(`/symbols/${updated.id}`);

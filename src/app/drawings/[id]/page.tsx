@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { listSymbolsForDrawing } from "@/features/symbol_registry/api/public";
 import { getDrawingDetail } from "@/features/drawing_canvas/data/queries";
 import { DrawingCanvasShell } from "@/features/drawing_canvas/ui/components/drawing-canvas-shell";
+import { detailedPanelDrawingsEnabled } from "@/features/drawing_panel_wiring/api/release";
 
 export const dynamic = "force-dynamic";
 
@@ -20,5 +21,11 @@ export default async function DrawingDetailPage({
     notFound();
   }
 
-  return <DrawingCanvasShell drawing={drawing} symbols={symbols} />;
+  return (
+    <DrawingCanvasShell
+      drawing={drawing}
+      symbols={symbols}
+      detailedPanelDrawingsEnabled={detailedPanelDrawingsEnabled()}
+    />
+  );
 }

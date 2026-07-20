@@ -4,7 +4,8 @@ import { Plus, Trash2 } from "lucide-react";
 import type {
   AnchorKind,
   SymbolAnchor,
-  SymbolTerminal
+  SymbolTerminal,
+  SymbolTerminalPanelSide
 } from "@/features/symbol_registry/data/schema";
 import type { SvgViewBox } from "@/shared/svg/svg-inspector";
 
@@ -16,6 +17,16 @@ const anchorKindOptions: AnchorKind[] = [
   "label",
   "mounting",
   "other"
+];
+
+const panelSideOptions: Array<{
+  value: SymbolTerminalPanelSide | "";
+  label: string;
+}> = [
+  { value: "", label: "Automatic / legacy" },
+  { value: "external", label: "External (field)" },
+  { value: "internal", label: "Internal (panel)" },
+  { value: "single", label: "Single / not sided" }
 ];
 
 function nextKey(items: Array<{ key: string }>, prefix: string): string {
@@ -271,6 +282,7 @@ export function TerminalAnchorEditor({
                 <th>Label</th>
                 <th>Function</th>
                 <th>Anchor</th>
+                <th>Panel side</th>
                 <th>Required</th>
                 <th></th>
               </tr>
@@ -366,6 +378,35 @@ export function TerminalAnchorEditor({
                     </select>
                   </td>
                   <td>
+                    <select
+                      aria-label={`Terminal panel side ${terminal.key}`}
+                      className="field-input min-w-40"
+                      value={terminal.panelSide ?? ""}
+                      disabled={disabled}
+                      onChange={(event) =>
+                        onTerminalsChange(
+                          terminals.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? {
+                                  ...item,
+                                  panelSide:
+                                    (event.currentTarget.value as
+                                      | SymbolTerminalPanelSide
+                                      | "") || undefined
+                                }
+                              : item
+                          )
+                        )
+                      }
+                    >
+                      {panelSideOptions.map((option) => (
+                        <option key={option.value || "automatic"} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
                     <input
                       aria-label={`Terminal required ${terminal.key}`}
                       type="checkbox"
@@ -406,7 +447,7 @@ export function TerminalAnchorEditor({
               ))}
               {terminals.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-slate-500">
+                  <td colSpan={7} className="text-slate-500">
                     No terminals defined.
                   </td>
                 </tr>

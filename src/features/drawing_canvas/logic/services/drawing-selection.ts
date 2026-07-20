@@ -10,6 +10,14 @@ import {
   getPanelEnclosureBounds,
   isGeneratedPanelEnclosurePlacement
 } from "./drawing-asset-containment";
+import {
+  isBackplanePlacement,
+  isLayoutHelperPlacement
+} from "./drawing-backplane-layouts";
+import {
+  getBackplaneDisplayBounds,
+  resolveLayoutHelperDisplayPlacement
+} from "./drawing-backplane-scale";
 import { getSymbolForPlacement } from "./drawing-connections";
 
 export type DrawingCanvasSelection = {
@@ -156,11 +164,16 @@ function rectsIntersect(first: SelectionRect, second: SelectionRect): boolean {
 }
 
 function placementRect(
+  model: DrawingSheetCanvasModel,
   placement: DrawingPlacement,
   symbols: ApprovedDrawingSymbol[]
 ): SelectionRect | null {
   if (isGeneratedPanelEnclosurePlacement(placement)) {
     return getPanelEnclosureBounds(placement);
+  }
+
+  if (isBackplanePlacement(placement)) {
+    return getBackplaneDisplayBounds(model.sheet, placement);
   }
 
   const symbol = getSymbolForPlacement(placement, symbols);
@@ -169,7 +182,23 @@ function placementRect(
     return null;
   }
 
-  return getPlacementBounds(placement, symbol.metadata);
+  const parentBackplane =
+    isLayoutHelperPlacement(placement) && placement.layoutParentId
+      ? model.placements.find(
+          (candidate) =>
+            candidate.id === placement.layoutParentId &&
+            isBackplanePlacement(candidate)
+        )
+      : undefined;
+  const renderPlacement = parentBackplane
+    ? resolveLayoutHelperDisplayPlacement({
+        sheet: model.sheet,
+        placement,
+        backplane: parentBackplane
+      })
+    : placement;
+
+  return getPlacementBounds(renderPlacement, symbol.metadata);
 }
 
 function annotationRect(annotation: DrawingAnnotation): SelectionRect {
@@ -198,7 +227,7 @@ export function getMarqueeSelection(params: {
   return {
     placementIds: params.model.placements
       .filter((placement) => {
-        const bounds = placementRect(placement, params.symbols);
+        const bounds = placementRect(params.model, placement, params.symbols);
 
         return bounds ? rectsIntersect(marquee, bounds) : false;
       })
@@ -220,7 +249,7 @@ export function getSelectionBounds(params: {
   const rects = [
     ...params.model.placements
       .filter((placement) => placementIds.has(placement.id))
-      .map((placement) => placementRect(placement, params.symbols))
+      .map((placement) => placementRect(params.model, placement, params.symbols))
       .filter((rect): rect is SelectionRect => Boolean(rect)),
     ...params.model.annotations
       .filter((annotation) => annotationIds.has(annotation.id))

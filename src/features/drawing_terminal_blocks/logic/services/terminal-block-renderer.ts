@@ -1,4 +1,5 @@
 import type { TerminalBlockPlacement } from "../../data/schema";
+import type { ResolvedTerminalBlockModule } from "./terminal-block-groups";
 import {
   normalizeTerminalBlockPlacement,
   terminalBlockTerminals,
@@ -35,29 +36,94 @@ function terminalModule(x: number): string {
   `;
 }
 
+function stripSvgRoot(svg: string): string {
+  const start = svg.indexOf(">");
+  const end = svg.toLowerCase().lastIndexOf("</svg>");
+
+  if (start === -1 || end === -1 || end <= start) {
+    return svg;
+  }
+
+  return svg.slice(start + 1, end);
+}
+
+function safeSvgId(value: string): string {
+  return value.replace(/[^A-Za-z0-9_-]/g, "_");
+}
+
+function terminalModuleTemplate({
+  module,
+  id
+}: {
+  module: ResolvedTerminalBlockModule;
+  id: string;
+}): string {
+  const viewBox = module.viewBox;
+
+  return `<symbol id="${id}" viewBox="${format(viewBox.x)} ${format(
+    viewBox.y
+  )} ${format(viewBox.width)} ${format(
+    viewBox.height
+  )}" overflow="visible">${stripSvgRoot(module.svg)}</symbol>`;
+}
+
 export function renderTerminalBlockSvgContent(
-  config: TerminalBlockPlacement
+  config: TerminalBlockPlacement,
+  options: {
+    module?: ResolvedTerminalBlockModule;
+    instanceId?: string;
+  } = {}
 ): string {
   const normalized = normalizeTerminalBlockPlacement(config);
   const terminals = terminalBlockTerminals(normalized);
+  const templateId = `terminal-block-module-${safeSvgId(
+    options.instanceId ?? "generated"
+  )}`;
   const modules = terminals
     .map((terminal, index) => {
       const moduleX = index * normalized.modulePitch;
       const centerX = moduleX + normalized.moduleWidth / 2;
+      const body = options.module
+        ? `<use href="#${templateId}" x="${format(moduleX)}" y="0" width="${format(
+            normalized.moduleWidth
+          )}" height="${format(
+            normalized.moduleHeight
+          )}" preserveAspectRatio="none" data-terminal-module="true"/>`
+        : terminalModule(moduleX);
 
       return `
-        ${terminalModule(moduleX)}
-        <text x="${format(centerX)}" y="91" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="7" font-weight="700" fill="#111827">${escapeXml(terminal.label)}</text>
+        ${body}
+        <text x="${format(centerX)}" y="${format(
+          normalized.moduleHeight / 2 + 2.5
+        )}" text-anchor="middle" font-family="Inter, Poppins, Arial, Helvetica, sans-serif" font-size="7" font-weight="700" fill="#111827">${escapeXml(
+          terminal.label
+        )}</text>
       `;
     })
     .join("");
 
-  return `<g data-generated-terminal-block="true">${modules}</g>`;
+  const definitions = options.module
+    ? `<defs>${terminalModuleTemplate({
+        module: options.module,
+        id: templateId
+      })}</defs>`
+    : "";
+
+  return `<g data-generated-terminal-block="true">${definitions}${modules}</g>`;
 }
 
-export function renderTerminalBlockSvg(config: TerminalBlockPlacement): string {
+export function renderTerminalBlockSvg(
+  config: TerminalBlockPlacement,
+  options: {
+    module?: ResolvedTerminalBlockModule;
+    instanceId?: string;
+  } = {}
+): string {
   const normalized = normalizeTerminalBlockPlacement(config);
   const viewBox = terminalBlockViewBox(normalized);
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}" fill="none">${renderTerminalBlockSvgContent(normalized)}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}" fill="none">${renderTerminalBlockSvgContent(
+    normalized,
+    options
+  )}</svg>`;
 }

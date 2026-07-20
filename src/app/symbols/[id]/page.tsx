@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { SymbolBomPanelLoader } from "@/features/bom_creator/ui/components/symbol-bom-panel-loader";
 import { getSymbolDetail } from "@/features/symbol_registry/data/queries";
 import { SymbolDetailPanel } from "@/features/symbol_registry/ui/components/symbol-detail-panel";
 
@@ -16,5 +17,12 @@ export default async function SymbolDetailPage({
     notFound();
   }
 
-  return <SymbolDetailPanel symbol={symbol} />;
+  return (
+    <SymbolDetailPanel
+      symbol={symbol}
+      bomPanel={
+        <SymbolBomPanelLoader symbolId={symbol.id} />
+      }
+    />
+  );
 }
