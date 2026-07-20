@@ -8,7 +8,12 @@ import {
   saveNetworkMap
 } from "../data/mutations";
 import type { SaveNetworkMapInput } from "../data/schema";
-import type { ActionResult, NetworkMapDetail } from "../types";
+import type {
+  ActionResult,
+  ApprovedNetworkSymbol,
+  NetworkMapDetail
+} from "../types";
+import { listApprovedNetworkSymbolVersionsByIds } from "@/features/symbol_registry/api/public";
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unexpected server error.";
@@ -80,6 +85,23 @@ export async function deleteNetworkMapAction(
     revalidatePath("/networking");
     revalidatePath(`/networking/${networkMapId}`);
     return { ok: true, data: { id: networkMapId } };
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
+export async function loadApprovedNetworkSymbolForPlacementAction(
+  versionId: string
+): Promise<ActionResult<ApprovedNetworkSymbol>> {
+  try {
+    const [symbol] = await listApprovedNetworkSymbolVersionsByIds([versionId]);
+
+    return symbol
+      ? { ok: true, data: symbol }
+      : {
+          ok: false,
+          error: "This approved network symbol version is no longer available."
+        };
   } catch (error) {
     return { ok: false, error: toErrorMessage(error) };
   }

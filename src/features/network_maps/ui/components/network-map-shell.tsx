@@ -1,7 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition
+} from "react";
 import {
   CheckCircle2,
   FileDown,
@@ -16,6 +23,7 @@ import {
 } from "lucide-react";
 import {
   approveNetworkMapAction,
+  loadApprovedNetworkSymbolForPlacementAction,
   saveNetworkMapAction
 } from "../../api/actions";
 import {
@@ -23,9 +31,31 @@ import {
   type NetworkMapAnnotation,
   type NetworkMapModel,
   type NetworkMapSheet,
-  type NetworkMapTitleBlock
+  type NetworkMapTitleBlock,
+  type NetworkNodeEditableUpdates
 } from "../../data/schema";
-import type { ApprovedNetworkSymbol, NetworkMapDetail } from "../../types";
+import type {
+  ActionResult,
+  ApprovedNetworkSymbol,
+  ApprovedNetworkSymbolCatalogItem,
+  NetworkLibraryFilters,
+  NetworkMapDetail,
+  NetworkMapSelection,
+  NetworkPlacementToolState
+} from "../../types";
+import { DEFAULT_NETWORK_LIBRARY_FILTERS } from "../../logic/services/network-library-catalog";
+import {
+  addNetworkNodeCommand,
+  allocateNetworkNodeTag,
+  deleteNetworkNodeCommand,
+  moveNetworkNodesCommand,
+  updateNetworkNodeCommand
+} from "../../logic/commands/network-node-commands";
+import type {
+  NetworkNodeSize,
+  NetworkPoint
+} from "../../logic/services/network-node-geometry";
+import { networkSymbolReferenceKey } from "../../logic/services/network-link-routing";
 import { NetworkMapLibraryPanel } from "./network-map-library-panel";
 import { NetworkMapPropertiesPanel } from "./network-map-properties-panel";
 import { NetworkMapSurface } from "./network-map-surface";
@@ -47,21 +77,44 @@ function updateSheet(
   };
 }
 
-function duplicateSheet(sheet: NetworkMapSheet, sheetNumber: number): NetworkMapSheet {
+function duplicateSheet(
+  sheet: NetworkMapSheet,
+  sheetNumber: number,
+  model: NetworkMapModel
+): NetworkMapSheet {
   const newId = nextId("sheet");
+  const zoneIds = new Map(
+    sheet.zones.map((zone) => [zone.id, `${zone.id}_${newId}`])
+  );
+  const zones = sheet.zones.map((zone) => ({
+    ...zone,
+    id: zoneIds.get(zone.id) ?? zone.id
+  }));
+  let allocationModel = model;
+  const nodes = sheet.nodes.map((node) => {
+    const copy = {
+      ...node,
+      id: `${node.id}_${newId}`,
+      tag: allocateNetworkNodeTag(allocationModel, node.deviceType),
+      zoneId: node.zoneId ? zoneIds.get(node.zoneId) : undefined
+    };
+
+    allocationModel = {
+      ...allocationModel,
+      sheets: [
+        ...allocationModel.sheets,
+        { ...sheet, id: `${newId}_allocation`, nodes: [copy], links: [] }
+      ]
+    };
+    return copy;
+  });
 
   return {
     ...sheet,
     id: newId,
     name: `${sheet.name} ${sheetNumber}`,
-    zones: sheet.zones.map((zone) => ({
-      ...zone,
-      id: `${zone.id}_${newId}`
-    })),
-    nodes: sheet.nodes.map((node) => ({
-      ...node,
-      id: `${node.id}_${newId}`
-    })),
+    zones,
+    nodes,
     links: [],
     annotations: sheet.annotations.map((annotation) => ({
       ...annotation,
@@ -72,10 +125,12 @@ function duplicateSheet(sheet: NetworkMapSheet, sheetNumber: number): NetworkMap
 
 export function NetworkMapShell({
   networkMap,
-  symbols
+  catalogItems,
+  referencedSymbols
 }: {
   networkMap: NetworkMapDetail;
-  symbols: ApprovedNetworkSymbol[];
+  catalogItems: ApprovedNetworkSymbolCatalogItem[];
+  referencedSymbols: ApprovedNetworkSymbol[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -84,11 +139,26 @@ export function NetworkMapShell({
   const [activeSheetId, setActiveSheetId] = useState(
     networkMap.model.sheets[0]?.id ?? "sheet_1"
   );
-  const [selectedAnnotationId, setSelectedAnnotationId] = useState<
-    string | undefined
-  >(undefined);
+  const [selection, setSelection] = useState<NetworkMapSelection>(null);
+  const [placementTool, setPlacementTool] =
+    useState<NetworkPlacementToolState>({ mode: "idle" });
+  const [resolvedSymbols, setResolvedSymbols] =
+    useState<ApprovedNetworkSymbol[]>(referencedSymbols);
+  const symbolCacheRef = useRef(
+    new Map(referencedSymbols.map((symbol) => [symbol.versionId, symbol]))
+  );
+  const inFlightSymbolsRef = useRef(
+    new Map<
+      string,
+      Promise<ActionResult<ApprovedNetworkSymbol>>
+    >()
+  );
+  const placementRequestRef = useRef<string | null>(null);
   const [isLibraryCollapsed, setIsLibraryCollapsed] = useState(false);
   const [isPropertiesCollapsed, setIsPropertiesCollapsed] = useState(false);
+  const [libraryFilters, setLibraryFilters] = useState<NetworkLibraryFilters>(
+    DEFAULT_NETWORK_LIBRARY_FILTERS
+  );
   const [message, setMessage] = useState<string | null>(null);
   const activeSheet =
     model.sheets.find((sheet) => sheet.id === activeSheetId) ?? model.sheets[0];
@@ -96,9 +166,31 @@ export function NetworkMapShell({
     1,
     model.sheets.findIndex((sheet) => sheet.id === activeSheet?.id) + 1
   );
-  const selectedAnnotation = activeSheet?.annotations.find(
-    (annotation) => annotation.id === selectedAnnotationId
+  const selectedAnnotation =
+    selection?.kind === "annotation"
+      ? activeSheet?.annotations.find(
+          (annotation) => annotation.id === selection.id
+        )
+      : undefined;
+  const selectedNode =
+    selection?.kind === "node"
+      ? activeSheet?.nodes.find((node) => node.id === selection.id)
+      : undefined;
+  const symbolsByReference = useMemo(
+    () =>
+      new Map(
+        resolvedSymbols.map((symbol) => [
+          networkSymbolReferenceKey(symbol.symbolId, symbol.versionId),
+          symbol
+        ])
+      ),
+    [resolvedSymbols]
   );
+  const selectedNodeSymbol = selectedNode
+    ? symbolsByReference.get(
+        networkSymbolReferenceKey(selectedNode.symbolId, selectedNode.versionId)
+      )
+    : undefined;
   const nodeCount = model.sheets.reduce(
     (total, sheet) => total + sheet.nodes.length,
     0
@@ -123,6 +215,217 @@ export function NetworkMapShell({
 
     return () => window.clearTimeout(timeoutId);
   }, [message]);
+
+  useEffect(() => {
+    const additions = referencedSymbols.filter(
+      (symbol) => !symbolCacheRef.current.has(symbol.versionId)
+    );
+
+    if (additions.length === 0) {
+      return;
+    }
+
+    additions.forEach((symbol) =>
+      symbolCacheRef.current.set(symbol.versionId, symbol)
+    );
+    setResolvedSymbols((current) => [...current, ...additions]);
+  }, [referencedSymbols]);
+
+  const cancelPlacement = useCallback(() => {
+    placementRequestRef.current = null;
+    setPlacementTool({ mode: "idle" });
+  }, []);
+
+  const togglePlacement = useCallback(
+    (item: ApprovedNetworkSymbolCatalogItem) => {
+      if (
+        placementTool.mode !== "idle" &&
+        placementTool.item.versionId === item.versionId
+      ) {
+        cancelPlacement();
+        setMessage("Placement cancelled.");
+        return;
+      }
+
+      const cachedSymbol = symbolCacheRef.current.get(item.versionId);
+
+      if (cachedSymbol) {
+        placementRequestRef.current = null;
+        setPlacementTool({ mode: "placing", item, symbol: cachedSymbol });
+        setMessage(`Click the active sheet to place ${item.displayName}.`);
+        return;
+      }
+
+      const requestId = `${item.versionId}:${crypto.randomUUID()}`;
+      placementRequestRef.current = requestId;
+      setPlacementTool({ mode: "loading", item });
+
+      let request = inFlightSymbolsRef.current.get(item.versionId);
+
+      if (!request) {
+        request = loadApprovedNetworkSymbolForPlacementAction(item.versionId);
+        inFlightSymbolsRef.current.set(item.versionId, request);
+      }
+
+      void (async () => {
+        try {
+          const result = await request;
+
+          if (placementRequestRef.current !== requestId) {
+            return;
+          }
+
+          if (!result.ok) {
+            setPlacementTool({ mode: "idle" });
+            setMessage(result.error);
+            return;
+          }
+
+          symbolCacheRef.current.set(result.data.versionId, result.data);
+          setResolvedSymbols((current) =>
+            current.some((symbol) => symbol.versionId === result.data.versionId)
+              ? current
+              : [...current, result.data]
+          );
+          setPlacementTool({ mode: "placing", item, symbol: result.data });
+          setMessage(`Click the active sheet to place ${item.displayName}.`);
+        } catch (error) {
+          if (placementRequestRef.current === requestId) {
+            setPlacementTool({ mode: "idle" });
+            setMessage(
+              error instanceof Error
+                ? error.message
+                : "The network symbol could not be loaded."
+            );
+          }
+        } finally {
+          if (inFlightSymbolsRef.current.get(item.versionId) === request) {
+            inFlightSymbolsRef.current.delete(item.versionId);
+          }
+        }
+      })();
+    },
+    [cancelPlacement, placementTool]
+  );
+
+  const placeNode = useCallback(
+    (point: NetworkPoint) => {
+      if (!activeSheet || placementTool.mode !== "placing") {
+        return;
+      }
+
+      try {
+        const result = addNetworkNodeCommand(model, {
+          sheetId: activeSheet.id,
+          nodeId: `node_${crypto.randomUUID()}`,
+          source: {
+            symbolId: placementTool.symbol.symbolId,
+            versionId: placementTool.symbol.versionId,
+            deviceType: placementTool.item.deviceType,
+            viewBox: placementTool.symbol.metadata.viewBox
+          },
+          point
+        });
+
+        setModel(result.model);
+        setSelection({ kind: "node", id: result.node.id });
+        setPlacementTool({ mode: "idle" });
+        setMessage(`${result.node.tag} placed.`);
+      } catch (error) {
+        setMessage(
+          error instanceof Error ? error.message : "The device could not be placed."
+        );
+      }
+    },
+    [activeSheet, model, placementTool]
+  );
+
+  const updateSelectedNode = useCallback(
+    (updates: NetworkNodeEditableUpdates): boolean => {
+      if (!activeSheet || !selectedNode) {
+        return false;
+      }
+
+      try {
+        setModel(
+          updateNetworkNodeCommand(model, {
+            sheetId: activeSheet.id,
+            nodeId: selectedNode.id,
+            updates
+          })
+        );
+        setMessage("Device properties updated.");
+        return true;
+      } catch (error) {
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "The device properties could not be updated."
+        );
+        return false;
+      }
+    },
+    [activeSheet, model, selectedNode]
+  );
+
+  const moveNode = useCallback(
+    (nodeId: string, delta: NetworkPoint, size: NetworkNodeSize) => {
+      if (!activeSheet) {
+        return;
+      }
+
+      try {
+        setModel(
+          moveNetworkNodesCommand(model, {
+            sheetId: activeSheet.id,
+            nodeIds: [nodeId],
+            delta,
+            nodeSizes: { [nodeId]: size }
+          })
+        );
+        setMessage("Device moved.");
+      } catch (error) {
+        setMessage(
+          error instanceof Error ? error.message : "The device could not be moved."
+        );
+      }
+    },
+    [activeSheet, model]
+  );
+
+  const deleteNode = useCallback(
+    (nodeId: string) => {
+      if (!activeSheet) {
+        return;
+      }
+
+      const removedLinks = activeSheet.links.filter(
+        (link) => link.from.nodeId === nodeId || link.to.nodeId === nodeId
+      ).length;
+
+      try {
+        setModel(
+          deleteNetworkNodeCommand(model, {
+            sheetId: activeSheet.id,
+            nodeId
+          })
+        );
+        setSelection(null);
+        setMessage(
+          removedLinks > 0
+            ? `Device deleted with ${removedLinks} connected link${
+                removedLinks === 1 ? "" : "s"
+              }.`
+            : "Device deleted."
+        );
+      } catch (error) {
+        setMessage(
+          error instanceof Error ? error.message : "The device could not be deleted."
+        );
+      }
+    },
+    [activeSheet, model]
+  );
 
   const save = useCallback(() => {
     startTransition(async () => {
@@ -184,7 +487,7 @@ export function NetworkMapShell({
       sheets: [...current.sheets, sheet]
     }));
     setActiveSheetId(sheet.id);
-    setSelectedAnnotationId(undefined);
+    setSelection(null);
     setMessage("Sheet added.");
   }, [model.sheets.length]);
 
@@ -212,7 +515,7 @@ export function NetworkMapShell({
         annotations: [...sheet.annotations, annotation]
       }))
     );
-    setSelectedAnnotationId(annotation.id);
+    setSelection({ kind: "annotation", id: annotation.id });
     setMessage("Note added.");
   }, [activeSheet]);
 
@@ -278,7 +581,7 @@ export function NetworkMapShell({
           )
         }))
       );
-      setSelectedAnnotationId(undefined);
+      setSelection(null);
       setMessage("Note deleted.");
     },
     [activeSheet]
@@ -338,11 +641,15 @@ export function NetworkMapShell({
         return current;
       }
 
-      const copy = duplicateSheet(sourceSheet, current.sheets.length + 1);
+      const copy = duplicateSheet(
+        sourceSheet,
+        current.sheets.length + 1,
+        current
+      );
       const sheets = [...current.sheets];
       sheets.splice(sourceIndex + 1, 0, copy);
       setActiveSheetId(copy.id);
-      setSelectedAnnotationId(undefined);
+      setSelection(null);
       return { ...current, sheets };
     });
     setMessage("Sheet duplicated.");
@@ -362,7 +669,7 @@ export function NetworkMapShell({
         setActiveSheetId(nextActiveSheet.id);
       }
 
-      setSelectedAnnotationId(undefined);
+      setSelection(null);
       return { ...current, sheets };
     });
     setMessage("Sheet deleted.");
@@ -484,6 +791,11 @@ export function NetworkMapShell({
             </div>
           ) : (
             <NetworkMapLibraryPanel
+              catalogItems={catalogItems}
+              filters={libraryFilters}
+              placementTool={placementTool}
+              onFiltersChange={setLibraryFilters}
+              onPlacementToggle={togglePlacement}
               headerAction={
                 <button
                   type="button"
@@ -503,12 +815,13 @@ export function NetworkMapShell({
           model={model}
           title={title}
           activeSheetId={activeSheet?.id ?? activeSheetId}
-          selectedAnnotationId={selectedAnnotationId}
-          symbols={symbols}
+          selection={selection}
+          placementTool={placementTool}
+          referencedSymbols={resolvedSymbols}
           statusMessage={message}
           onActiveSheetChange={(sheetId) => {
             setActiveSheetId(sheetId);
-            setSelectedAnnotationId(undefined);
+            setSelection(null);
           }}
           onAddSheet={addSheet}
           onAddNote={addNote}
@@ -516,7 +829,11 @@ export function NetworkMapShell({
           onMoveSheet={moveSheet}
           onMoveSheetToEnd={moveSheetToEnd}
           onDeleteSheet={deleteSheet}
-          onAnnotationSelect={setSelectedAnnotationId}
+          onSelectionChange={setSelection}
+          onNodePlace={placeNode}
+          onNodeMove={moveNode}
+          onNodeDelete={deleteNode}
+          onPlacementCancel={cancelPlacement}
         />
 
         <aside
@@ -554,6 +871,8 @@ export function NetworkMapShell({
                 activeSheet={activeSheet}
                 activeSheetNumber={activeSheetNumber}
                 sheetCount={model.sheets.length}
+                selectedNode={selectedNode}
+                selectedNodeSymbol={selectedNodeSymbol}
                 selectedAnnotation={selectedAnnotation}
                 headerAction={
                   <button
@@ -569,6 +888,8 @@ export function NetworkMapShell({
                 onTitleChange={setTitle}
                 onTitleBlockChange={updateTitleBlock}
                 onSheetMetadataChange={updateSheetMetadata}
+                onNodeChange={updateSelectedNode}
+                onNodeDelete={() => selectedNode && deleteNode(selectedNode.id)}
                 onAnnotationChange={updateAnnotation}
                 onAnnotationRemove={removeAnnotation}
               />

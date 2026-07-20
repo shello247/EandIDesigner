@@ -87,6 +87,23 @@ export const networkPortMediaSchema = z.enum([
   "other"
 ]);
 
+const NETWORK_PORT_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+
+export function normalizeNetworkPortKey(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+export const networkPortKeySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .regex(
+    NETWORK_PORT_KEY_PATTERN,
+    "Network port keys may contain only letters, numbers, periods, underscores, and hyphens."
+  )
+  .transform(normalizeNetworkPortKey);
+
 export const viewBoxSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
@@ -94,12 +111,31 @@ export const viewBoxSchema = z.object({
   height: z.number().positive()
 });
 
-export const symbolAnchorSchema = z.object({
-  key: z.string().trim().min(1).max(80),
-  x: z.number().finite(),
-  y: z.number().finite(),
-  kind: anchorKindSchema
-});
+export const symbolAnchorSchema = z
+  .object({
+    key: z.string().trim().min(1).max(80),
+    x: z.number().finite(),
+    y: z.number().finite(),
+    kind: anchorKindSchema
+  })
+  .superRefine((anchor, context) => {
+    if (
+      anchor.kind === "network_port" &&
+      !networkPortKeySchema.safeParse(anchor.key).success
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Network port anchor keys may contain only letters, numbers, periods, underscores, and hyphens.",
+        path: ["key"]
+      });
+    }
+  })
+  .transform((anchor) =>
+    anchor.kind === "network_port"
+      ? { ...anchor, key: normalizeNetworkPortKey(anchor.key) }
+      : anchor
+  );
 
 export const symbolTerminalSchema = z.object({
   key: z.string().trim().min(1).max(80),
@@ -119,9 +155,9 @@ export const symbolLayoutMetadataSchema = z.object({
 });
 
 export const symbolNetworkPortSchema = z.object({
-  key: z.string().trim().min(1).max(80),
+  key: networkPortKeySchema,
   label: z.string().trim().min(1).max(120),
-  anchorKey: z.string().trim().min(1).max(80),
+  anchorKey: networkPortKeySchema,
   media: networkPortMediaSchema,
   speedMbps: z.number().int().positive().optional(),
   protocolHints: z.array(z.string().trim().min(1).max(80)).default([])
@@ -152,23 +188,43 @@ export const symbolMetadataSchema = z
     anchors: z.array(symbolAnchorSchema)
   })
   .superRefine((metadata, context) => {
-    if (!metadata.networkProfile) {
+    if (metadata.category === "network_device" && !metadata.networkProfile) {
+      context.addIssue({
+        code: "custom",
+        message: "Network device symbols require a network profile.",
+        path: ["networkProfile"]
+      });
       return;
     }
 
-    if (metadata.category !== "network_device") {
+    if (metadata.category !== "network_device" && metadata.networkProfile) {
       context.addIssue({
         code: "custom",
         message: "Network profile is only valid for network device symbols.",
         path: ["networkProfile"]
       });
+      return;
+    }
+
+    if (!metadata.networkProfile) {
+      return;
     }
 
     const anchorsByKey = new Map(
       metadata.anchors.map((anchor) => [anchor.key, anchor])
     );
+    const portKeys = new Set<string>();
 
     metadata.networkProfile.ports.forEach((port, index) => {
+      if (portKeys.has(port.key)) {
+        context.addIssue({
+          code: "custom",
+          message: `Network port key "${port.key}" is duplicated.`,
+          path: ["networkProfile", "ports", index, "key"]
+        });
+      }
+      portKeys.add(port.key);
+
       const anchor = anchorsByKey.get(port.anchorKey);
 
       if (!anchor) {
@@ -221,6 +277,18 @@ export const symbolLayoutMetadataUpdateInputSchema =
   symbolLayoutMetadataSchema.extend({
     versionId: z.string().trim().min(1)
   });
+
+export const updateSymbolNetworkProfileInputSchema = z.object({
+  versionId: z.string().trim().min(1),
+  manufacturer: z.string().trim().max(160).optional(),
+  model: z.string().trim().max(160).optional(),
+  networkProfile: symbolNetworkProfileSchema
+});
+
+export const approvedNetworkVersionIdsSchema = z
+  .array(z.string().trim().min(1).max(120))
+  .max(5000)
+  .transform((versionIds) => [...new Set(versionIds)]);
 
 export const terminalMapVerificationIssueSchema = z.object({
   severity: validationIssueSeveritySchema,
@@ -341,6 +409,12 @@ export type TerminalMapUpdateInput = z.infer<
 >;
 export type SymbolLayoutMetadataUpdateInput = z.infer<
   typeof symbolLayoutMetadataUpdateInputSchema
+>;
+export type UpdateSymbolNetworkProfileInput = z.infer<
+  typeof updateSymbolNetworkProfileInputSchema
+>;
+export type ApprovedNetworkVersionIds = z.infer<
+  typeof approvedNetworkVersionIdsSchema
 >;
 export type TerminalMapVerificationIssue = z.infer<
   typeof terminalMapVerificationIssueSchema

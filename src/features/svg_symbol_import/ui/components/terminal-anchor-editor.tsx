@@ -10,6 +10,7 @@ import type { SvgViewBox } from "@/shared/svg/svg-inspector";
 
 const anchorKindOptions: AnchorKind[] = [
   "terminal",
+  "network_port",
   "ground",
   "shield",
   "label",
@@ -36,7 +37,8 @@ export function TerminalAnchorEditor({
   terminals,
   disabled,
   onAnchorsChange,
-  onTerminalsChange
+  onTerminalsChange,
+  onAnchorRenamed
 }: {
   viewBox: SvgViewBox;
   anchors: SymbolAnchor[];
@@ -44,6 +46,7 @@ export function TerminalAnchorEditor({
   disabled: boolean;
   onAnchorsChange: (anchors: SymbolAnchor[]) => void;
   onTerminalsChange: (terminals: SymbolTerminal[]) => void;
+  onAnchorRenamed?: (previousKey: string, nextKey: string) => void;
 }) {
   const addAnchor = () => {
     const key = nextKey(anchors, "A");
@@ -109,9 +112,13 @@ export function TerminalAnchorEditor({
                       disabled={disabled}
                       onChange={(event) => {
                         const previousKey = anchor.key;
+                        const nextKey =
+                          anchor.kind === "network_port"
+                            ? event.currentTarget.value.toUpperCase()
+                            : event.currentTarget.value;
                         const nextAnchor = {
                           ...anchor,
-                          key: event.currentTarget.value
+                          key: nextKey
                         };
                         onAnchorsChange(
                           anchors.map((item, itemIndex) =>
@@ -128,6 +135,7 @@ export function TerminalAnchorEditor({
                               : terminal
                           )
                         );
+                        onAnchorRenamed?.(previousKey, nextKey);
                       }}
                     />
                   </td>
@@ -137,18 +145,32 @@ export function TerminalAnchorEditor({
                       className="field-input min-w-28"
                       value={anchor.kind}
                       disabled={disabled}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const nextKind = event.currentTarget.value as AnchorKind;
+                        const nextKey =
+                          nextKind === "network_port"
+                            ? anchor.key.toUpperCase()
+                            : anchor.key;
+
                         onAnchorsChange(
                           anchors.map((item, itemIndex) =>
                             itemIndex === index
-                              ? {
-                                  ...item,
-                                  kind: event.currentTarget.value as AnchorKind
-                                }
+                              ? { ...item, key: nextKey, kind: nextKind }
                               : item
                           )
-                        )
-                      }
+                        );
+
+                        if (nextKey !== anchor.key) {
+                          onTerminalsChange(
+                            terminals.map((terminal) =>
+                              terminal.anchorKey === anchor.key
+                                ? { ...terminal, anchorKey: nextKey }
+                                : terminal
+                            )
+                          );
+                          onAnchorRenamed?.(anchor.key, nextKey);
+                        }
+                      }}
                     >
                       {anchorKindOptions.map((kind) => (
                         <option key={kind} value={kind}>

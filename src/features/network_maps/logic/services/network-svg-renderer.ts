@@ -8,8 +8,15 @@ import type {
 import type { ApprovedNetworkSymbol } from "../../types";
 import {
   buildDefaultNetworkLinkRoute,
-  networkRoutePathData
+  networkRoutePathData,
+  networkSymbolReferenceKey
 } from "./network-link-routing";
+import {
+  getNetworkNodeCenter,
+  getNetworkNodeSize,
+  networkNodeViewBox,
+  normalizeNetworkNodeRotation
+} from "./network-node-geometry";
 
 function escapeXml(value: string): string {
   return value
@@ -534,45 +541,49 @@ function renderZones(sheet: NetworkMapSheet): string {
 
 function symbolForNode(
   node: NetworkMapNode,
-  symbols: ApprovedNetworkSymbol[]
+  symbolsByReference: ReadonlyMap<string, ApprovedNetworkSymbol>
 ): ApprovedNetworkSymbol | undefined {
-  return symbols.find(
-    (symbol) =>
-      symbol.symbolId === node.symbolId && symbol.versionId === node.versionId
+  return symbolsByReference.get(
+    networkSymbolReferenceKey(node.symbolId, node.versionId)
   );
 }
 
 function renderNodes(
   sheet: NetworkMapSheet,
-  symbols: ApprovedNetworkSymbol[]
+  symbolsByReference: ReadonlyMap<string, ApprovedNetworkSymbol>
 ): string {
   return sheet.nodes
     .map((node) => {
-      const symbol = symbolForNode(node, symbols);
-
-      if (!symbol) {
-        return "";
-      }
-
-      const label = node.label?.trim() || symbol.displayName;
-      const width = symbol.metadata.viewBox.width * node.scale;
-      const height = symbol.metadata.viewBox.height * node.scale;
+      const symbol = symbolForNode(node, symbolsByReference);
+      const viewBox = networkNodeViewBox(symbol);
+      const { width, height } = getNetworkNodeSize(node, symbol);
+      const center = getNetworkNodeCenter(node, symbol);
+      const label =
+        node.label?.trim() || symbol?.displayName || "Unavailable network device";
       const titleY = node.y - 7;
       const ipY = node.y + height + 8;
-      const rotation = node.rotation
-        ? ` rotate(${node.rotation} ${node.x + width / 2} ${node.y + height / 2})`
+      const rotation = normalizeNetworkNodeRotation(node.rotation);
+      const rotationTransform = rotation
+        ? ` transform="rotate(${rotation} ${center.x} ${center.y})"`
         : "";
+      const geometry = symbol
+        ? `<g transform="translate(${node.x} ${node.y}) scale(${node.scale}) translate(${-viewBox.x} ${-viewBox.y})">
+            ${stripSvgRoot(symbol.svg)}
+          </g>`
+        : `<g data-network-node-missing="true">
+            <rect x="${node.x}" y="${node.y}" width="${width}" height="${height}" rx="2" fill="#fff7f6" stroke="#dc2626" stroke-width="0.7" stroke-dasharray="4 2"/>
+            <text x="${center.x}" y="${center.y - 1.5}" font-family="Arial, Helvetica, sans-serif" font-size="3.2" font-weight="700" text-anchor="middle" fill="#b42318">MISSING SYMBOL</text>
+            <text x="${center.x}" y="${center.y + 3.5}" font-family="Arial, Helvetica, sans-serif" font-size="2.2" font-weight="600" text-anchor="middle" fill="#7f1d1d">${escapeXml(truncateText(node.versionId, 24))}</text>
+          </g>`;
 
       return `
-        <g data-network-node-id="${escapeXml(node.id)}" data-symbol-key="${escapeXml(symbol.symbolKey)}">
-          <text x="${node.x + width / 2}" y="${titleY}" font-family="Arial, Helvetica, sans-serif" font-size="3.7" font-weight="700" text-anchor="middle" fill="#111827">${escapeXml(node.tag)}</text>
-          <g transform="translate(${node.x} ${node.y})${rotation} scale(${node.scale})">
-            ${stripSvgRoot(symbol.svg)}
-          </g>
-          <text x="${node.x + width / 2}" y="${node.y + height + 3.8}" font-family="Arial, Helvetica, sans-serif" font-size="3" font-weight="600" text-anchor="middle" fill="#475569">${escapeXml(label)}</text>
+        <g data-network-node-id="${escapeXml(node.id)}" data-network-version-id="${escapeXml(node.versionId)}"${symbol ? ` data-symbol-key="${escapeXml(symbol.symbolKey)}"` : ""}${symbol ? "" : ' data-network-node-missing="true"'}>
+          <text x="${center.x}" y="${titleY}" font-family="Arial, Helvetica, sans-serif" font-size="3.7" font-weight="700" text-anchor="middle" fill="#111827">${escapeXml(node.tag)}</text>
+          <g${rotationTransform}>${geometry}</g>
+          <text x="${center.x}" y="${node.y + height + 3.8}" font-family="Arial, Helvetica, sans-serif" font-size="3" font-weight="600" text-anchor="middle" fill="#475569">${escapeXml(label)}</text>
           ${
             node.ipAddress
-              ? `<text x="${node.x + width / 2}" y="${ipY}" font-family="Arial, Helvetica, sans-serif" font-size="2.65" font-weight="600" text-anchor="middle" fill="#0f766e">${escapeXml(node.ipAddress)}</text>`
+              ? `<text x="${center.x}" y="${ipY}" font-family="Arial, Helvetica, sans-serif" font-size="2.65" font-weight="600" text-anchor="middle" fill="#0f766e">${escapeXml(node.ipAddress)}</text>`
               : ""
           }
         </g>
@@ -600,7 +611,7 @@ function linkStroke(media: NetworkMapLink["media"]): string {
 
 function renderLinks(
   sheet: NetworkMapSheet,
-  symbols: ApprovedNetworkSymbol[]
+  symbolsByReference: ReadonlyMap<string, ApprovedNetworkSymbol>
 ): string {
   return sheet.links
     .map((linkItem) => {
@@ -608,7 +619,7 @@ function renderLinks(
         linkItem.route?.points ??
         buildDefaultNetworkLinkRoute({
           sheet,
-          symbols,
+          symbolsByReference,
           link: linkItem
         });
 
@@ -673,11 +684,18 @@ export function renderNetworkMapSheetToSvg(params: {
   sheetNumber: number;
   sheetCount: number;
 }): string {
+  const symbolsByReference = new Map(
+    params.approvedSymbols.map((symbol) => [
+      networkSymbolReferenceKey(symbol.symbolId, symbol.versionId),
+      symbol
+    ])
+  );
+
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${params.sheet.page.width}mm" height="${params.sheet.page.height}mm" viewBox="0 0 ${params.sheet.page.width} ${params.sheet.page.height}">
     ${renderSheetFrame(params.sheet)}
     ${renderZones(params.sheet)}
-    ${renderLinks(params.sheet, params.approvedSymbols)}
-    ${renderNodes(params.sheet, params.approvedSymbols)}
+    ${renderLinks(params.sheet, symbolsByReference)}
+    ${renderNodes(params.sheet, symbolsByReference)}
     ${params.sheet.annotations.map(renderAnnotation).join("")}
     ${renderTitleBlock({
       model: params.model,

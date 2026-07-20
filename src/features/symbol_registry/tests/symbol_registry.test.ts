@@ -155,6 +155,76 @@ describe("symbol registry validation", () => {
     ]);
   });
 
+  it("requires a network profile for network device symbols", () => {
+    const result = symbolMetadataSchema.safeParse({
+      ...validMetadata,
+      category: "network_device",
+      terminals: [],
+      anchors: []
+    });
+
+    expect(result.success).toBe(false);
+    expect(
+      result.error?.issues.some(
+        (issue) => issue.message === "Network device symbols require a network profile."
+      )
+    ).toBe(true);
+  });
+
+  it("rejects a network profile on non-network symbols", () => {
+    const result = symbolMetadataSchema.safeParse({
+      ...validMetadata,
+      networkProfile: {
+        deviceType: "switch",
+        ports: []
+      }
+    });
+
+    expect(result.success).toBe(false);
+    expect(
+      result.error?.issues.some(
+        (issue) =>
+          issue.message ===
+          "Network profile is only valid for network device symbols."
+      )
+    ).toBe(true);
+  });
+
+  it("normalizes network keys and rejects duplicates after normalization", () => {
+    const result = symbolMetadataSchema.safeParse({
+      symbolKey: "industrial_switch",
+      displayName: "Industrial Switch",
+      category: "network_device",
+      viewBox: { x: 0, y: 0, width: 100, height: 100 },
+      terminals: [],
+      anchors: [{ key: "eth1", x: 20, y: 60, kind: "network_port" }],
+      networkProfile: {
+        deviceType: "switch",
+        ports: [
+          {
+            key: "eth1",
+            label: "Ethernet 1",
+            anchorKey: "eth1",
+            media: "copper"
+          },
+          {
+            key: "ETH1",
+            label: "Ethernet 1 duplicate",
+            anchorKey: "ETH1",
+            media: "copper"
+          }
+        ]
+      }
+    });
+
+    expect(result.success).toBe(false);
+    expect(
+      result.error?.issues.some((issue) =>
+        issue.message.includes('Network port key "ETH1" is duplicated.')
+      )
+    ).toBe(true);
+  });
+
   it("rejects network ports that reference missing anchors", () => {
     const result = validateSymbol(validSvg, {
       symbolKey: "industrial_switch",

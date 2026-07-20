@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   DraftingCompass,
   LibraryBig,
@@ -46,6 +46,17 @@ const navItems = [
 export function AppSidebar() {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
+
+  useEffect(() => {
+    const compactViewport = window.matchMedia("(max-width: 767px)");
+    const synchronizeSidebar = () => setIsCollapsed(compactViewport.matches);
+
+    synchronizeSidebar();
+    compactViewport.addEventListener("change", synchronizeSidebar);
+
+    return () =>
+      compactViewport.removeEventListener("change", synchronizeSidebar);
+  }, []);
 
   return (
     <aside

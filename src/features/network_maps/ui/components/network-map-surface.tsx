@@ -1,10 +1,8 @@
 "use client";
 
 import {
-  memo,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type PointerEvent,
@@ -22,27 +20,22 @@ import {
   StickyNote,
   Trash2
 } from "lucide-react";
-import type { ApprovedNetworkSymbol } from "../../types";
 import type {
-  NetworkMapAnnotation,
-  NetworkMapModel,
-  NetworkMapSheet
-} from "../../data/schema";
-import { renderNetworkMapSheetToSvg } from "../../logic/services/network-svg-renderer";
+  ApprovedNetworkSymbol,
+  NetworkMapSelection,
+  NetworkPlacementToolState
+} from "../../types";
+import type { NetworkMapModel } from "../../data/schema";
+import type {
+  NetworkNodeSize,
+  NetworkPoint
+} from "../../logic/services/network-node-geometry";
+import { NetworkMapSheetFrame } from "./network-map-sheet-frame";
 
 const SHEET_PIXEL_SCALE = 2;
 const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 0.15;
-
-type RenderedNetworkSheet = {
-  sheet: NetworkMapSheet;
-  sheetNumber: number;
-  sheetCount: number;
-  svg: string;
-  stageWidth: number;
-  stageHeight: number;
-};
 
 type PanState = {
   pointerId: number;
@@ -60,13 +53,7 @@ function formatZoom(zoom: number): string {
   return `${Math.round(zoom * 100)}%`;
 }
 
-function annotationWidth(annotation: NetworkMapAnnotation): number {
-  return annotation.width ?? 80;
-}
-
-function annotationHeight(annotation: NetworkMapAnnotation): number {
-  return annotation.height ?? 22;
-}
+const IDLE_PLACEMENT_TOOL: NetworkPlacementToolState = { mode: "idle" };
 
 function NetworkMapAddMenu({
   onAddSheet,
@@ -121,148 +108,13 @@ function NetworkMapAddMenu({
   );
 }
 
-const NetworkSheetFrame = memo(function NetworkSheetFrame({
-  renderedSheet,
-  activeSheetId,
-  selectedAnnotationId,
-  zoom,
-  onActiveSheetChange,
-  onAnnotationSelect
-}: {
-  renderedSheet: RenderedNetworkSheet;
-  activeSheetId: string;
-  selectedAnnotationId?: string;
-  zoom: number;
-  onActiveSheetChange: (sheetId: string) => void;
-  onAnnotationSelect: (annotationId: string | undefined) => void;
-}) {
-  const isActive = renderedSheet.sheet.id === activeSheetId;
-  const scaledWidth = Number((renderedSheet.stageWidth * zoom).toFixed(3));
-  const scaledHeight = Number((renderedSheet.stageHeight * zoom).toFixed(3));
-
-  return (
-    <div
-      className={[
-        "drawing-sheet-frame",
-        isActive ? "drawing-sheet-frame-active" : "",
-        "network-map-sheet-frame"
-      ].join(" ")}
-      data-testid="network-map-sheet-frame"
-      data-network-sheet-id={renderedSheet.sheet.id}
-      data-active-sheet={isActive ? "true" : "false"}
-      role={isActive ? undefined : "button"}
-      tabIndex={isActive ? undefined : 0}
-      aria-label={
-        isActive
-          ? undefined
-          : `Activate sheet ${renderedSheet.sheetNumber}: ${renderedSheet.sheet.name}`
-      }
-      onPointerDown={(event) => {
-        if (isActive || event.button !== 0) {
-          return;
-        }
-
-        event.preventDefault();
-        onActiveSheetChange(renderedSheet.sheet.id);
-      }}
-      onKeyDown={(event) => {
-        if (isActive || (event.key !== "Enter" && event.key !== " ")) {
-          return;
-        }
-
-        event.preventDefault();
-        onActiveSheetChange(renderedSheet.sheet.id);
-      }}
-    >
-      <div className="drawing-sheet-caption">
-        <span className="drawing-sheet-caption-index">
-          Sheet {renderedSheet.sheetNumber} of {renderedSheet.sheetCount}
-        </span>
-        <span className="drawing-sheet-caption-name">
-          {renderedSheet.sheet.name}
-        </span>
-      </div>
-      <div
-        className="network-map-sheet-scale-frame"
-        style={{
-          width: `${scaledWidth}px`,
-          height: `${scaledHeight}px`
-        }}
-      >
-        <div
-          className="drawing-sheet-stage network-map-sheet-stage"
-          data-testid={
-            isActive ? "network-map-sheet-stage" : "network-map-sheet-preview"
-          }
-          style={{
-            width: `${renderedSheet.stageWidth}px`,
-            height: `${renderedSheet.stageHeight}px`,
-            transform: `scale(${zoom})`
-          }}
-        >
-          <div
-            className="drawing-sheet-paper"
-            data-sheet-paper="true"
-            data-testid="network-map-paper"
-          >
-            <div
-              className="drawing-sheet-rendered"
-              dangerouslySetInnerHTML={{ __html: renderedSheet.svg }}
-            />
-            {isActive ? (
-              <svg
-                className="absolute inset-0 h-full w-full"
-                viewBox={`0 0 ${renderedSheet.sheet.page.width} ${renderedSheet.sheet.page.height}`}
-                aria-label="Interactive network map overlay"
-                pointerEvents="all"
-                onPointerDown={(event) => {
-                  if (event.target === event.currentTarget) {
-                    onAnnotationSelect(undefined);
-                  }
-                }}
-              >
-                {renderedSheet.sheet.annotations.map((annotation) => (
-                  <rect
-                    key={annotation.id}
-                    data-testid="network-map-annotation-hit"
-                    data-network-annotation-id={annotation.id}
-                    x={annotation.x}
-                    y={annotation.y}
-                    width={annotationWidth(annotation)}
-                    height={annotationHeight(annotation)}
-                    rx={2}
-                    className={[
-                      "cursor-pointer fill-transparent",
-                      selectedAnnotationId === annotation.id
-                        ? "stroke-sky-600"
-                        : "stroke-transparent"
-                    ].join(" ")}
-                    strokeWidth={selectedAnnotationId === annotation.id ? 0.8 : 0}
-                    onPointerDown={(event) => {
-                      if (event.button !== 0) {
-                        return;
-                      }
-
-                      event.stopPropagation();
-                      onAnnotationSelect(annotation.id);
-                    }}
-                  />
-                ))}
-              </svg>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-});
-
 export function NetworkMapSurface({
   model,
   title,
   activeSheetId,
-  selectedAnnotationId,
-  symbols,
+  selection,
+  placementTool,
+  referencedSymbols,
   statusMessage,
   onActiveSheetChange,
   onAddSheet,
@@ -271,13 +123,18 @@ export function NetworkMapSurface({
   onMoveSheet,
   onMoveSheetToEnd,
   onDeleteSheet,
-  onAnnotationSelect
+  onSelectionChange,
+  onNodePlace,
+  onNodeMove,
+  onNodeDelete,
+  onPlacementCancel
 }: {
   model: NetworkMapModel;
   title: string;
   activeSheetId: string;
-  selectedAnnotationId?: string;
-  symbols: ApprovedNetworkSymbol[];
+  selection: NetworkMapSelection;
+  placementTool: NetworkPlacementToolState;
+  referencedSymbols: ApprovedNetworkSymbol[];
   statusMessage?: string | null;
   onActiveSheetChange: (sheetId: string) => void;
   onAddSheet: () => void;
@@ -286,7 +143,15 @@ export function NetworkMapSurface({
   onMoveSheet: (sheetId: string, direction: -1 | 1) => void;
   onMoveSheetToEnd: (sheetId: string) => void;
   onDeleteSheet: (sheetId: string) => void;
-  onAnnotationSelect: (annotationId: string | undefined) => void;
+  onSelectionChange: (selection: NetworkMapSelection) => void;
+  onNodePlace: (point: NetworkPoint) => void;
+  onNodeMove: (
+    nodeId: string,
+    delta: NetworkPoint,
+    size: NetworkNodeSize
+  ) => void;
+  onNodeDelete: (nodeId: string) => void;
+  onPlacementCancel: () => void;
 }) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const panStateRef = useRef<PanState | null>(null);
@@ -303,26 +168,10 @@ export function NetworkMapSurface({
   const canMoveActiveSheetDown = activeSheetNumber < sheetCount;
   const canMoveActiveSheetToEnd = activeSheetNumber < sheetCount;
   const canDeleteActiveSheet = sheetCount > 1;
-  const renderedSheets = useMemo<RenderedNetworkSheet[]>(
-    () =>
-      model.sheets.map((sheet, index) => ({
-        sheet,
-        sheetNumber: index + 1,
-        sheetCount,
-        svg: renderNetworkMapSheetToSvg({
-          model,
-          sheet,
-          approvedSymbols: symbols,
-          mapTitle: title,
-          sheetNumber: index + 1,
-          sheetCount
-        }),
-        stageWidth: sheet.page.width * SHEET_PIXEL_SCALE,
-        stageHeight: sheet.page.height * SHEET_PIXEL_SCALE
-      })),
-    [model, sheetCount, symbols, title]
-  );
-
+  const firstSheetStageWidth =
+    (model.sheets[0]?.page.width ?? 420) * SHEET_PIXEL_SCALE;
+  const firstSheetStageHeight =
+    (model.sheets[0]?.page.height ?? 297) * SHEET_PIXEL_SCALE;
   const centerViewport = useCallback(() => {
     window.requestAnimationFrame(() => {
       const viewport = viewportRef.current;
@@ -344,9 +193,7 @@ export function NetworkMapSurface({
 
   const fitToViewport = useCallback(() => {
     const viewport = viewportRef.current;
-    const firstSheet = renderedSheets[0];
-
-    if (!viewport || !firstSheet) {
+    if (!viewport) {
       return;
     }
 
@@ -354,14 +201,14 @@ export function NetworkMapSurface({
     const availableHeight = Math.max(240, viewport.clientHeight - 136);
     const fitZoom = clampZoom(
       Math.min(
-        availableWidth / firstSheet.stageWidth,
-        availableHeight / firstSheet.stageHeight
+        availableWidth / firstSheetStageWidth,
+        availableHeight / firstSheetStageHeight
       )
     );
 
     setZoom(fitZoom);
     centerViewport();
-  }, [centerViewport, renderedSheets]);
+  }, [centerViewport, firstSheetStageHeight, firstSheetStageWidth]);
 
   useEffect(() => {
     fitToViewport();
@@ -471,6 +318,15 @@ export function NetworkMapSurface({
             Sheet {activeSheetNumber} of {sheetCount}
             {activeSheet?.name ? ` / ${activeSheet.name}` : ""}
           </p>
+          {placementTool.mode !== "idle" ? (
+            <p
+              className="mt-1 text-xs font-semibold text-teal-700"
+              data-testid="network-placement-status"
+            >
+              {placementTool.mode === "loading" ? "Loading" : "Placing"}: {" "}
+              {placementTool.item.displayName}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="flex items-center gap-2">
@@ -596,17 +452,31 @@ export function NetworkMapSurface({
             className="drawing-sheet-stack"
             data-testid="network-map-sheet-stack"
           >
-            {renderedSheets.map((renderedSheet) => (
-              <NetworkSheetFrame
-                key={renderedSheet.sheet.id}
-                renderedSheet={renderedSheet}
-                activeSheetId={activeSheet?.id ?? activeSheetId}
-                selectedAnnotationId={selectedAnnotationId}
-                zoom={zoom}
-                onActiveSheetChange={onActiveSheetChange}
-                onAnnotationSelect={onAnnotationSelect}
-              />
-            ))}
+            {model.sheets.map((sheet, index) => {
+              const isActive = sheet.id === (activeSheet?.id ?? activeSheetId);
+
+              return (
+                <NetworkMapSheetFrame
+                  key={sheet.id}
+                  sheet={sheet}
+                  titleBlock={model.titleBlock}
+                  mapTitle={title}
+                  sheetNumber={index + 1}
+                  sheetCount={sheetCount}
+                  approvedSymbols={referencedSymbols}
+                  isActive={isActive}
+                  zoom={zoom}
+                  selection={isActive ? selection : null}
+                  placementTool={isActive ? placementTool : IDLE_PLACEMENT_TOOL}
+                  onActivate={onActiveSheetChange}
+                  onPlace={onNodePlace}
+                  onSelectionChange={onSelectionChange}
+                  onNodeMove={onNodeMove}
+                  onNodeDelete={onNodeDelete}
+                  onPlacementCancel={onPlacementCancel}
+                />
+              );
+            })}
           </div>
         </div>
       </div>

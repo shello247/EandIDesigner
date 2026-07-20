@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
-import { listNetworkSymbolsForMapping } from "@/features/symbol_registry/api/public";
+import { listApprovedNetworkSymbolVersionsByIds } from "@/features/symbol_registry/api/public";
 import { getNetworkMapDetail } from "@/features/network_maps/data/queries";
 import { buildNetworkMapPrintHtml } from "@/features/network_maps/logic/services/network-pdf-export";
 import { renderNetworkMapSheetToSvg } from "@/features/network_maps/logic/services/network-svg-renderer";
+import { collectReferencedNetworkSymbolVersionIds } from "@/features/network_maps/logic/services/network-library-catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +12,15 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const [networkMap, symbols] = await Promise.all([
-    getNetworkMapDetail(id),
-    listNetworkSymbolsForMapping()
-  ]);
+  const networkMap = await getNetworkMapDetail(id);
 
   if (!networkMap) {
     notFound();
   }
+
+  const symbols = await listApprovedNetworkSymbolVersionsByIds(
+    collectReferencedNetworkSymbolVersionIds(networkMap.model)
+  );
 
   const sheetCount = networkMap.model.sheets.length;
   const pages = networkMap.model.sheets.map((sheet, index) => ({

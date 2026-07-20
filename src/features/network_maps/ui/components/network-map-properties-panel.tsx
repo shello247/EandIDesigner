@@ -5,9 +5,13 @@ import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import type {
   NetworkMapAnnotation,
   NetworkMapModel,
+  NetworkMapNode,
   NetworkMapSheet,
-  NetworkMapTitleBlock
+  NetworkMapTitleBlock,
+  NetworkNodeEditableUpdates
 } from "../../data/schema";
+import type { ApprovedNetworkSymbol } from "../../types";
+import { NetworkNodePropertiesPanel } from "./network-node-properties-panel";
 
 function optionalValue(value: string | undefined): string {
   return value ?? "";
@@ -19,11 +23,15 @@ export function NetworkMapPropertiesPanel({
   activeSheet,
   activeSheetNumber,
   sheetCount,
+  selectedNode,
+  selectedNodeSymbol,
   selectedAnnotation,
   headerAction,
   onTitleChange,
   onTitleBlockChange,
   onSheetMetadataChange,
+  onNodeChange,
+  onNodeDelete,
   onAnnotationChange,
   onAnnotationRemove
 }: {
@@ -32,6 +40,8 @@ export function NetworkMapPropertiesPanel({
   activeSheet: NetworkMapSheet;
   activeSheetNumber: number;
   sheetCount: number;
+  selectedNode?: NetworkMapNode;
+  selectedNodeSymbol?: ApprovedNetworkSymbol;
   selectedAnnotation?: NetworkMapAnnotation;
   headerAction?: ReactNode;
   onTitleChange: (title: string) => void;
@@ -40,6 +50,8 @@ export function NetworkMapPropertiesPanel({
     sheetId: string,
     updates: Pick<Partial<NetworkMapSheet>, "name" | "description">
   ) => void;
+  onNodeChange: (updates: NetworkNodeEditableUpdates) => boolean;
+  onNodeDelete: () => void;
   onAnnotationChange: (
     annotationId: string,
     updates: Partial<NetworkMapAnnotation>
@@ -70,6 +82,16 @@ export function NetworkMapPropertiesPanel({
           </div>
         </div>
       </section>
+
+      {selectedNode ? (
+        <NetworkNodePropertiesPanel
+          node={selectedNode}
+          symbol={selectedNodeSymbol}
+          zones={activeSheet.zones}
+          onNodeChange={onNodeChange}
+          onNodeDelete={onNodeDelete}
+        />
+      ) : null}
 
       <section className="tool-panel overflow-hidden">
         <div className="border-b border-slate-200 px-4 py-3">

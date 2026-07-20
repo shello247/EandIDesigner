@@ -1,10 +1,11 @@
 "use client";
 
-import type {
-  SymbolCategory,
-  SymbolLayoutUsage,
-  SymbolPanelCategory,
-  SymbolPanelMountingType
+import {
+  symbolCategorySchema,
+  type SymbolCategory,
+  type SymbolLayoutUsage,
+  type SymbolPanelCategory,
+  type SymbolPanelMountingType
 } from "@/features/symbol_registry/data/schema";
 
 export type SymbolMetadataFormState = {
@@ -21,14 +22,18 @@ export type SymbolMetadataFormState = {
   resizable: boolean;
 };
 
-const categoryOptions: Array<{ value: SymbolCategory; label: string }> = [
-  { value: "instrument", label: "Instrument" },
-  { value: "monitor", label: "Monitor" },
-  { value: "terminal_block", label: "Terminal block" },
-  { value: "cable_assembly", label: "Cable assembly" },
-  { value: "gland", label: "Gland" },
-  { value: "other", label: "Other" }
-];
+function optionLabel(value: string): string {
+  return value
+    .split("_")
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+const categoryOptions: Array<{ value: SymbolCategory; label: string }> =
+  symbolCategorySchema.options.map((value) => ({
+    value,
+    label: optionLabel(value)
+  }));
 
 const layoutUsageOptions: Array<{ value: SymbolLayoutUsage; label: string }> = [
   { value: "wiring", label: "Wiring drawings" },
@@ -144,6 +149,8 @@ export function SymbolMetadataForm({
             onChange={(event) => onChange({ model: event.currentTarget.value })}
           />
         </div>
+        {form.category !== "network_device" ? (
+          <>
         <div className="border-t border-slate-200 pt-4 sm:col-span-2">
           <h3 className="text-xs font-bold uppercase text-slate-500">
             Panel layout metadata
@@ -261,6 +268,8 @@ export function SymbolMetadataForm({
           />
           Resizable in panel layouts
         </label>
+          </>
+        ) : null}
       </div>
     </section>
   );

@@ -1,8 +1,20 @@
 import type { NetworkMapLink, NetworkMapRoutePoint } from "../../data/schema";
 import type { ApprovedNetworkSymbol } from "../../types";
-import type { NetworkMapNode, NetworkMapSheet } from "../../data/schema";
+import type { NetworkMapSheet } from "../../data/schema";
+import {
+  getNetworkNodeCenter,
+  networkNodeViewBox,
+  rotateNetworkPoint
+} from "./network-node-geometry";
 
 type Point = { x: number; y: number };
+
+export function networkSymbolReferenceKey(
+  symbolId: string,
+  versionId: string
+): string {
+  return `${symbolId}:${versionId}`;
+}
 
 function roundPoint(point: Point): Point {
   return {
@@ -11,30 +23,25 @@ function roundPoint(point: Point): Point {
   };
 }
 
-function nodeCenter(node: NetworkMapNode, symbol: ApprovedNetworkSymbol): Point {
-  return {
-    x: node.x + (symbol.metadata.viewBox.width * node.scale) / 2,
-    y: node.y + (symbol.metadata.viewBox.height * node.scale) / 2
-  };
-}
-
 export function getNetworkPortWorldPoint(input: {
   sheet: NetworkMapSheet;
-  symbols: ApprovedNetworkSymbol[];
+  symbolsByReference: ReadonlyMap<string, ApprovedNetworkSymbol>;
   nodeId: string;
   portKey: string;
 }): Point | null {
   const node = input.sheet.nodes.find((candidate) => candidate.id === input.nodeId);
   const symbol = node
-    ? input.symbols.find(
-        (candidate) =>
-          candidate.symbolId === node.symbolId &&
-          candidate.versionId === node.versionId
+    ? input.symbolsByReference.get(
+        networkSymbolReferenceKey(node.symbolId, node.versionId)
       )
     : undefined;
 
-  if (!node || !symbol) {
+  if (!node) {
     return null;
+  }
+
+  if (!symbol) {
+    return getNetworkNodeCenter(node);
   }
 
   const port = symbol.metadata.networkProfile.ports.find(
@@ -45,29 +52,34 @@ export function getNetworkPortWorldPoint(input: {
   );
 
   if (!anchor) {
-    return nodeCenter(node, symbol);
+    return getNetworkNodeCenter(node, symbol);
   }
 
-  return roundPoint({
-    x: node.x + anchor.x * node.scale,
-    y: node.y + anchor.y * node.scale
-  });
+  const viewBox = networkNodeViewBox(symbol);
+  const point = {
+    x: node.x + (anchor.x - viewBox.x) * node.scale,
+    y: node.y + (anchor.y - viewBox.y) * node.scale
+  };
+
+  return roundPoint(
+    rotateNetworkPoint(point, getNetworkNodeCenter(node, symbol), node.rotation)
+  );
 }
 
 export function buildDefaultNetworkLinkRoute(input: {
   sheet: NetworkMapSheet;
-  symbols: ApprovedNetworkSymbol[];
+  symbolsByReference: ReadonlyMap<string, ApprovedNetworkSymbol>;
   link: NetworkMapLink;
 }): NetworkMapRoutePoint[] | null {
   const from = getNetworkPortWorldPoint({
     sheet: input.sheet,
-    symbols: input.symbols,
+    symbolsByReference: input.symbolsByReference,
     nodeId: input.link.from.nodeId,
     portKey: input.link.from.portKey
   });
   const to = getNetworkPortWorldPoint({
     sheet: input.sheet,
-    symbols: input.symbols,
+    symbolsByReference: input.symbolsByReference,
     nodeId: input.link.to.nodeId,
     portKey: input.link.to.portKey
   });

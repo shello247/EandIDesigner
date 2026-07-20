@@ -12,9 +12,13 @@ import {
   parseSvgImportPreviewAction,
   saveImportedSvgSymbolAction
 } from "../../api/actions";
+import type { SvgImportNetworkProfileDraft } from "../../data/schema";
 import type { SvgImportPreview } from "../../types";
 import { buildImportedSymbolMetadata } from "../../logic/use_cases/build-imported-symbol-metadata";
+import { isNetworkProfileDraftComplete } from "../../logic/services/network-profile-draft";
 import { ImportAnchorReviewCanvas } from "./import-anchor-review-canvas";
+import { NetworkPortEditor } from "./network-port-editor";
+import { NetworkProfileEditor } from "./network-profile-editor";
 import { SvgImportActions } from "./svg-import-actions";
 import { SvgImportPanel } from "./svg-import-panel";
 import {
@@ -56,6 +60,12 @@ const initialForm: SymbolMetadataFormState = {
   resizable: false
 };
 
+const initialNetworkProfile: SvgImportNetworkProfileDraft = {
+  deviceType: "",
+  managed: undefined,
+  ports: []
+};
+
 export function SvgImportStudio() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -63,6 +73,8 @@ export function SvgImportStudio() {
   const [form, setForm] = useState<SymbolMetadataFormState>(initialForm);
   const [anchors, setAnchors] = useState<SymbolAnchor[]>([]);
   const [terminals, setTerminals] = useState<SymbolTerminal[]>([]);
+  const [networkProfile, setNetworkProfile] =
+    useState<SvgImportNetworkProfileDraft>(initialNetworkProfile);
   const [message, setMessage] = useState<string | null>(null);
 
   const metadataPreview = useMemo(() => {
@@ -76,10 +88,14 @@ export function SvgImportStudio() {
     };
   }, [anchors, preview]);
 
+  const networkProfileReady =
+    form.category !== "network_device" ||
+    isNetworkProfileDraftComplete(networkProfile);
   const canSave =
     preview !== null &&
     form.displayName.trim().length > 0 &&
-    form.symbolKey.trim().length > 0;
+    form.symbolKey.trim().length > 0 &&
+    networkProfileReady;
 
   const parseFile = (file: File) => {
     startTransition(async () => {
@@ -92,6 +108,7 @@ export function SvgImportStudio() {
         setPreview(null);
         setAnchors([]);
         setTerminals([]);
+        setNetworkProfile((current) => ({ ...current, ports: [] }));
         setMessage(result.error);
         return;
       }
@@ -100,6 +117,10 @@ export function SvgImportStudio() {
       setPreview(result.data);
       setAnchors(result.data.anchors);
       setTerminals(result.data.terminals);
+      setNetworkProfile((current) => ({
+        ...current,
+        ports: result.data.networkPorts
+      }));
       setForm((current) => ({
         ...current,
         displayName: current.displayName || displayName,
@@ -127,7 +148,8 @@ export function SvgImportStudio() {
           ...form,
           viewBox: preview.viewBox,
           anchors,
-          terminals
+          terminals,
+          networkProfile
         });
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Metadata is invalid.");
@@ -186,6 +208,18 @@ export function SvgImportStudio() {
               }))
             }
           />
+          {form.category === "network_device" ? (
+            <NetworkProfileEditor
+              profile={networkProfile}
+              disabled={isPending}
+              onChange={(updates) =>
+                setNetworkProfile((current) => ({
+                  ...current,
+                  ...updates
+                }))
+              }
+            />
+          ) : null}
         </div>
 
         <div className="space-y-5">
@@ -209,7 +243,27 @@ export function SvgImportStudio() {
                 disabled={isPending}
                 onAnchorsChange={setAnchors}
                 onTerminalsChange={setTerminals}
+                onAnchorRenamed={(previousKey, nextKey) =>
+                  setNetworkProfile((current) => ({
+                    ...current,
+                    ports: current.ports.map((port) =>
+                      port.anchorKey === previousKey
+                        ? { ...port, anchorKey: nextKey }
+                        : port
+                    )
+                  }))
+                }
               />
+              {form.category === "network_device" ? (
+                <NetworkPortEditor
+                  anchors={anchors}
+                  ports={networkProfile.ports}
+                  disabled={isPending}
+                  onChange={(ports) =>
+                    setNetworkProfile((current) => ({ ...current, ports }))
+                  }
+                />
+              ) : null}
             </>
           ) : (
             <div className="tool-panel flex min-h-[520px] items-center justify-center p-8 text-center">

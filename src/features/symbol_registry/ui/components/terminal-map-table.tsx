@@ -106,10 +106,12 @@ function VerificationReport({
 
 export function TerminalMapTable({
   versionId,
-  metadata
+  metadata,
+  readOnly = false
 }: {
   versionId: string;
   metadata: SymbolMetadata;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -206,15 +208,17 @@ export function TerminalMapTable({
             <Sparkles aria-hidden="true" size={14} />
             AI verify
           </button>
-          <button
-            type="button"
-            className="icon-button"
-            onClick={openEditor}
-            disabled={isPending}
-          >
-            <Pencil aria-hidden="true" size={14} />
-            Edit terminal map
-          </button>
+          {!readOnly ? (
+            <button
+              type="button"
+              className="icon-button"
+              onClick={openEditor}
+              disabled={isPending}
+            >
+              <Pencil aria-hidden="true" size={14} />
+              Edit terminal map
+            </button>
+          ) : null}
         </div>
       </div>
 

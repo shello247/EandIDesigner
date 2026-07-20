@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+export const DEFAULT_NETWORK_NODE_SCALE = 0.35;
+export const MIN_NETWORK_NODE_SCALE = 0.1;
+export const MAX_NETWORK_NODE_SCALE = 4;
+
 export const networkMapStatusSchema = z.enum([
   "draft",
   "needs_review",
@@ -58,8 +62,26 @@ export const networkMapNodeSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
   rotation: z.number().finite(),
-  scale: z.number().positive()
+  scale: z
+    .number()
+    .min(MIN_NETWORK_NODE_SCALE)
+    .max(MAX_NETWORK_NODE_SCALE)
 });
+
+export const networkNodeEditableUpdatesSchema = networkMapNodeSchema
+  .pick({
+    tag: true,
+    label: true,
+    ipAddress: true,
+    vlanId: true,
+    zoneId: true,
+    rotation: true,
+    scale: true
+  })
+  .partial()
+  .refine((updates) => Object.keys(updates).length > 0, {
+    message: "At least one network node property must be updated."
+  });
 
 export const networkMapEndpointSchema = z.object({
   nodeId: z.string().trim().min(1),
@@ -137,6 +159,8 @@ export const networkMapModelSchema = z
   })
   .superRefine((model, context) => {
     const seenIpAddresses = new Map<string, string>();
+    const seenNodeIds = new Map<string, string>();
+    const seenNodeTags = new Map<string, string>();
 
     model.sheets.forEach((sheet, sheetIndex) => {
       const nodeIds = new Set(sheet.nodes.map((node) => node.id));
@@ -144,6 +168,29 @@ export const networkMapModelSchema = z
 
       sheet.nodes.forEach((node, nodeIndex) => {
         const ipAddress = node.ipAddress?.trim().toLowerCase();
+        const normalizedTag = node.tag.trim().toUpperCase();
+        const existingNodeSheet = seenNodeIds.get(node.id);
+        const existingTag = seenNodeTags.get(normalizedTag);
+
+        if (existingNodeSheet) {
+          context.addIssue({
+            code: "custom",
+            message: `Network node ID "${node.id}" is already used on ${existingNodeSheet}.`,
+            path: ["sheets", sheetIndex, "nodes", nodeIndex, "id"]
+          });
+        } else {
+          seenNodeIds.set(node.id, sheet.name);
+        }
+
+        if (existingTag) {
+          context.addIssue({
+            code: "custom",
+            message: `Network node tag "${node.tag}" is already used by ${existingTag}.`,
+            path: ["sheets", sheetIndex, "nodes", nodeIndex, "tag"]
+          });
+        } else {
+          seenNodeTags.set(normalizedTag, node.tag);
+        }
 
         if (node.zoneId && !zoneIds.has(node.zoneId)) {
           context.addIssue({
@@ -157,12 +204,12 @@ export const networkMapModelSchema = z
           return;
         }
 
-        const existingTag = seenIpAddresses.get(ipAddress);
+        const existingIpTag = seenIpAddresses.get(ipAddress);
 
-        if (existingTag) {
+        if (existingIpTag) {
           context.addIssue({
             code: "custom",
-            message: `IP address "${node.ipAddress}" is already used by ${existingTag}.`,
+            message: `IP address "${node.ipAddress}" is already used by ${existingIpTag}.`,
             path: ["sheets", sheetIndex, "nodes", nodeIndex, "ipAddress"]
           });
           return;
@@ -208,6 +255,9 @@ export type NetworkMapLinkMedia = z.infer<typeof networkMapLinkMediaSchema>;
 export type NetworkMapTitleBlock = z.infer<typeof networkMapTitleBlockSchema>;
 export type NetworkMapSheetPage = z.infer<typeof networkMapSheetPageSchema>;
 export type NetworkMapNode = z.infer<typeof networkMapNodeSchema>;
+export type NetworkNodeEditableUpdates = z.infer<
+  typeof networkNodeEditableUpdatesSchema
+>;
 export type NetworkMapEndpoint = z.infer<typeof networkMapEndpointSchema>;
 export type NetworkMapRoutePoint = z.infer<typeof networkMapRoutePointSchema>;
 export type NetworkMapLinkRoute = z.infer<typeof networkMapLinkRouteSchema>;

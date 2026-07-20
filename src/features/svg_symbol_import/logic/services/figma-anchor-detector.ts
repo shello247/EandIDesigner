@@ -1,18 +1,66 @@
-import type { SymbolAnchor } from "@/features/symbol_registry/data/schema";
+import {
+  networkPortKeySchema,
+  type SymbolAnchor,
+  type ValidationIssue
+} from "@/features/symbol_registry/data/schema";
 
 type ParsedAttributes = Record<string, string>;
 
-type MarkerElement = {
-  tagName: "circle" | "ellipse" | "rect";
-  attributes: ParsedAttributes;
-  groupAttributes?: ParsedAttributes;
+type AffineMatrix = {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
+  f: number;
 };
 
-const MARKER_PATTERN = /<(circle|ellipse|rect)\b([^>]*)>/gi;
-const GROUP_PATTERN = /<g\b([^>]*)>([\s\S]*?)<\/g>/gi;
+type SourceRange = {
+  start: number;
+  end: number;
+};
+
+type GroupElement = SourceRange & {
+  attributes: ParsedAttributes;
+  content: string;
+  contentStart: number;
+};
+
+type MarkerElement = SourceRange & {
+  tagName: "circle" | "ellipse" | "rect";
+  attributes: ParsedAttributes;
+  group?: GroupElement;
+  removalRange?: SourceRange;
+};
+
+type ParsedMarkerName = {
+  key: string;
+  kind: SymbolAnchor["kind"];
+  networkPort: boolean;
+};
+
+export type FigmaAnchorExtraction = {
+  anchors: SymbolAnchor[];
+  productionSvg: string;
+  issues: ValidationIssue[];
+};
+
+const PRIMITIVE_PATTERN =
+  /<(circle|ellipse|rect)\b([^>]*?)(?:\/\s*>|>\s*<\/\1\s*>)/gi;
+const GROUP_PATTERN = /<g\b([^>]*)>([\s\S]*?)<\/g\s*>/gi;
 const ATTR_PATTERN = /([:\w-]+)\s*=\s*("([^"]*)"|'([^']*)')/g;
-const ANCHOR_NAME_PATTERN =
+const ELECTRICAL_ANCHOR_NAME_PATTERN =
   /(?:^|[\s_-])(terminal|anchor)[:_\-\s]+([A-Za-z0-9][A-Za-z0-9_.-]*)$/i;
+const NETWORK_PORT_NAME_PATTERN = /^(network_port|port)\s*:\s*(.*)$/i;
+const NETWORK_PORT_PREFIX_PATTERN = /^(network_port|port)\b/i;
+const IDENTITY_MATRIX: AffineMatrix = {
+  a: 1,
+  b: 0,
+  c: 0,
+  d: 1,
+  e: 0,
+  f: 0
+};
 
 function parseAttributes(source: string): ParsedAttributes {
   const attributes: ParsedAttributes = {};
@@ -38,31 +86,62 @@ function attributeName(attributes?: ParsedAttributes): string | undefined {
   );
 }
 
-function parseAnchorName(value: string): {
-  key: string;
-  kind: SymbolAnchor["kind"];
-} | null {
+function parseMarkerName(value: string):
+  | { marker: ParsedMarkerName }
+  | { error: string }
+  | null {
   const normalized = value.trim();
-  const match = normalized.match(ANCHOR_NAME_PATTERN);
+  const networkMatch = normalized.match(NETWORK_PORT_NAME_PATTERN);
 
-  if (!match) {
+  if (networkMatch) {
+    const keyResult = networkPortKeySchema.safeParse(networkMatch[2]);
+
+    if (!keyResult.success) {
+      return {
+        error: `Network port marker "${normalized}" has an invalid port key.`
+      };
+    }
+
+    return {
+      marker: {
+        key: keyResult.data,
+        kind: "network_port",
+        networkPort: true
+      }
+    };
+  }
+
+  if (NETWORK_PORT_PREFIX_PATTERN.test(normalized)) {
+    return {
+      error: `Network port marker "${normalized}" must use network_port:<PORT_KEY> or port:<PORT_KEY>.`
+    };
+  }
+
+  const electricalMatch = normalized.match(ELECTRICAL_ANCHOR_NAME_PATTERN);
+  if (!electricalMatch) {
     return null;
   }
 
-  const key = match[2].trim();
+  const key = electricalMatch[2].trim();
   const keyUpper = key.toUpperCase();
 
   if (keyUpper.includes("GND") || keyUpper.includes("GROUND")) {
-    return { key, kind: "ground" };
+    return { marker: { key, kind: "ground", networkPort: false } };
   }
 
   if (keyUpper.includes("SHIELD") || keyUpper.includes("DRAIN")) {
-    return { key, kind: "shield" };
+    return { marker: { key, kind: "shield", networkPort: false } };
   }
 
   return {
-    key,
-    kind: match[1].toLowerCase() === "terminal" ? "terminal" : "other"
+    marker: {
+      key,
+      kind:
+        electricalMatch[1].toLowerCase() === "terminal"
+          ? "terminal"
+          : "other",
+      networkPort: false
+    }
   };
 }
 
@@ -71,126 +150,350 @@ function numberAttribute(attributes: ParsedAttributes, key: string): number | nu
   return Number.isFinite(value) ? value : null;
 }
 
-function translateOffset(attributes?: ParsedAttributes): { x: number; y: number } {
-  const transform = attributes?.transform;
+function parseTransform(attributes?: ParsedAttributes): AffineMatrix | null {
+  const transform = attributes?.transform?.trim();
 
   if (!transform) {
-    return { x: 0, y: 0 };
+    return IDENTITY_MATRIX;
   }
 
-  const translateMatch = transform.match(
-    /translate\(\s*([+-]?\d*\.?\d+)(?:[\s,]+([+-]?\d*\.?\d+))?\s*\)/i
-  );
-  if (translateMatch) {
+  const match = transform.match(/^(translate|matrix)\(([^)]*)\)$/i);
+  if (!match) {
+    return null;
+  }
+
+  const values = match[2]
+    .trim()
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .map(Number);
+
+  if (values.some((value) => !Number.isFinite(value))) {
+    return null;
+  }
+
+  if (match[1].toLowerCase() === "translate") {
+    if (values.length < 1 || values.length > 2) {
+      return null;
+    }
+
     return {
-      x: Number(translateMatch[1]),
-      y: Number(translateMatch[2] ?? 0)
+      ...IDENTITY_MATRIX,
+      e: values[0],
+      f: values[1] ?? 0
     };
   }
 
-  const matrixMatch = transform.match(
-    /matrix\(\s*[+-]?\d*\.?\d+[\s,]+[+-]?\d*\.?\d+[\s,]+[+-]?\d*\.?\d+[\s,]+[+-]?\d*\.?\d+[\s,]+([+-]?\d*\.?\d+)[\s,]+([+-]?\d*\.?\d+)\s*\)/i
-  );
-
-  if (matrixMatch) {
-    return {
-      x: Number(matrixMatch[1]),
-      y: Number(matrixMatch[2])
-    };
+  if (values.length !== 6) {
+    return null;
   }
 
-  return { x: 0, y: 0 };
+  return {
+    a: values[0],
+    b: values[1],
+    c: values[2],
+    d: values[3],
+    e: values[4],
+    f: values[5]
+  };
+}
+
+function multiplyMatrices(
+  parent: AffineMatrix,
+  child: AffineMatrix
+): AffineMatrix {
+  return {
+    a: parent.a * child.a + parent.c * child.b,
+    b: parent.b * child.a + parent.d * child.b,
+    c: parent.a * child.c + parent.c * child.d,
+    d: parent.b * child.c + parent.d * child.d,
+    e: parent.a * child.e + parent.c * child.f + parent.e,
+    f: parent.b * child.e + parent.d * child.f + parent.f
+  };
+}
+
+function applyMatrix(
+  point: { x: number; y: number },
+  matrix: AffineMatrix
+): { x: number; y: number } {
+  return {
+    x: matrix.a * point.x + matrix.c * point.y + matrix.e,
+    y: matrix.b * point.x + matrix.d * point.y + matrix.f
+  };
 }
 
 function markerCenter(marker: MarkerElement): { x: number; y: number } | null {
-  const elementOffset = translateOffset(marker.attributes);
-  const groupOffset = translateOffset(marker.groupAttributes);
-  const offsetX = elementOffset.x + groupOffset.x;
-  const offsetY = elementOffset.y + groupOffset.y;
+  let center: { x: number; y: number } | null = null;
 
   if (marker.tagName === "circle" || marker.tagName === "ellipse") {
     const cx = numberAttribute(marker.attributes, "cx");
     const cy = numberAttribute(marker.attributes, "cy");
 
-    if (cx === null || cy === null) {
-      return null;
+    if (cx !== null && cy !== null) {
+      center = { x: cx, y: cy };
     }
+  } else {
+    const x = numberAttribute(marker.attributes, "x");
+    const y = numberAttribute(marker.attributes, "y");
+    const width = numberAttribute(marker.attributes, "width");
+    const height = numberAttribute(marker.attributes, "height");
 
-    return {
-      x: Number((cx + offsetX).toFixed(2)),
-      y: Number((cy + offsetY).toFixed(2))
-    };
+    if (x !== null && y !== null && width !== null && height !== null) {
+      center = { x: x + width / 2, y: y + height / 2 };
+    }
   }
 
-  const x = numberAttribute(marker.attributes, "x");
-  const y = numberAttribute(marker.attributes, "y");
-  const width = numberAttribute(marker.attributes, "width");
-  const height = numberAttribute(marker.attributes, "height");
-
-  if (x === null || y === null || width === null || height === null) {
+  if (!center) {
     return null;
   }
 
+  const elementMatrix = parseTransform(marker.attributes);
+  const groupMatrix = parseTransform(marker.group?.attributes);
+
+  if (!elementMatrix || !groupMatrix) {
+    return null;
+  }
+
+  const transformed = applyMatrix(
+    center,
+    multiplyMatrices(groupMatrix, elementMatrix)
+  );
+
   return {
-    x: Number((x + width / 2 + offsetX).toFixed(2)),
-    y: Number((y + height / 2 + offsetY).toFixed(2))
+    x: Number(transformed.x.toFixed(2)),
+    y: Number(transformed.y.toFixed(2))
   };
 }
 
-function collectMarkerElements(svg: string): MarkerElement[] {
-  const markers: MarkerElement[] = [];
+function collectGroups(svg: string): GroupElement[] {
+  return Array.from(svg.matchAll(GROUP_PATTERN), (match) => {
+    const start = match.index;
+    const openingTagEnd = match[0].indexOf(">") + 1;
 
-  for (const match of svg.matchAll(MARKER_PATTERN)) {
-    markers.push({
+    return {
+      start,
+      end: start + match[0].length,
+      attributes: parseAttributes(match[1]),
+      content: match[2],
+      contentStart: start + openingTagEnd
+    };
+  });
+}
+
+function collectPrimitives(svg: string, groups: GroupElement[]): MarkerElement[] {
+  return Array.from(svg.matchAll(PRIMITIVE_PATTERN), (match) => {
+    const start = match.index;
+    const end = start + match[0].length;
+    const containingGroups = groups.filter(
+      (group) => start >= group.contentStart && end <= group.end
+    );
+    const group = containingGroups.reduce<GroupElement | undefined>(
+      (smallest, candidate) =>
+        !smallest || candidate.end - candidate.start < smallest.end - smallest.start
+          ? candidate
+          : smallest,
+      undefined
+    );
+
+    return {
+      start,
+      end,
       tagName: match[1].toLowerCase() as MarkerElement["tagName"],
-      attributes: parseAttributes(match[2])
+      attributes: parseAttributes(match[2]),
+      group
+    };
+  });
+}
+
+function groupMarkerCandidate(
+  group: GroupElement,
+  primitives: MarkerElement[],
+  strictNetworkGroup: boolean
+): { marker?: MarkerElement; error?: string } {
+  const directPrimitives = primitives.filter(
+    (primitive) => primitive.group?.start === group.start
+  );
+
+  if (!strictNetworkGroup) {
+    const marker = directPrimitives[0];
+    return marker ? { marker: { ...marker, group } } : {};
+  }
+
+  const remainingContent = group.content
+    .replace(PRIMITIVE_PATTERN, "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .trim();
+
+  if (directPrimitives.length !== 1 || remainingContent.length > 0) {
+    return {
+      error:
+        "Named network port groups must contain exactly one direct circle, ellipse, or rectangle and no production geometry."
+    };
+  }
+
+  return {
+    marker: {
+      ...directPrimitives[0],
+      group,
+      removalRange: { start: group.start, end: group.end }
+    }
+  };
+}
+
+function removeRanges(svg: string, ranges: SourceRange[]): string {
+  const ordered = [...ranges].sort((left, right) => right.start - left.start);
+
+  return ordered.reduce(
+    (output, range) => output.slice(0, range.start) + output.slice(range.end),
+    svg
+  );
+}
+
+export function extractFigmaAnchors(svg: string): FigmaAnchorExtraction {
+  const anchors: SymbolAnchor[] = [];
+  const issues: ValidationIssue[] = [];
+  const removals: SourceRange[] = [];
+  const seenKeys = new Map<string, SymbolAnchor["kind"]>();
+  const consumedPrimitiveStarts = new Set<number>();
+  const groups = collectGroups(svg);
+  const primitives = collectPrimitives(svg, groups);
+  const candidates: Array<{
+    marker: MarkerElement;
+    parsedName: ParsedMarkerName;
+  }> = [];
+
+  for (const group of groups) {
+    const name = attributeName(group.attributes);
+    if (!name) {
+      continue;
+    }
+
+    const parsed = parseMarkerName(name);
+    if (!parsed) {
+      continue;
+    }
+
+    if ("error" in parsed) {
+      issues.push({
+        severity: "blocking",
+        code: "NETWORK_PORT_MARKER_INVALID",
+        message: parsed.error,
+        path: "svg"
+      });
+      continue;
+    }
+
+    const groupCandidate = groupMarkerCandidate(
+      group,
+      primitives,
+      parsed.marker.networkPort
+    );
+    if (parsed.marker.networkPort && groupCandidate.error) {
+      issues.push({
+        severity: "blocking",
+        code: "NETWORK_PORT_MARKER_GROUP_INVALID",
+        message: groupCandidate.error,
+        path: "svg"
+      });
+      continue;
+    }
+
+    const marker = groupCandidate.marker;
+    if (!marker) {
+      continue;
+    }
+
+    consumedPrimitiveStarts.add(marker.start);
+    candidates.push({ marker, parsedName: parsed.marker });
+  }
+
+  for (const primitive of primitives) {
+    if (consumedPrimitiveStarts.has(primitive.start)) {
+      continue;
+    }
+
+    const name = attributeName(primitive.attributes);
+    if (!name) {
+      continue;
+    }
+
+    const parsed = parseMarkerName(name);
+    if (!parsed) {
+      continue;
+    }
+
+    if ("error" in parsed) {
+      issues.push({
+        severity: "blocking",
+        code: "NETWORK_PORT_MARKER_INVALID",
+        message: parsed.error,
+        path: "svg"
+      });
+      continue;
+    }
+
+    candidates.push({
+      marker: {
+        ...primitive,
+        removalRange: parsed.marker.networkPort
+          ? { start: primitive.start, end: primitive.end }
+          : undefined
+      },
+      parsedName: parsed.marker
     });
   }
 
-  for (const groupMatch of svg.matchAll(GROUP_PATTERN)) {
-    const groupAttributes = parseAttributes(groupMatch[1]);
-    const markerMatch = MARKER_PATTERN.exec(groupMatch[2]);
-    MARKER_PATTERN.lastIndex = 0;
+  candidates.sort((left, right) => left.marker.start - right.marker.start);
 
-    if (markerMatch) {
-      markers.push({
-        tagName: markerMatch[1].toLowerCase() as MarkerElement["tagName"],
-        attributes: parseAttributes(markerMatch[2]),
-        groupAttributes
-      });
-    }
-  }
-
-  return markers;
-}
-
-export function detectFigmaAnchors(svg: string): SymbolAnchor[] {
-  const anchors: SymbolAnchor[] = [];
-  const seenKeys = new Set<string>();
-
-  for (const marker of collectMarkerElements(svg)) {
-    const parsedName =
-      parseAnchorName(attributeName(marker.attributes) ?? "") ??
-      parseAnchorName(attributeName(marker.groupAttributes) ?? "");
-
-    if (!parsedName || seenKeys.has(parsedName.key)) {
-      continue;
-    }
-
+  for (const candidate of candidates) {
+    const { marker, parsedName } = candidate;
     const center = markerCenter(marker);
+
     if (!center) {
+      if (parsedName.networkPort) {
+        issues.push({
+          severity: "blocking",
+          code: "NETWORK_PORT_MARKER_GEOMETRY_INVALID",
+          message: `Network port marker "${parsedName.key}" has invalid geometry or an unsupported transform.`,
+          path: "svg"
+        });
+      }
       continue;
     }
 
-    seenKeys.add(parsedName.key);
+    const existingKind = seenKeys.get(parsedName.key);
+    if (existingKind) {
+      if (parsedName.networkPort || existingKind === "network_port") {
+        issues.push({
+          severity: "blocking",
+          code: "NETWORK_PORT_MARKER_DUPLICATE",
+          message: `Network port marker key "${parsedName.key}" is duplicated.`,
+          path: "svg"
+        });
+      }
+      continue;
+    }
+
+    seenKeys.set(parsedName.key, parsedName.kind);
     anchors.push({
       key: parsedName.key,
       x: center.x,
       y: center.y,
       kind: parsedName.kind
     });
+
+    if (parsedName.networkPort && marker.removalRange) {
+      removals.push(marker.removalRange);
+    }
   }
 
-  return anchors;
+  return {
+    anchors,
+    productionSvg: removeRanges(svg, removals),
+    issues
+  };
 }
 
+export function detectFigmaAnchors(svg: string): SymbolAnchor[] {
+  return extractFigmaAnchors(svg).anchors;
+}

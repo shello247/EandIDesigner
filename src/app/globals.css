@@ -52,6 +52,8 @@ svg {
 .svg-preview-stage > div,
 .svg-preview-stage > div > svg {
   display: block;
+  height: 100%;
+  width: 100%;
 }
 
 .svg-preview-stage > div > svg {

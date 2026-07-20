@@ -44,7 +44,17 @@ export function SymbolDetailPanel({ symbol }: { symbol: SymbolDetail }) {
             status={symbol.status}
             blockingIssueCount={blockingIssueCount}
           />
-          <SymbolWorkspaceTabs symbol={symbol} latest={latest} />
+          <SymbolWorkspaceTabs
+            symbolId={symbol.id}
+            category={symbol.category}
+            symbolStatus={symbol.status}
+            manufacturer={symbol.manufacturer}
+            model={symbol.model}
+            latest={latest}
+            validationIssues={symbol.validationIssues}
+            engineerNotes={symbol.engineerNotes}
+            documents={symbol.documents}
+          />
         </>
       ) : (
         <div className="tool-panel p-6 text-sm text-slate-600">

@@ -55,7 +55,11 @@ export function ApprovalBar({
       <div>
         <div className="text-[13px] font-semibold">Approval</div>
         <div className="text-xs text-slate-500">
-          {blockingIssueCount === 0
+          {status === "approved"
+            ? "This version is approved and its content is read-only."
+            : status === "archived"
+              ? "This version is archived and read-only."
+              : blockingIssueCount === 0
             ? "This version is eligible for manual approval."
             : `${blockingIssueCount} blocking issue(s) must be resolved before approval.`}
         </div>

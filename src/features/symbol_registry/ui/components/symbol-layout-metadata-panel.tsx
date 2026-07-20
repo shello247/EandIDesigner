@@ -53,10 +53,12 @@ function parsePositiveInput(value: string): number | undefined {
 
 export function SymbolLayoutMetadataPanel({
   versionId,
-  metadata
+  metadata,
+  readOnly = false
 }: {
   versionId: string;
   metadata: SymbolMetadata;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -113,7 +115,7 @@ export function SymbolLayoutMetadataPanel({
             id="symbol-layout-usage"
             className="field-input"
             value={layoutUsage}
-            disabled={isPending}
+            disabled={isPending || readOnly}
             onChange={(event) =>
               setLayoutUsage(event.currentTarget.value as SymbolLayoutUsage)
             }
@@ -135,7 +137,7 @@ export function SymbolLayoutMetadataPanel({
               className="field-input"
               inputMode="decimal"
               value={physicalWidthMm}
-              disabled={isPending || !panelLayoutEnabled}
+              disabled={isPending || readOnly || !panelLayoutEnabled}
               onChange={(event) => setPhysicalWidthMm(event.currentTarget.value)}
             />
           </div>
@@ -148,7 +150,7 @@ export function SymbolLayoutMetadataPanel({
               className="field-input"
               inputMode="decimal"
               value={physicalHeightMm}
-              disabled={isPending || !panelLayoutEnabled}
+              disabled={isPending || readOnly || !panelLayoutEnabled}
               onChange={(event) => setPhysicalHeightMm(event.currentTarget.value)}
             />
           </div>
@@ -162,7 +164,7 @@ export function SymbolLayoutMetadataPanel({
               id="symbol-mounting-type"
               className="field-input"
               value={mountingType}
-              disabled={isPending || !panelLayoutEnabled}
+              disabled={isPending || readOnly || !panelLayoutEnabled}
               onChange={(event) =>
                 setMountingType(
                   event.currentTarget.value as SymbolPanelMountingType
@@ -185,7 +187,7 @@ export function SymbolLayoutMetadataPanel({
               id="symbol-panel-category"
               className="field-input"
               value={panelCategory}
-              disabled={isPending || !panelLayoutEnabled}
+              disabled={isPending || readOnly || !panelLayoutEnabled}
               onChange={(event) =>
                 setPanelCategory(
                   event.currentTarget.value as SymbolPanelCategory
@@ -205,7 +207,7 @@ export function SymbolLayoutMetadataPanel({
           <input
             type="checkbox"
             checked={resizable}
-            disabled={isPending || !panelLayoutEnabled}
+            disabled={isPending || readOnly || !panelLayoutEnabled}
             onChange={(event) => setResizable(event.currentTarget.checked)}
           />
           Resizable in panel layouts
@@ -223,15 +225,17 @@ export function SymbolLayoutMetadataPanel({
             {message}
           </div>
         ) : null}
-        <button
-          type="button"
-          className="icon-button icon-button-primary w-full justify-center"
-          disabled={isPending}
-          onClick={save}
-        >
-          <Save aria-hidden="true" size={14} />
-          Save layout metadata
-        </button>
+        {!readOnly ? (
+          <button
+            type="button"
+            className="icon-button icon-button-primary w-full justify-center"
+            disabled={isPending}
+            onClick={save}
+          >
+            <Save aria-hidden="true" size={14} />
+            Save layout metadata
+          </button>
+        ) : null}
       </div>
     </section>
   );

@@ -2,8 +2,18 @@
 
 import { useState } from "react";
 import { FileText, LayoutDashboard, NotebookPen } from "lucide-react";
-import type { SymbolDetail, SymbolVersionSummary } from "../../types";
+import type {
+  SymbolCategory,
+  SymbolStatus,
+  ValidationIssue
+} from "../../data/schema";
+import type {
+  SymbolDocumentSummary,
+  SymbolEngineerNoteSummary,
+  SymbolVersionSummary
+} from "../../types";
 import { EngineerNotesPanel } from "./engineer-notes-panel";
+import { NetworkProfilePanel } from "./network-profile-panel";
 import { SvgPreviewPanel } from "./svg-preview-panel";
 import { SymbolDocumentsPanel } from "./symbol-documents-panel";
 import { SymbolLayoutMetadataPanel } from "./symbol-layout-metadata-panel";
@@ -23,13 +33,31 @@ const tabs: Array<{
 ];
 
 export function SymbolWorkspaceTabs({
-  symbol,
-  latest
+  symbolId,
+  category,
+  symbolStatus,
+  manufacturer,
+  model,
+  latest,
+  validationIssues,
+  engineerNotes,
+  documents
 }: {
-  symbol: SymbolDetail;
+  symbolId: string;
+  category: SymbolCategory;
+  symbolStatus: SymbolStatus;
+  manufacturer?: string | null;
+  model?: string | null;
   latest: SymbolVersionSummary;
+  validationIssues: ValidationIssue[];
+  engineerNotes: SymbolEngineerNoteSummary[];
+  documents: SymbolDocumentSummary[];
 }) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
+  const editable =
+    symbolStatus !== "archived" &&
+    (latest.status === "draft" || latest.status === "needs_review");
+  const isNetworkSymbol = category === "network_device";
 
   return (
     <div className="space-y-5">
@@ -60,36 +88,61 @@ export function SymbolWorkspaceTabs({
       </div>
 
       {activeTab === "overview" ? (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
+        <div
+          className={[
+            "grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5",
+            isNetworkSymbol
+              ? "xl:grid-cols-[minmax(360px,0.7fr)_minmax(620px,1.3fr)]"
+              : "xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]"
+          ].join(" ")}
+        >
           <SvgPreviewPanel
             svg={latest.svg}
             title={`Version ${latest.versionNumber}`}
             metadata={latest.metadata}
           />
-          <div className="space-y-5">
-            <SymbolLayoutMetadataPanel
-              versionId={latest.id}
-              metadata={latest.metadata}
-            />
-            <TerminalMapTable versionId={latest.id} metadata={latest.metadata} />
-            <ValidationPanel issues={symbol.validationIssues} />
+          <div className="min-w-0 space-y-5">
+            {isNetworkSymbol ? (
+              <NetworkProfilePanel
+                versionId={latest.id}
+                manufacturer={manufacturer}
+                model={model}
+                profile={latest.metadata.networkProfile}
+                anchors={latest.metadata.anchors}
+                editable={editable}
+              />
+            ) : (
+              <>
+                <SymbolLayoutMetadataPanel
+                  versionId={latest.id}
+                  metadata={latest.metadata}
+                  readOnly={!editable}
+                />
+                <TerminalMapTable
+                  versionId={latest.id}
+                  metadata={latest.metadata}
+                  readOnly={!editable}
+                />
+              </>
+            )}
+            <ValidationPanel issues={validationIssues} />
           </div>
         </div>
       ) : null}
 
       {activeTab === "engineer_notes" ? (
         <EngineerNotesPanel
-          symbolId={symbol.id}
+          symbolId={symbolId}
           versionId={latest.id}
-          notes={symbol.engineerNotes}
+          notes={engineerNotes}
         />
       ) : null}
 
       {activeTab === "documents" ? (
         <SymbolDocumentsPanel
-          symbolId={symbol.id}
+          symbolId={symbolId}
           versionId={latest.id}
-          documents={symbol.documents}
+          documents={documents}
         />
       ) : null}
     </div>

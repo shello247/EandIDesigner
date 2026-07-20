@@ -11,6 +11,8 @@ import {
   type SymbolPanelMountingType
 } from "@/features/symbol_registry/data/schema";
 import type { SvgViewBox } from "@/shared/svg/svg-inspector";
+import type { SvgImportNetworkProfileDraft } from "../../data/schema";
+import { buildNetworkProfileFromDraft } from "../services/network-profile-draft";
 
 function normalizeOptional(value: string | undefined): string | undefined {
   const normalized = value?.trim() ?? "";
@@ -56,19 +58,33 @@ export function buildImportedSymbolMetadata(input: {
   viewBox: SvgViewBox;
   anchors: SymbolAnchor[];
   terminals: SymbolTerminal[];
+  networkProfile?: SvgImportNetworkProfileDraft;
 }): SymbolMetadata {
+  const isNetworkDevice = input.category === "network_device";
+  const networkProfile =
+    isNetworkDevice
+      ? input.networkProfile
+        ? buildNetworkProfileFromDraft(input.networkProfile)
+        : undefined
+      : undefined;
+
   return symbolMetadataSchema.parse({
     symbolKey: normalizeSymbolKey(input.symbolKey),
     displayName: input.displayName.trim(),
     manufacturer: normalizeOptional(input.manufacturer),
     model: normalizeOptional(input.model),
     category: input.category,
-    layoutUsage: input.layoutUsage ?? "wiring",
-    physicalWidthMm: normalizePositiveNumber(input.physicalWidthMm),
-    physicalHeightMm: normalizePositiveNumber(input.physicalHeightMm),
-    mountingType: input.mountingType || undefined,
-    panelCategory: input.panelCategory || undefined,
-    resizable: input.resizable ?? false,
+    layoutUsage: isNetworkDevice ? "wiring" : input.layoutUsage ?? "wiring",
+    physicalWidthMm: isNetworkDevice
+      ? undefined
+      : normalizePositiveNumber(input.physicalWidthMm),
+    physicalHeightMm: isNetworkDevice
+      ? undefined
+      : normalizePositiveNumber(input.physicalHeightMm),
+    mountingType: isNetworkDevice ? undefined : input.mountingType || undefined,
+    panelCategory: isNetworkDevice ? undefined : input.panelCategory || undefined,
+    resizable: isNetworkDevice ? false : input.resizable ?? false,
+    networkProfile,
     viewBox: input.viewBox,
     anchors: input.anchors.map((anchor) => ({
       ...anchor,

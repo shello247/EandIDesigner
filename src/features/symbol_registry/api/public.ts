@@ -1,25 +1,18 @@
 import { saveSymbolDraft } from "../data/mutations";
 import {
+  getApprovedNetworkSymbolSvgAsset as getApprovedNetworkSymbolSvgAssetQuery,
+  listApprovedNetworkSymbolVersionsByIds as listApprovedNetworkSymbolVersionsByIdsQuery,
   listDrawingSymbolVersions,
+  listNetworkSymbolCatalog,
   listNetworkSymbolVersions
 } from "../data/queries";
-import type { SaveSymbolDraftInput, SymbolMetadata } from "../data/schema";
+import type { SaveSymbolDraftInput } from "../data/schema";
+import type {
+  ApprovedNetworkSymbol,
+  ApprovedNetworkSymbolCatalogItem
+} from "../logic/services/network-symbol-catalog";
 
-export type ApprovedNetworkSymbol = {
-  symbolId: string;
-  symbolKey: string;
-  displayName: string;
-  manufacturer?: string | null;
-  model?: string | null;
-  category: "network_device";
-  versionId: string;
-  versionNumber: number;
-  svg: string;
-  metadata: SymbolMetadata & {
-    category: "network_device";
-    networkProfile: NonNullable<SymbolMetadata["networkProfile"]>;
-  };
-};
+export type { ApprovedNetworkSymbol, ApprovedNetworkSymbolCatalogItem };
 
 export type {
   AnchorKind,
@@ -56,30 +49,25 @@ export async function listApprovedSymbolsForDrawing() {
   return listDrawingSymbolVersions();
 }
 
+export async function listNetworkSymbolCatalogForMapping(): Promise<
+  ApprovedNetworkSymbolCatalogItem[]
+> {
+  return listNetworkSymbolCatalog();
+}
+
+export async function listApprovedNetworkSymbolVersionsByIds(
+  versionIds: readonly string[]
+): Promise<ApprovedNetworkSymbol[]> {
+  return listApprovedNetworkSymbolVersionsByIdsQuery(versionIds);
+}
+
+export async function getApprovedNetworkSymbolSvgAsset(versionId: string) {
+  return getApprovedNetworkSymbolSvgAssetQuery(versionId);
+}
+
+/** @deprecated Use the lightweight catalog and referenced-version bulk query. */
 export async function listNetworkSymbolsForMapping(): Promise<
   ApprovedNetworkSymbol[]
 > {
-  return listNetworkSymbolVersions().then((symbols) =>
-    symbols.flatMap((symbol) => {
-      if (
-        symbol.category !== "network_device" ||
-        symbol.metadata.category !== "network_device" ||
-        !symbol.metadata.networkProfile
-      ) {
-        return [];
-      }
-
-      return [
-        {
-          ...symbol,
-          category: "network_device" as const,
-          metadata: {
-            ...symbol.metadata,
-            category: "network_device" as const,
-            networkProfile: symbol.metadata.networkProfile
-          }
-        }
-      ];
-    })
-  );
+  return listNetworkSymbolVersions();
 }

@@ -7,6 +7,41 @@ import {
 } from "../data/schema";
 import { renderNetworkMapSheetToSvg } from "../logic/services/network-svg-renderer";
 import { buildNetworkMapPrintHtml } from "../logic/services/network-pdf-export";
+import type { ApprovedNetworkSymbol } from "../types";
+import { getNetworkPortWorldPoint } from "../logic/services/network-link-routing";
+
+const approvedSwitch: ApprovedNetworkSymbol = {
+  symbolId: "symbol_1",
+  symbolKey: "managed_switch",
+  displayName: "Managed Switch",
+  manufacturer: null,
+  model: null,
+  category: "network_device",
+  versionId: "version_1",
+  versionNumber: 1,
+  svg: '<svg viewBox="10 20 100 60"><rect x="10" y="20" width="100" height="60"/></svg>',
+  metadata: {
+    symbolKey: "managed_switch",
+    displayName: "Managed Switch",
+    category: "network_device",
+    viewBox: { x: 10, y: 20, width: 100, height: 60 },
+    terminals: [],
+    anchors: [{ key: "ETH1", x: 110, y: 50, kind: "network_port" }],
+    networkProfile: {
+      deviceType: "switch",
+      managed: true,
+      ports: [
+        {
+          key: "ETH1",
+          label: "Uplink",
+          anchorKey: "ETH1",
+          media: "copper",
+          protocolHints: []
+        }
+      ]
+    }
+  }
+};
 
 function modelWithDuplicateIps(): NetworkMapModel {
   const model = createDefaultNetworkMapModel();
@@ -108,5 +143,41 @@ describe("network maps", () => {
     expect(html).toContain("network-map-page");
     expect(html).toContain("window.print()");
     expect(html).toContain("Back to network map");
+  });
+
+  it("renders approved nodes with deterministic transforms and missing versions with placeholders", () => {
+    const model = modelWithDuplicateIps();
+    model.sheets[0].nodes[1].ipAddress = "192.168.1.11";
+    model.sheets[0].nodes[0].rotation = 90;
+    model.sheets[0].nodes[0].scale = 0.5;
+    const svg = renderNetworkMapSheetToSvg({
+      model,
+      sheet: model.sheets[0],
+      approvedSymbols: [approvedSwitch],
+      mapTitle: "Rendered Network",
+      sheetNumber: 1,
+      sheetCount: 1
+    });
+
+    expect(svg).toContain('data-network-node-id="node_1"');
+    expect(svg).toContain('transform="rotate(90 105 95)"');
+    expect(svg).toContain("translate(80 80) scale(0.5) translate(-10 -20)");
+    expect(svg).toContain('data-network-node-id="node_2"');
+    expect(svg).toContain('data-network-node-missing="true"');
+    expect(svg).toContain("MISSING SYMBOL");
+  });
+
+  it("rotates network port endpoints with their node", () => {
+    const sheet = modelWithDuplicateIps().sheets[0];
+    sheet.nodes[0].rotation = 90;
+    sheet.nodes[0].scale = 0.5;
+    const point = getNetworkPortWorldPoint({
+      sheet,
+      symbolsByReference: new Map([["symbol_1:version_1", approvedSwitch]]),
+      nodeId: "node_1",
+      portKey: "ETH1"
+    });
+
+    expect(point).toEqual({ x: 105, y: 120 });
   });
 });
