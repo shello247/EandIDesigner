@@ -6,6 +6,7 @@ import {
   ChevronRight,
   GitBranch,
   Link2,
+  Maximize2,
   Minus,
   Plus,
   RefreshCw,
@@ -38,12 +39,17 @@ import {
   autosizeLayoutHelperToBackplane,
   getBackplanesForSheet,
   getLayoutChildrenForBackplane,
+  getBackplanePlacementArea,
   isBackplanePlacement,
   isLayoutHelperPlacement,
   normalizeLayoutHelperDimensionsForSymbol,
   shouldAutosizeLayoutSymbolToBackplane
 } from "../../logic/services/drawing-backplane-layouts";
-import { resolveBackplaneLayoutScale } from "../../logic/services/drawing-backplane-scale";
+import {
+  getBackplaneCenteredPosition,
+  getBackplanePrintableArea,
+  resolveBackplaneLayoutScale
+} from "../../logic/services/drawing-backplane-scale";
 import { getAnnotationSize } from "../../logic/services/drawing-annotations";
 import {
   getConnectionLabel,
@@ -1208,6 +1214,23 @@ function SelectedPlacementLayoutEditor({
     );
     const resolvedScale = resolveBackplaneLayoutScale(model.sheet, placement);
     const childCount = getLayoutChildrenForBackplane(model, placement.id).length;
+    const fitBackplane = (
+      layoutDimensions: NonNullable<typeof placement.layoutDimensions>
+    ) => {
+      const nextPlacement = {
+        ...placement,
+        layoutDimensions
+      };
+      const area = parentPanel
+        ? getBackplanePlacementArea(parentPanel.placement)
+        : getBackplanePrintableArea(model.sheet);
+
+      return getBackplaneCenteredPosition({
+        sheet: model.sheet,
+        backplane: nextPlacement,
+        area
+      });
+    };
     const updateDimensionDraft = (
       key: "lengthMm" | "widthMm",
       value: string
@@ -1244,12 +1267,15 @@ function SelectedPlacementLayoutEditor({
         return;
       }
 
+      const layoutDimensions = {
+        lengthMm: Number(width.toFixed(2)),
+        widthMm: Number(height.toFixed(2))
+      };
+
       setDimensionDraft(null);
       onPlacementChange(placement.id, {
-        layoutDimensions: {
-          lengthMm: Number(width.toFixed(2)),
-          widthMm: Number(height.toFixed(2))
-        }
+        layoutDimensions,
+        ...fitBackplane(layoutDimensions)
       });
     };
 
@@ -1289,9 +1315,26 @@ function SelectedPlacementLayoutEditor({
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600">
             {childCount} layout item{childCount === 1 ? "" : "s"} assigned.
           </div>
-          <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500">
-            Scale: {resolvedScale.mode === "auto" ? "Auto " : ""}
-            {resolvedScale.label}
+          <div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500">
+            <span>
+              Scale: {resolvedScale.mode === "auto" ? "Auto " : ""}
+              {resolvedScale.label}
+            </span>
+            <button
+              type="button"
+              className="icon-button h-8 shrink-0 px-2"
+              onClick={() =>
+                onPlacementChange(
+                  placement.id,
+                  fitBackplane(placement.layoutDimensions)
+                )
+              }
+              aria-label="Fit backplane within panel"
+              title="Fit backplane within panel"
+            >
+              <Maximize2 aria-hidden="true" size={14} />
+              Fit panel
+            </button>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

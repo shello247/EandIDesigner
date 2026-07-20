@@ -2,11 +2,14 @@ import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import {
   bomItemDetailSchema,
+  bomItemDocumentMetadataSchema,
   bomItemFormOptionsSchema,
   bomItemImageMetadataSchema,
   bomItemSummarySchema,
   symbolBomTemplateDetailSchema,
   type BomItemDetail,
+  type BomItemDocumentMetadata,
+  type BomItemDocumentPayload,
   type BomItemFormOptions,
   type BomItemImageMetadata,
   type BomItemImagePayload,
@@ -15,19 +18,10 @@ import {
   type SymbolBomTemplateDetail
 } from "./schema";
 import { buildBomItemImagePayload } from "../logic/services/bom-item-image-payload";
+import { buildBomItemDocumentPayload } from "../logic/services/bom-item-document-payload";
+import { BOM_ITEM_CATEGORY_OPTIONS } from "../logic/services/bom-item-options";
 
-const defaultBomCategoryOptions = [
-  "cable",
-  "cable_gland",
-  "sealant",
-  "wire_end",
-  "label",
-  "terminal",
-  "breaker",
-  "panel",
-  "accessory",
-  "other"
-];
+const defaultBomCategoryOptions = [...BOM_ITEM_CATEGORY_OPTIONS];
 
 type BomItemRow = {
   id: string;
@@ -51,7 +45,20 @@ type BomItemRow = {
   leadTimeDays: number | null;
   minimumOrderQuantity: number | null;
   costNotes: string | null;
+  productUrl: string | null;
+  productUrlExtractedAt: Date | null;
   status: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type BomItemDocumentRow = {
+  id: string;
+  itemId: string;
+  title: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -74,6 +81,17 @@ const bomItemImageMetadataSelect = {
   caption: true,
   isPrimary: true,
   sortOrder: true
+} as const;
+
+const bomItemDocumentMetadataSelect = {
+  id: true,
+  itemId: true,
+  title: true,
+  fileName: true,
+  mimeType: true,
+  sizeBytes: true,
+  createdAt: true,
+  updatedAt: true
 } as const;
 
 type BomItemListRow = BomItemRow & {
@@ -153,6 +171,26 @@ function uniqueOptions(
 
 function bomItemImageUrl(imageId: string): string {
   return `/api/bom/items/images/${encodeURIComponent(imageId)}`;
+}
+
+function bomItemDocumentUrl(documentId: string): string {
+  return `/api/bom/items/documents/${encodeURIComponent(documentId)}`;
+}
+
+function toBomItemDocumentMetadata(
+  row: BomItemDocumentRow
+): BomItemDocumentMetadata {
+  return bomItemDocumentMetadataSchema.parse({
+    id: row.id,
+    itemId: row.itemId,
+    documentUrl: bomItemDocumentUrl(row.id),
+    title: row.title,
+    fileName: row.fileName,
+    mimeType: row.mimeType,
+    sizeBytes: row.sizeBytes,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  });
 }
 
 function toBomItemImageMetadata(row: BomItemImageRow): BomItemImageMetadata {
@@ -259,6 +297,10 @@ export const getBomItemDetail = cache(
           select: bomItemImageMetadataSelect,
           orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }]
         },
+        documents: {
+          select: bomItemDocumentMetadataSelect,
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+        },
         templateLines: {
           orderBy: { lineNumber: "asc" },
           include: {
@@ -283,7 +325,10 @@ export const getBomItemDetail = cache(
 
     return bomItemDetailSchema.parse({
       ...summary,
+      productUrl: row.productUrl ?? undefined,
+      productUrlExtractedAt: row.productUrlExtractedAt?.toISOString(),
       images: row.images.map(toBomItemImageMetadata),
+      documents: row.documents.map(toBomItemDocumentMetadata),
       usage: row.templateLines
         .map((line) => ({
           symbolId: line.template.symbol.id,
@@ -311,6 +356,34 @@ export async function getBomItemImageMetadata(
   });
 
   return row ? toBomItemImageMetadata(row) : null;
+}
+
+export async function getBomItemDocumentMetadata(
+  documentId: string
+): Promise<BomItemDocumentMetadata | null> {
+  const row = await prisma.bomItemDocument.findUnique({
+    where: { id: documentId },
+    select: bomItemDocumentMetadataSelect
+  });
+
+  return row ? toBomItemDocumentMetadata(row) : null;
+}
+
+export async function getBomItemDocumentPayload(
+  documentId: string
+): Promise<BomItemDocumentPayload | null> {
+  const row = await prisma.bomItemDocument.findUnique({
+    where: { id: documentId },
+    select: {
+      id: true,
+      fileName: true,
+      mimeType: true,
+      sizeBytes: true,
+      dataUrl: true
+    }
+  });
+
+  return row ? buildBomItemDocumentPayload(row) : null;
 }
 
 export async function getBomItemImagePayload(

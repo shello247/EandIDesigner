@@ -8,6 +8,7 @@ import {
 import type { ApprovedDrawingSymbol } from "@/features/drawing_canvas/types";
 import {
   buildManagedAssetCatalog,
+  classifyManagedAssetFromPlacement,
   createManagedAsset,
   deleteManagedAsset,
   getAssetDeletionBlockers,
@@ -23,6 +24,7 @@ function symbol(input: {
   name: string;
   category: ApprovedDrawingSymbol["category"];
   model?: string;
+  panelWiring?: ApprovedDrawingSymbol["metadata"]["panelWiring"];
 }): ApprovedDrawingSymbol {
   return {
     symbolId: input.id,
@@ -38,6 +40,7 @@ function symbol(input: {
       displayName: input.name,
       model: input.model,
       category: input.category,
+      panelWiring: input.panelWiring,
       viewBox: { x: 0, y: 0, width: 100, height: 40 },
       anchors: [
         { key: "A", x: 0, y: 20, kind: "terminal" },
@@ -71,7 +74,20 @@ const controllerSymbol = symbol({
   model: "NRF81"
 });
 
-const symbols = [cableSymbol, levelSymbol, controllerSymbol];
+const ioModuleSymbol = symbol({
+  id: "sym_2085_if4",
+  key: "allen_bradley_2085_if4",
+  name: "2085-IF4 4-Channel Analog Input Module",
+  category: "other",
+  model: "2085-IF4",
+  panelWiring: {
+    assetType: "io_module",
+    tagPrefix: "AI",
+    schematicScale: 0.176
+  }
+});
+
+const symbols = [cableSymbol, levelSymbol, controllerSymbol, ioModuleSymbol];
 
 function placement(
   overrides: Partial<DrawingPlacement> = {}
@@ -127,6 +143,44 @@ function modelWithAssets(): DrawingModel {
 }
 
 describe("drawing asset manager use cases", () => {
+  it("classifies panel-capable registry symbols by their declared asset type", () => {
+    const modulePlacement = placement({
+      id: "ai_101",
+      assetId: "asset_ai_101",
+      symbolId: ioModuleSymbol.symbolId,
+      versionId: ioModuleSymbol.versionId,
+      role: "device",
+      tag: "AI-101",
+      title: ioModuleSymbol.displayName,
+      layoutKind: "layout_helper",
+      layoutDimensions: { lengthMm: 28, widthMm: 90 }
+    });
+
+    expect(classifyManagedAssetFromPlacement(modulePlacement, symbols)).toBe(
+      "io_module"
+    );
+
+    const base = createDefaultDrawingModel();
+    const reconciled = reconcileDrawingAssets(
+      {
+        ...base,
+        sheets: base.sheets.map((sheet) => ({
+          ...sheet,
+          placements: [modulePlacement]
+        }))
+      },
+      symbols
+    );
+
+    expect(reconciled.assets).toContainEqual(
+      expect.objectContaining({
+        id: "asset_ai_101",
+        tag: "AI-101",
+        type: "io_module"
+      })
+    );
+  });
+
   it("builds a catalog from legacy placement-only models", () => {
     const model = modelWithAssets();
     const legacyModel = { ...model } as Partial<DrawingModel>;

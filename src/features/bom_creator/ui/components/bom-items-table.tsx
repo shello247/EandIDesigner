@@ -18,16 +18,6 @@ function formatCost(item: BomItemListRow): string {
   })}`;
 }
 
-function supplierSummary(item: BomItemListRow): string {
-  const parts = [item.supplierName, item.supplierSku].filter(Boolean);
-
-  if (parts.length > 0) {
-    return parts.join(" / ");
-  }
-
-  return item.manufacturer ?? item.partNumber ?? "-";
-}
-
 export function BomItemsTable({
   items,
   onEdit,
@@ -71,15 +61,13 @@ export function BomItemsTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="data-table min-w-[900px]">
+      <table className="data-table min-w-[700px]">
         <thead>
           <tr>
             <th>Item</th>
             <th>Category</th>
             <th>Unit</th>
-            <th>Supplier / Part</th>
             <th>Cost</th>
-            <th>Usage</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -121,18 +109,7 @@ export function BomItemsTable({
               </td>
               <td className="capitalize">{categoryLabel(item.category)}</td>
               <td>{item.unit}</td>
-              <td>{supplierSummary(item)}</td>
               <td>{formatCost(item)}</td>
-              <td>
-                {item.templateLineCount > 0 ? (
-                  <span className="inline-flex rounded-full bg-teal-50 px-2 py-1 text-[11px] font-semibold text-teal-800">
-                    {item.templateLineCount} mini BOM{" "}
-                    {item.templateLineCount === 1 ? "line" : "lines"}
-                  </span>
-                ) : (
-                  <span className="text-slate-500">Unused</span>
-                )}
-              </td>
               <td>
                 <div className="flex items-center gap-2">
                   <button

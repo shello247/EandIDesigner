@@ -9,9 +9,11 @@ import { duplicateSheet } from "../logic/commands/drawing-sheet-commands";
 import {
   allocateNextPackageTag,
   buildDrawingAssetCatalog,
+  defaultPlacementScale,
   detectDuplicatePlacementTags,
   getCompatibleReferenceAssets,
   renameDrawingAssetTag,
+  roleFromSymbol,
   tagPrefixForSymbol
 } from "../logic/services/drawing-asset-identity";
 import {
@@ -26,6 +28,7 @@ function symbol(input: {
   name: string;
   category: ApprovedDrawingSymbol["category"];
   model?: string;
+  panelWiring?: ApprovedDrawingSymbol["metadata"]["panelWiring"];
 }): ApprovedDrawingSymbol {
   return {
     symbolId: input.id,
@@ -41,6 +44,7 @@ function symbol(input: {
       displayName: input.name,
       model: input.model,
       category: input.category,
+      panelWiring: input.panelWiring,
       viewBox: { x: 0, y: 0, width: 100, height: 40 },
       anchors: [
         { key: "CH1_T1", x: 0, y: 20, kind: "terminal" },
@@ -83,6 +87,18 @@ const breakerSymbol = symbol({
   name: "Miniature Circuit Breaker 3 Pole",
   category: "terminal_block",
   model: "3 Pole"
+});
+const ioModuleSymbol = symbol({
+  id: "sym_2085_if4",
+  key: "allen_bradley_2085_if4",
+  name: "2085-IF4 4-Channel Analog Input Module",
+  category: "other",
+  model: "2085-IF4",
+  panelWiring: {
+    assetType: "io_module",
+    tagPrefix: "AI",
+    schematicScale: 0.176
+  }
 });
 const symbols = [cableSymbol, monitorSymbol, temperatureSymbol, radarSymbol];
 
@@ -192,6 +208,15 @@ describe("drawing asset identity", () => {
     expect(allocateNextPackageTag(createDefaultDrawingModel(), breakerSymbol)).toBe(
       "MCB-101"
     );
+  });
+
+  it("honors panel-wiring identity metadata for physical components", () => {
+    expect(roleFromSymbol(ioModuleSymbol)).toBe("device");
+    expect(tagPrefixForSymbol(ioModuleSymbol)).toBe("AI");
+    expect(defaultPlacementScale(ioModuleSymbol)).toBe(0.176);
+    expect(
+      allocateNextPackageTag(createDefaultDrawingModel(), ioModuleSymbol)
+    ).toBe("AI-101");
   });
 
   it("finds compatible existing assets for reference placement", () => {

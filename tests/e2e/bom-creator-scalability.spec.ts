@@ -362,6 +362,7 @@ test("loads modal code and data on demand while preserving filtered CRUD state",
   await page.locator("#bom-category").selectOption("accessory");
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Save item" }).click();
   await expect(page.getByRole("link", { name: createdName })).toBeVisible();
   await expect(page).toHaveURL((url) => {
@@ -379,6 +380,7 @@ test("loads modal code and data on demand while preserving filtered CRUD state",
     page.getByRole("dialog", { name: `Edit ${editedItem.displayName}` })
   ).toBeVisible();
   await page.locator("#bom-display-name").fill(editedName);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Save item" }).click();

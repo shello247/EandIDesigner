@@ -12,6 +12,8 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
+  Globe2,
   ImagePlus,
   Plus,
   Star,
@@ -23,10 +25,14 @@ import {
   createBomItemCategoryAction,
   createBomItemManufacturerAction,
   createBomItemAction,
+  extractBomItemFromUrlAction,
+  uploadBomItemDocumentAction,
   updateBomItemAction
 } from "../../api/actions";
 import {
   type BomItemDetail,
+  type BomItemDocumentMetadata,
+  type BomItemExtractionResult,
   type BomItemFormOptions,
   type BomItemImageMetadata,
   type BomItemImageWriteInput,
@@ -40,14 +46,19 @@ import {
   MAX_BOM_ITEM_TOTAL_IMAGE_BYTES,
   validateBomItemImageBudget
 } from "../../logic/services/bom-item-image-budget";
+import { mergeBomItemExtractionIntoBlankFields } from "../../logic/services/bom-item-extraction-merge";
 import {
   bomCurrencyOptions,
   bomUnitOptions,
   categoryLabel
 } from "./bom-item-options";
 import { BomItemImageView } from "./bom-item-image-view";
+import {
+  BomItemDocumentsStep,
+  type StagedBomItemDocument
+} from "./bom-item-documents-step";
 
-type WizardStep = "general" | "images" | "supplier";
+type WizardStep = "general" | "images" | "documents" | "supplier";
 type OptionDialogKind = "category" | "manufacturer";
 
 type ExistingImageDraft = BomItemImageMetadata & { kind: "existing" };
@@ -60,6 +71,7 @@ type WizardDraft = Omit<BomItemInput, "images"> & {
 const steps: Array<{ key: WizardStep; label: string }> = [
   { key: "general", label: "General" },
   { key: "images", label: "Images" },
+  { key: "documents", label: "Documents" },
   { key: "supplier", label: "Cost & Supplier" }
 ];
 
@@ -83,6 +95,8 @@ const emptyDraft: WizardDraft = {
   leadTimeDays: undefined,
   minimumOrderQuantity: undefined,
   costNotes: "",
+  productUrl: "",
+  productUrlExtractedAt: undefined,
   images: []
 };
 
@@ -140,6 +154,8 @@ function detailToDraft(item: BomItemDetail): WizardDraft {
     leadTimeDays: item.leadTimeDays,
     minimumOrderQuantity: item.minimumOrderQuantity,
     costNotes: item.costNotes ?? "",
+    productUrl: item.productUrl ?? "",
+    productUrlExtractedAt: item.productUrlExtractedAt,
     images: normalizeImages(
       item.images.map((image) => ({ ...image, kind: "existing" as const }))
     )
@@ -333,18 +349,32 @@ export function BomItemWizardDialog({
   mode,
   item,
   onClose,
+  onPersisted,
   onSaved
 }: {
   formOptions: BomItemFormOptions;
   mode: "create" | "edit";
   item?: BomItemDetail;
   onClose: () => void;
+  onPersisted?: (item: BomItemDetail) => void;
   onSaved?: (item: BomItemDetail) => void;
 }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [step, setStep] = useState<WizardStep>("general");
   const [draft, setDraft] = useState<WizardDraft>(() =>
     item ? detailToDraft(item) : emptyDraft
+  );
+  const [persistedItem, setPersistedItem] = useState<BomItemDetail | null>(
+    item ?? null
+  );
+  const [existingDocuments, setExistingDocuments] = useState<
+    BomItemDocumentMetadata[]
+  >(() => item?.documents ?? []);
+  const [stagedDocuments, setStagedDocuments] = useState<
+    StagedBomItemDocument[]
+  >([]);
+  const [extraction, setExtraction] = useState<BomItemExtractionResult | null>(
+    null
   );
   const [optionDialog, setOptionDialog] = useState<OptionDialogKind | null>(null);
   const [categoryOptions, setCategoryOptions] = useState<BomItemOption[]>(() =>
@@ -355,6 +385,7 @@ export function BomItemWizardDialog({
   >(() => withCurrentOption(formOptions.manufacturers, item?.manufacturer));
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [isExtracting, startExtractionTransition] = useTransition();
   const activeStepIndex = steps.findIndex((candidate) => candidate.key === step);
   const title = mode === "create" ? "New item" : `Edit ${item?.displayName ?? "item"}`;
   const canSave =
@@ -370,6 +401,9 @@ export function BomItemWizardDialog({
   const hasImageCapacity =
     draft.images.length < MAX_BOM_ITEM_IMAGES &&
     totalImageBytes < MAX_BOM_ITEM_TOTAL_IMAGE_BYTES;
+  const hasFailedDocuments = stagedDocuments.some(
+    (document) => document.status === "failed"
+  );
 
   const updateDraft = (updates: Partial<WizardDraft>) => {
     setDraft((current) => ({ ...current, ...updates }));
@@ -487,6 +521,45 @@ export function BomItemWizardDialog({
     void addFiles(files);
   };
 
+  const extractProductData = () => {
+    if (mode !== "create") {
+      return;
+    }
+
+    const productUrl = draft.productUrl?.trim() ?? "";
+    if (!productUrl) {
+      setMessage("Enter a product webpage URL before running extraction.");
+      return;
+    }
+
+    startExtractionTransition(async () => {
+      setMessage(null);
+      setExtraction(null);
+      const result = await extractBomItemFromUrlAction({ productUrl });
+
+      if (!result.ok) {
+        setMessage(result.error);
+        return;
+      }
+
+      setDraft((current) => ({
+        ...mergeBomItemExtractionIntoBlankFields(current, result.data.values),
+        productUrl: result.data.productUrl,
+        productUrlExtractedAt: result.data.extractedAt
+      }));
+      setExtraction(result.data);
+
+      if (result.data.values.manufacturer) {
+        setManufacturerOptions((current) =>
+          mergeOption(current, {
+            value: result.data.values.manufacturer!,
+            label: result.data.values.manufacturer!
+          })
+        );
+      }
+    });
+  };
+
   const save = () => {
     if (!canSave) {
       setMessage("Display name, category, and unit are required.");
@@ -508,11 +581,11 @@ export function BomItemWizardDialog({
       const { images: _images, ...itemFields } = draft;
       void _images;
       const imageInputs = normalizedImages.map(toImageWriteInput);
-      const result =
-        mode === "edit" && item
+      const existingItemId = persistedItem?.id ?? item?.id;
+      const result = existingItemId
           ? await updateBomItemAction({
               ...itemFields,
-              id: item.id,
+              id: existingItemId,
               images: imageInputs
             })
           : await createBomItemAction({
@@ -527,7 +600,64 @@ export function BomItemWizardDialog({
         return;
       }
 
-      onSaved?.(result.data);
+      let savedItem = result.data;
+      let savedDocuments = [...result.data.documents];
+      setPersistedItem(savedItem);
+      setExistingDocuments(savedDocuments);
+      onPersisted?.(savedItem);
+
+      for (const stagedDocument of stagedDocuments) {
+        setStagedDocuments((current) =>
+          current.map((document) =>
+            document.clientId === stagedDocument.clientId
+              ? { ...document, status: "uploading", error: undefined }
+              : document
+          )
+        );
+
+        const formData = new FormData();
+        formData.set("itemId", savedItem.id);
+        formData.set("title", stagedDocument.title);
+        formData.set("documentFile", stagedDocument.file);
+        const uploadResult = await uploadBomItemDocumentAction(formData);
+
+        if (!uploadResult.ok) {
+          setStagedDocuments((current) =>
+            current.map((document) =>
+              document.clientId === stagedDocument.clientId
+                ? {
+                    ...document,
+                    status: "failed",
+                    error: uploadResult.error
+                  }
+                : document.status === "uploading"
+                  ? { ...document, status: "ready" }
+                  : document
+            )
+          );
+          savedItem = { ...savedItem, documents: savedDocuments };
+          setPersistedItem(savedItem);
+          setExistingDocuments(savedDocuments);
+          onPersisted?.(savedItem);
+          setMessage(
+            `Item saved, but ${stagedDocument.file.name} could not be uploaded: ${uploadResult.error}`
+          );
+          setStep("documents");
+          return;
+        }
+
+        savedDocuments = [...savedDocuments, uploadResult.data];
+        setExistingDocuments(savedDocuments);
+        setStagedDocuments((current) =>
+          current.filter(
+            (document) => document.clientId !== stagedDocument.clientId
+          )
+        );
+      }
+
+      savedItem = { ...savedItem, documents: savedDocuments };
+      setPersistedItem(savedItem);
+      onSaved?.(savedItem);
       onClose();
     });
   };
@@ -561,6 +691,19 @@ export function BomItemWizardDialog({
     setOptionDialog(null);
   };
 
+  const handleExistingDocumentDeleted = (documentId: string) => {
+    const nextDocuments = existingDocuments.filter(
+      (document) => document.id !== documentId
+    );
+    setExistingDocuments(nextDocuments);
+
+    if (persistedItem) {
+      const nextItem = { ...persistedItem, documents: nextDocuments };
+      setPersistedItem(nextItem);
+      onPersisted?.(nextItem);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4"
@@ -590,14 +733,14 @@ export function BomItemWizardDialog({
             aria-label="Close item wizard"
             title="Close"
             onClick={onClose}
-            disabled={isPending}
+            disabled={isPending || isExtracting}
           >
             <X aria-hidden="true" size={16} />
           </button>
         </div>
 
         <div className="border-b border-slate-200 px-5 py-3">
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             {steps.map((candidate, index) => {
               const isActive = candidate.key === step;
               const isComplete = index < activeStepIndex;
@@ -613,6 +756,7 @@ export function BomItemWizardDialog({
                       : "border-slate-200 bg-white text-slate-600"
                   ].join(" ")}
                   onClick={() => setStep(candidate.key)}
+                  disabled={isPending || isExtracting}
                 >
                   <span
                     className={[
@@ -631,6 +775,94 @@ export function BomItemWizardDialog({
           </div>
         </div>
 
+        {mode === "create" ? (
+          <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
+            <div className="grid items-end gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+              <div>
+                <label className="field-label" htmlFor="bom-product-url">
+                  Product webpage URL
+                </label>
+                <div className="relative">
+                  <Globe2
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    size={15}
+                  />
+                  <input
+                    id="bom-product-url"
+                    type="url"
+                    className="field-input !pl-9"
+                    placeholder="https://manufacturer.example/product"
+                    value={draft.productUrl ?? ""}
+                    disabled={isPending || isExtracting}
+                    onChange={(event) => {
+                      setExtraction(null);
+                      updateDraft({
+                        productUrl: event.currentTarget.value,
+                        productUrlExtractedAt: undefined
+                      });
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        extractProductData();
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                className="icon-button icon-button-primary"
+                onClick={extractProductData}
+                disabled={
+                  isPending ||
+                  isExtracting ||
+                  !draft.productUrl?.trim()
+                }
+                data-testid="bom-item-extract-button"
+              >
+                <Globe2 aria-hidden="true" size={14} />
+                {isExtracting ? "Extracting..." : "Extract with AI"}
+              </button>
+            </div>
+
+            {extraction ? (
+              <div
+                className="mt-3 grid gap-2 rounded-md border border-teal-200 bg-white px-3 py-2 text-xs text-slate-600"
+                aria-live="polite"
+              >
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="font-semibold text-teal-800">
+                    {extraction.confidence} confidence
+                  </span>
+                  <span>
+                    {extraction.sourceTitle || "Product source reviewed"}
+                  </span>
+                  {extraction.sources[0] ? (
+                    <a
+                      href={extraction.sources[0].url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 font-semibold text-teal-800 hover:text-teal-900"
+                    >
+                      View source
+                      <ExternalLink aria-hidden="true" size={12} />
+                    </a>
+                  ) : null}
+                </div>
+                {extraction.warnings.length > 0 ? (
+                  <ul className="list-disc space-y-1 pl-4 text-amber-800">
+                    {extraction.warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {message ? (
           <div
             aria-live="polite"
@@ -643,7 +875,7 @@ export function BomItemWizardDialog({
 
         <div
           className="max-h-[58vh] overflow-y-auto px-5 py-4"
-          onPaste={handlePaste}
+          onPaste={step === "images" ? handlePaste : undefined}
         >
           {step === "general" ? (
             <div className="grid gap-4 lg:grid-cols-4">
@@ -928,6 +1160,17 @@ export function BomItemWizardDialog({
             </div>
           ) : null}
 
+          {step === "documents" ? (
+            <BomItemDocumentsStep
+              disabled={isPending || isExtracting}
+              existingDocuments={existingDocuments}
+              itemId={persistedItem?.id}
+              stagedDocuments={stagedDocuments}
+              onExistingDeleted={handleExistingDocumentDeleted}
+              onStagedDocumentsChange={setStagedDocuments}
+            />
+          ) : null}
+
           {step === "supplier" ? (
             <div className="grid gap-4 lg:grid-cols-4">
               <div className="lg:col-span-2">
@@ -1105,7 +1348,7 @@ export function BomItemWizardDialog({
             type="button"
             className="icon-button"
             onClick={previousStep}
-            disabled={activeStepIndex === 0 || isPending}
+            disabled={activeStepIndex === 0 || isPending || isExtracting}
           >
             <ChevronLeft aria-hidden="true" size={14} />
             Back
@@ -1115,16 +1358,30 @@ export function BomItemWizardDialog({
               type="button"
               className="icon-button"
               onClick={onClose}
-              disabled={isPending}
+              disabled={isPending || isExtracting}
             >
               Cancel
             </button>
-            {activeStepIndex < steps.length - 1 ? (
+            {step === "documents" && persistedItem && stagedDocuments.length > 0 ? (
+              <button
+                type="button"
+                className="icon-button icon-button-primary"
+                onClick={save}
+                disabled={isPending || isExtracting}
+              >
+                <Upload aria-hidden="true" size={14} />
+                {isPending
+                  ? "Uploading..."
+                  : hasFailedDocuments
+                    ? "Retry uploads"
+                    : "Upload documents"}
+              </button>
+            ) : activeStepIndex < steps.length - 1 ? (
               <button
                 type="button"
                 className="icon-button icon-button-primary"
                 onClick={nextStep}
-                disabled={isPending}
+                disabled={isPending || isExtracting}
               >
                 Next
                 <ChevronRight aria-hidden="true" size={14} />
@@ -1134,7 +1391,7 @@ export function BomItemWizardDialog({
                 type="button"
                 className="icon-button icon-button-primary"
                 onClick={save}
-                disabled={isPending}
+                disabled={isPending || isExtracting}
               >
                 <Check aria-hidden="true" size={14} />
                 {isPending ? "Saving..." : "Save item"}

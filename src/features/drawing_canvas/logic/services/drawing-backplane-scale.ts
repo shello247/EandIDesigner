@@ -17,7 +17,19 @@ export type ResolvedBackplaneScale = {
   label: string;
 };
 
-const STANDARD_SCALE_DENOMINATORS = [1, 2, 2.5, 5, 10, 20, 25, 50, 100];
+const STANDARD_SCALE_DENOMINATORS = [
+  1,
+  2,
+  2.5,
+  3,
+  4,
+  5,
+  10,
+  20,
+  25,
+  50,
+  100
+];
 const PRINT_MARGIN = 10;
 const TITLE_BLOCK_HEIGHT = 36;
 const TITLE_BLOCK_MARGIN = 6;
@@ -152,6 +164,26 @@ export function getBackplaneDisplayBounds(
     backplane,
     rect: getBackplanePhysicalBounds(backplane)
   });
+}
+
+export function getBackplaneCenteredPosition({
+  sheet,
+  backplane,
+  area
+}: {
+  sheet: DrawingSheetCanvasModel["sheet"];
+  backplane: DrawingPlacement;
+  area: BackplaneBounds;
+}): Pick<BackplaneBounds, "x" | "y"> {
+  const scale = resolveBackplaneLayoutScale(sheet, backplane);
+  const physicalBounds = getBackplanePhysicalBounds(backplane);
+  const displayWidth = physicalBounds.width * scale.factor;
+  const displayHeight = physicalBounds.height * scale.factor;
+
+  return {
+    x: round(area.x + (area.width - displayWidth) / 2),
+    y: round(area.y + (area.height - displayHeight) / 2)
+  };
 }
 
 export function getBackplaneDisplayUsableBounds(

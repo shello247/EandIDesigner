@@ -6,13 +6,13 @@ drawing BOM generation.
 ## Scope
 
 - Items Library stores reusable purchasable and consumable materials.
-- Item records include general data, optional supplier/cost details, and
-  multiple stored image references as data URLs.
+- Item records include general data, optional supplier/cost details, product
+  source provenance, images, and PDF documents.
 - Symbol BOM templates link a symbol to reusable item rows with quantity rules.
 - `/bom` generates a live BOM from a drawing package and current templates.
 - `/bom/items` manages active library items with a create/edit wizard.
-- `/bom/items/[id]` shows item details, image gallery, supplier/cost data, and
-  symbol mini BOM usage.
+- `/bom/items/[id]` shows item details, source provenance, image gallery, PDF
+  documents, supplier/cost data, and symbol mini BOM usage.
 - Symbol detail pages compose a BOM tab from this feature.
 
 V1 does not save generated BOM revisions and does not calculate cable length.
@@ -21,7 +21,15 @@ store instance-level length data.
 
 ## Items Library
 
-- `New item` opens a three-step wizard: General, Images, and Cost & Supplier.
+- `New item` opens a four-step wizard: General, Images, Documents, and Cost &
+  Supplier.
+- Create mode includes an explicit Product URL extraction bar. The OpenAI
+  Responses API uses domain-restricted web search and strict structured output
+  to fill blank fields only. Existing user values are preserved, unsupported
+  category/unit values are rejected with warnings, and no page images or files
+  are downloaded automatically.
+- Successful extraction stores the normalized product URL and extraction time.
+  Raw model output and API credentials are never serialized to the browser.
 - Item keys are permanent business identifiers allocated from the persistent
   `bom_item` sequence. Keys use `BOM-` with at least six digits, are immutable,
   and are never reused after an item is committed and later deleted.
@@ -36,6 +44,16 @@ store instance-level length data.
 - Existing images are saved as ID references. Caption, primary, and order edits
   preserve the image row and URL; removed IDs are deleted and new uploads are
   inserted transactionally.
+- Item documents are PDF-only, with limits of 25 MiB per file, six documents,
+  and 50 MiB total per item. Server validation verifies MIME type, `.pdf`
+  extension, `%PDF-` signature, actual byte count, count, and aggregate size.
+- PDFs remain data URLs in SQLite at rest. Detail and edit DTOs contain metadata
+  and stable `/api/bom/items/documents/{id}` URLs only. The binary route returns
+  exact bytes with attachment disposition, strong ETag, `nosniff`, private
+  immutable caching, `304`, and empty `404` behavior.
+- Item/image save completes before staged PDFs upload through separate FormData
+  actions. A failed upload keeps the item ID and failed file in the Documents
+  step for retry, preventing duplicate item creation.
 - Row edit loads the full item detail before opening the same wizard.
 - The Items Library list is URL-controlled through `q`, `category`,
   `manufacturer`, `page`, and `pageSize`. Search covers item key, display name,
@@ -95,7 +113,19 @@ npm run test
 $env:DATABASE_URL='file:./dev.db'; npm run build
 npm run benchmark:bom
 npm run test:e2e -- tests/e2e/bom-creator.spec.ts tests/e2e/bom-creator-reliability.spec.ts tests/e2e/bom-creator-image-transport.spec.ts tests/e2e/bom-creator-scalability.spec.ts tests/e2e/bom-creator-performance.spec.ts --reporter=line
+npm run test:e2e -- tests/e2e/bom-item-ai-enrichment.spec.ts --reporter=line
 ```
+
+## AI Configuration
+
+```text
+OPENAI_API_KEY=
+OPENAI_BOM_ITEM_MODEL=gpt-5.5
+OPENAI_BOM_ITEM_EXTRACTION_MOCK=false
+```
+
+`OPENAI_BOM_ITEM_MODEL` falls back to `OPENAI_SYMBOL_MODEL`, then `gpt-5.5`.
+Playwright sets `OPENAI_BOM_ITEM_EXTRACTION_MOCK=true` for deterministic tests.
 
 ## Branch Baseline
 

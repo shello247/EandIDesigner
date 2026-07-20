@@ -2,9 +2,13 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   bomItemInputSchema,
+  bomItemDocumentDeleteInputSchema,
+  bomItemDocumentUploadInputSchema,
   bomItemOptionInputSchema,
   bomItemUpdateInputSchema,
   type BomItemOption,
+  type BomItemDocumentDeleteInput,
+  type BomItemDocumentUploadInput,
   type BomItemImageWriteInput,
   saveSymbolBomTemplateInputSchema,
   type BomItemInput,
@@ -12,12 +16,18 @@ import {
   type BomItemUpdateInput,
   type SaveSymbolBomTemplateInput
 } from "./schema";
-import { getBomItemDetail, getSymbolBomTemplate } from "./queries";
+import {
+  getBomItemDetail,
+  getBomItemDocumentMetadata,
+  getSymbolBomTemplate
+} from "./queries";
 import {
   BOM_ITEM_KEY_SCOPE,
   formatBomItemKey
 } from "../logic/services/bom-item-key";
 import { validateBomItemImageBudget } from "../logic/services/bom-item-image-budget";
+import { validateBomItemDocumentBudget } from "../logic/services/bom-item-document-limits";
+import { buildBomItemDocumentPayload } from "../logic/services/bom-item-document-payload";
 
 const MAX_CREATE_ATTEMPTS = 3;
 
@@ -192,7 +202,11 @@ function bomItemData(parsed: BomItemInput) {
     currency: nullable(parsed.currency),
     leadTimeDays: parsed.leadTimeDays ?? null,
     minimumOrderQuantity: nullableNumber(parsed.minimumOrderQuantity),
-    costNotes: nullable(parsed.costNotes)
+    costNotes: nullable(parsed.costNotes),
+    productUrl: nullable(parsed.productUrl),
+    productUrlExtractedAt: parsed.productUrlExtractedAt
+      ? new Date(parsed.productUrlExtractedAt)
+      : null
   };
 }
 
@@ -341,6 +355,19 @@ export async function updateBomItem(input: BomItemUpdateInput) {
     data.costNotes = nullable(parsed.costNotes);
   }
 
+  if (parsed.productUrl !== undefined || "productUrl" in input) {
+    data.productUrl = nullable(parsed.productUrl);
+  }
+
+  if (
+    parsed.productUrlExtractedAt !== undefined ||
+    "productUrlExtractedAt" in input
+  ) {
+    data.productUrlExtractedAt = parsed.productUrlExtractedAt
+      ? new Date(parsed.productUrlExtractedAt)
+      : null;
+  }
+
   if (parsed.status !== undefined) {
     data.status = parsed.status;
   }
@@ -381,6 +408,85 @@ export async function deleteBomItem(id: string) {
     });
 
     return { id: row.id, mode: "deleted" as const };
+  });
+}
+
+export async function uploadBomItemDocument(
+  input: BomItemDocumentUploadInput
+) {
+  const parsed = bomItemDocumentUploadInputSchema.parse(input);
+
+  buildBomItemDocumentPayload({
+    id: "pending-upload",
+    fileName: parsed.fileName,
+    mimeType: parsed.mimeType,
+    sizeBytes: parsed.sizeBytes,
+    dataUrl: parsed.dataUrl
+  });
+
+  const documentId = await prisma.$transaction(async (tx) => {
+    const item = await tx.bomItem.findUnique({
+      where: { id: parsed.itemId },
+      select: { id: true }
+    });
+
+    if (!item) {
+      throw new Error("BOM item was not found.");
+    }
+
+    const existing = await tx.bomItemDocument.findMany({
+      where: { itemId: parsed.itemId },
+      select: { sizeBytes: true }
+    });
+    const budget = validateBomItemDocumentBudget([
+      ...existing,
+      { sizeBytes: parsed.sizeBytes }
+    ]);
+
+    if (!budget.ok) {
+      throw new Error(
+        budget.violations[0]?.message ?? "BOM item documents are invalid."
+      );
+    }
+
+    const row = await tx.bomItemDocument.create({
+      data: {
+        itemId: parsed.itemId,
+        title: parsed.title,
+        fileName: parsed.fileName,
+        mimeType: parsed.mimeType,
+        sizeBytes: parsed.sizeBytes,
+        dataUrl: parsed.dataUrl
+      },
+      select: { id: true }
+    });
+
+    return row.id;
+  });
+
+  return getBomItemDocumentMetadata(documentId);
+}
+
+export async function deleteBomItemDocument(
+  input: BomItemDocumentDeleteInput
+) {
+  const parsed = bomItemDocumentDeleteInputSchema.parse(input);
+
+  return prisma.$transaction(async (tx) => {
+    const document = await tx.bomItemDocument.findFirst({
+      where: {
+        id: parsed.documentId,
+        itemId: parsed.itemId
+      },
+      select: { id: true, itemId: true }
+    });
+
+    if (!document) {
+      throw new Error("BOM item document was not found for this item.");
+    }
+
+    await tx.bomItemDocument.delete({ where: { id: document.id } });
+    return document;
   });
 }
 

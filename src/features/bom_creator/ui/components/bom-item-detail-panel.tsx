@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
   ArrowLeft,
+  Download,
   ExternalLink,
+  FileText,
   ImageIcon,
   Pencil,
   Star
@@ -49,6 +51,17 @@ function formatCost(item: BomItemDetail): string {
   })}`;
 }
 
+function formatDate(value: string | undefined): string {
+  return value ? new Date(value).toLocaleString() : "-";
+}
+
+function formatBytes(value: number): string {
+  if (value >= 1024 * 1024) {
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${Math.max(1, Math.round(value / 1024))} KB`;
+}
+
 function websiteHref(value: string | undefined): string | null {
   if (!value) {
     return null;
@@ -89,6 +102,10 @@ export function BomItemDetailPanel({
   const handleSaved = () => {
     setFormOptions(null);
     setMessage("BOM item saved.");
+    router.refresh();
+  };
+
+  const handlePersisted = () => {
     router.refresh();
   };
 
@@ -221,7 +238,73 @@ export function BomItemDetailPanel({
               <div className="md:col-span-2 xl:col-span-3">
                 <DetailField label="Notes" value={item.notes} />
               </div>
+              <div className="md:col-span-2 xl:col-span-3">
+                <div className="text-[11px] font-semibold uppercase text-slate-500">
+                  Product source
+                </div>
+                {item.productUrl ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                    <a
+                      href={item.productUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex min-w-0 items-center gap-1 font-semibold text-teal-800 hover:text-teal-900"
+                    >
+                      <span className="truncate">{item.productUrl}</span>
+                      <ExternalLink aria-hidden="true" size={13} className="shrink-0" />
+                    </a>
+                    <span className="text-xs text-slate-500">
+                      Extracted {formatDate(item.productUrlExtractedAt)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-1 text-sm text-slate-950">-</div>
+                )}
+              </div>
             </div>
+          </div>
+
+          <div className="tool-panel overflow-hidden">
+            <div className="border-b border-slate-200 px-4 py-3">
+              <h2>Documents</h2>
+            </div>
+            {item.documents.length === 0 ? (
+              <div className="p-4 text-sm text-slate-600">
+                No product documents attached.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-200">
+                {item.documents.map((document) => (
+                  <div
+                    key={document.id}
+                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+                  >
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-slate-500">
+                        <FileText aria-hidden="true" size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-slate-950">
+                          {document.title}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {document.fileName} / {formatBytes(document.sizeBytes)} /{" "}
+                          {formatDate(document.createdAt)}
+                        </div>
+                      </div>
+                    </div>
+                    <a
+                      className="icon-button"
+                      href={document.documentUrl}
+                      download={document.fileName}
+                    >
+                      <Download aria-hidden="true" size={14} />
+                      Download
+                    </a>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="tool-panel overflow-hidden">
@@ -310,6 +393,7 @@ export function BomItemDetailPanel({
           mode="edit"
           item={item}
           onClose={() => setFormOptions(null)}
+          onPersisted={handlePersisted}
           onSaved={handleSaved}
         />
       ) : null}

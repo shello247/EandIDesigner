@@ -253,6 +253,7 @@ test("renders persisted images and saves pasted images without retransmitting ex
     .getByRole("button", { name: `Make pasted-phase2-${runId}.png primary` })
     .click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Save item" }).click();
   await expect(page.getByText("BOM item saved.")).toBeVisible();
 

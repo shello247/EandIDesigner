@@ -133,6 +133,10 @@ export function classifyManagedAssetFromPlacement(
     return "terminal_block";
   }
 
+  if (symbol?.metadata.panelWiring) {
+    return symbol.metadata.panelWiring.assetType;
+  }
+
   if (isBreakerLikeSymbol(symbol) || tag.startsWith("MCB")) {
     return "breaker";
   }

@@ -1587,7 +1587,10 @@ export function DrawingCanvasShell({
     const isTerminalBlockLayoutSymbol =
       symbol.category === "terminal_block" &&
       symbol.metadata.panelCategory === "termination";
-    const tag = isTerminalBlockLayoutSymbol
+    const createsPhysicalAsset = Boolean(
+      isTerminalBlockLayoutSymbol || symbol.metadata.panelWiring
+    );
+    const tag = createsPhysicalAsset
       ? allocateNextPackageTag(model, symbol)
       : symbol.displayName;
     const placement = autosizeLayoutHelperToBackplane({
@@ -1596,7 +1599,7 @@ export function DrawingCanvasShell({
       sheet: activeSheetCanvasModel.sheet,
       placement: {
         id: placementId,
-        ...(isTerminalBlockLayoutSymbol
+        ...(createsPhysicalAsset
           ? {
               assetId: createDrawingAssetId(placementId),
               title: symbol.displayName
@@ -1604,7 +1607,7 @@ export function DrawingCanvasShell({
           : {}),
         symbolId: symbol.symbolId,
         versionId: symbol.versionId,
-        role: isTerminalBlockLayoutSymbol ? roleFromSymbol(symbol) : "other",
+        role: createsPhysicalAsset ? roleFromSymbol(symbol) : "other",
         tag,
         x: backplane.x,
         y: backplane.y,
@@ -1624,7 +1627,9 @@ export function DrawingCanvasShell({
     setMessage(
       isTerminalBlockLayoutSymbol
         ? `${tag} terminal block added to backplane.`
-        : `${symbol.displayName} added to backplane.`
+        : createsPhysicalAsset
+          ? `${tag} added to backplane as a physical asset.`
+          : `${symbol.displayName} added to backplane.`
     );
   };
 
@@ -3816,6 +3821,7 @@ export function DrawingCanvasShell({
           onLoadSheet={loadSheetFromDialog}
           onMoveSection={moveSectionFromLoader}
           onMoveSheetToSection={moveSheetToSection}
+          onRequestDeleteSheet={requestDeleteSheet}
         />
       ) : null}
       {isSaveTemplateOpen ? (
