@@ -26,6 +26,7 @@
 
 ## Verification
 
+- Dependency security: `npm run audit:dependencies`
 - Logic changes: `npm run test -- <relevant test files>`
 - Static checks: `npm run lint`
 - Production integration: `$env:DATABASE_URL='file:./dev.db'; npm run build`

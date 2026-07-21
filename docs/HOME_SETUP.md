@@ -11,15 +11,18 @@ folder because the GitHub repository is public.
 - Node.js `24.11.1` and npm `8.19.2`, or a compatible newer npm for Node 24.
 - Codex desktop.
 
-## Clone The Current Development Branch
+## Clone The Canonical Application
 
 ```powershell
 git clone https://github.com/shello247/EandIDesigner.git
 Set-Location EandIDesigner
 git fetch origin
-git switch --track origin/codex/detailed-panel-drawings
+git switch main
+git pull --ff-only origin main
 npm ci
 ```
+
+Stop any running development server before `npm ci`. Installation automatically generates Prisma Client.
 
 ## Restore The Private Database
 
@@ -52,11 +55,20 @@ npm run db:setup
 ## Verify And Run
 
 ```powershell
+npm run audit:dependencies
 npm run lint
 npm run test
 $env:DATABASE_URL='file:./dev.db'
-npm run dev -- --hostname 127.0.0.1 -p 3004
+npm run dev -- -p 3004
 ```
+
+The normal command uses Turbopack. If it panics or repeatedly recompiles through an HMR loop, stop it completely and start the supported webpack fallback:
+
+```powershell
+npm run dev:webpack -- -p 3004
+```
+
+Do not redirect changing development logs into this repository; keep them in the terminal or in a location outside the application tree.
 
 Open:
 
@@ -80,7 +92,7 @@ http://127.0.0.1:3004/drawings/cmr0uwq2m0000uo8gkaszl32o
    git branch --show-current
    ```
 
-   It must report `codex/detailed-panel-drawings`.
+   A canonical clone should report `main`. Create feature branches in linked worktrees as described by the workspace `AGENTS.md`.
 3. Ask Codex to read `README.md`, `docs/DETAILED_PANEL_RELEASE.md`,
    `src/features/drawing_canvas/README.md`, and
    `src/features/drawing_panel_wiring/README.md` before changing code.
@@ -88,7 +100,7 @@ http://127.0.0.1:3004/drawings/cmr0uwq2m0000uo8gkaszl32o
 
 ## Moving Work Back Between Computers
 
-- Commit and push code changes to `codex/detailed-panel-drawings` before moving
+- Commit and push code changes to the active feature branch before moving
   computers.
 - Create a fresh private database snapshot whenever application records changed.
 - Never edit the same SQLite database independently on both computers. SQLite
@@ -101,9 +113,12 @@ http://127.0.0.1:3004/drawings/cmr0uwq2m0000uo8gkaszl32o
 - **No drawings appear:** confirm `.env.local` contains
   `DATABASE_URL=file:./dev.db` and that `prisma/dev.db` is the downloaded
   snapshot rather than a newly created empty database.
-- **Prisma errors:** rerun `npm ci`, then `npm run db:setup` with
-  `DATABASE_URL=file:./dev.db`.
+- **Prisma errors:** stop the development server, then run `npx prisma generate`.
+  The next `npm run dev` also regenerates Prisma Client automatically without
+  migrating, seeding, or otherwise modifying the database.
+- **Turbopack panic or continuous compiling:** stop the Turbopack process
+  completely, then run `npm run dev:webpack -- -p 3004`.
 - **Port 3004 is occupied:** stop the existing Node process or choose another
   port and update the browser URL.
-- **Latest code is missing:** run `git fetch origin` and
-  `git switch codex/detailed-panel-drawings`, then `git pull --ff-only`.
+- **Latest code is missing:** run `git fetch origin`, `git switch main`, then
+  `git pull --ff-only origin main`.

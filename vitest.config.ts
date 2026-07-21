@@ -9,7 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/features/**/*.test.ts"],
+    include: ["src/features/**/*.test.ts", "scripts/tests/**/*.test.ts"],
     passWithNoTests: false
   }
 });

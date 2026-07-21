@@ -70,14 +70,25 @@ computer, including the private SQLite restore process, see
 [`docs/HOME_SETUP.md`](docs/HOME_SETUP.md).
 
 ```powershell
-npm install
+npm ci
 $env:DATABASE_URL='file:./dev.db'; npm run db:setup
 $env:DATABASE_URL='file:./dev.db'; npm run dev
 ```
 
+`npm ci` automatically generates Prisma Client. Stop every development server before running `npm ci` or `npx prisma generate` manually so Windows does not hold generated-client files open. Ordinary development startup only regenerates Prisma Client; it does not migrate, seed, bootstrap, or otherwise modify a database.
+
+`npm run dev` uses Turbopack and binds to `127.0.0.1`. If Turbopack panics or enters a repeated compile/HMR loop, stop the process completely and use the supported webpack recovery command:
+
+```powershell
+$env:DATABASE_URL='file:./dev.db'; npm run dev:webpack
+```
+
+Keep development logs in the terminal. Do not redirect changing server logs into the repository because file-watcher updates can trigger unnecessary rebuilds.
+
 Verification:
 
 ```powershell
+npm run audit:dependencies
 npm run lint
 npm run test
 $env:DATABASE_URL='file:./dev.db'; npm run build
