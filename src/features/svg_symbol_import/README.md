@@ -32,6 +32,8 @@ here, reviewed, then approved in the symbol registry.
   survive SVG export cleanly.
 - Add small circle, ellipse, or rectangle marker layers at wire connection
   points.
+- Marker layers may be nested inside organizational Figma groups such as
+  `Channels` and `Channel 1`; transforms on every ancestor group are applied.
 - Name marker layers using one of these patterns:
   - `terminal:A1`
   - `terminal_1`

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const validSvg = `
 <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
@@ -7,6 +7,46 @@ const validSvg = `
   <circle data-name="terminal:2" cx="54" cy="42" r="2"/>
   <rect id="anchor:GND" x="90" y="56" width="4" height="4"/>
 </svg>`;
+
+const portraitSvg = `
+<svg viewBox="-2 5 42 143" xmlns="http://www.w3.org/2000/svg">
+  <rect x="4" y="9" width="30" height="135" fill="white" stroke="black"/>
+  <circle id="terminal:3.1" cx="19.5" cy="53.5" r="0.5"/>
+  <circle id="terminal:3.2" cx="19.5" cy="57.5" r="0.5"/>
+</svg>`;
+
+async function expectAlignedCoordinateStage(page: Page) {
+  const stage = page.locator('[data-testid="svg-coordinate-stage"]');
+  const artwork = page.locator('[data-testid="svg-coordinate-artwork"]');
+  const overlay = page.locator('[data-testid="svg-coordinate-overlay"]');
+  const [stageBox, artworkBox, overlayBox] = await Promise.all([
+    stage.boundingBox(),
+    artwork.boundingBox(),
+    overlay.boundingBox()
+  ]);
+
+  expect(stageBox).not.toBeNull();
+  expect(artworkBox).not.toBeNull();
+  expect(overlayBox).not.toBeNull();
+  expect(stageBox!.width).toBeLessThanOrEqual(620.5);
+  expect(stageBox!.height).toBeLessThanOrEqual(620.5);
+  expect(Math.abs(artworkBox!.x - overlayBox!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(artworkBox!.y - overlayBox!.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(artworkBox!.width - overlayBox!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(artworkBox!.height - overlayBox!.height)).toBeLessThanOrEqual(1);
+
+  return { stage, artwork, overlay };
+}
+
+async function expectEighteenPixelMarker(page: Page, selector: string) {
+  const markerBox = await page.locator(selector).boundingBox();
+  expect(markerBox).not.toBeNull();
+  expect(markerBox!.width).toBeGreaterThanOrEqual(17);
+  expect(markerBox!.width).toBeLessThanOrEqual(20);
+  expect(markerBox!.height).toBeGreaterThanOrEqual(17);
+  expect(markerBox!.height).toBeLessThanOrEqual(20);
+  return markerBox!;
+}
 
 test("imports an SVG symbol draft and keeps review workflows available", async ({
   page
@@ -31,6 +71,23 @@ test("imports an SVG symbol draft and keeps review workflows available", async (
   });
   await expect(page.getByText("SVG imported.")).toBeVisible();
   await expect(page.getByText("Detected anchors")).toBeVisible();
+  await expectAlignedCoordinateStage(page);
+  const importMarkerBox = await expectEighteenPixelMarker(
+    page,
+    '[data-import-anchor-marker="1"]'
+  );
+
+  await page.mouse.move(
+    importMarkerBox.x + importMarkerBox.width / 2,
+    importMarkerBox.y + importMarkerBox.height / 2
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    importMarkerBox.x + importMarkerBox.width / 2 + 18,
+    importMarkerBox.y + importMarkerBox.height / 2 + 9
+  );
+  await page.mouse.up();
+  await expect(page.getByLabel("Anchor x 1")).not.toHaveValue("24");
 
   await page.getByLabel("Display name").fill(symbolName);
   await page.getByLabel("Symbol key").fill(symbolKey);
@@ -47,13 +104,28 @@ test("imports an SVG symbol draft and keeps review workflows available", async (
   ).toBeVisible({ timeout: 15000 });
   await expect(page.getByText("Needs review")).toBeVisible();
 
-  await page.locator('[data-terminal-hotspot="1"]').hover();
+  await expectAlignedCoordinateStage(page);
+  const registryMarkerBox = await expectEighteenPixelMarker(
+    page,
+    '[data-terminal-hotspot="1"]'
+  );
+  await page.mouse.move(
+    registryMarkerBox.x + registryMarkerBox.width / 2,
+    registryMarkerBox.y + registryMarkerBox.height / 2
+  );
   await expect(page.locator('[data-terminal-tooltip="1"]')).toContainText(
     "Terminal 1"
   );
   await expect(page.locator('[data-terminal-tooltip="1"]')).toContainText(
     "Signal positive"
   );
+
+  await page.locator('[data-terminal-hotspot="1"]').focus();
+  await page.keyboard.press("Enter");
+  await page.mouse.move(registryMarkerBox.x - 30, registryMarkerBox.y - 30);
+  await expect(page.locator('[data-terminal-tooltip="1"]')).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-terminal-tooltip="1"]')).toHaveCount(0);
 
   await page.getByRole("button", { name: "Edit terminal map" }).click();
   await page.getByLabel("Function for terminal 1").fill("Verified signal positive");
@@ -89,6 +161,39 @@ test("imports an SVG symbol draft and keeps review workflows available", async (
   await expect(page.getByText("Document uploaded.")).toBeVisible();
   await expect(page.getByText("Installation Manual")).toBeVisible();
   await expect(page.getByRole("link", { name: "Download" })).toBeVisible();
+});
+
+test("keeps a portrait import aligned and selects the intended dense terminal", async ({
+  page
+}) => {
+  await page.goto("/symbols/new");
+  await page.setInputFiles("#svg-file", {
+    name: "portrait-device.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(portraitSvg)
+  });
+
+  await expect(page.getByText("SVG imported.")).toBeVisible();
+  await expectAlignedCoordinateStage(page);
+  const markerBox = await expectEighteenPixelMarker(
+    page,
+    '[data-import-anchor-marker="3.2"]'
+  );
+  await expect(page.getByLabel("Anchor x 3.2")).toHaveValue("19.5");
+
+  await page.mouse.move(
+    markerBox.x + markerBox.width / 2,
+    markerBox.y + markerBox.height / 2
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    markerBox.x + markerBox.width / 2 + 10,
+    markerBox.y + markerBox.height / 2 + 12
+  );
+  await page.mouse.up();
+
+  await expect(page.getByLabel("Anchor x 3.2")).not.toHaveValue("19.5");
+  await expect(page.getByLabel("Anchor x 3.1")).toHaveValue("19.5");
 });
 
 test("blocks invalid SVG import before save", async ({ page }) => {

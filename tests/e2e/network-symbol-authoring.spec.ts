@@ -68,13 +68,31 @@ test("imports a managed four-port network switch", async ({ page }) => {
   await expect(page.getByText("Terminal Map", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "AI verify" })).toHaveCount(0);
 
-  const previewBounds = await page
-    .locator(".svg-preview-stage > div > svg")
+  const artworkBounds = await page
+    .locator('[data-testid="svg-coordinate-artwork"]')
     .boundingBox();
-  expect(previewBounds?.width).toBeGreaterThan(0);
-  expect(previewBounds?.height).toBeGreaterThan(0);
+  const overlayBounds = await page
+    .locator('[data-testid="svg-coordinate-overlay"]')
+    .boundingBox();
+  expect(artworkBounds).not.toBeNull();
+  expect(overlayBounds).not.toBeNull();
+  expect(Math.abs(artworkBounds!.x - overlayBounds!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(artworkBounds!.y - overlayBounds!.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(artworkBounds!.width - overlayBounds!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(artworkBounds!.height - overlayBounds!.height)).toBeLessThanOrEqual(1);
+  expect(overlayBounds!.width).toBeLessThanOrEqual(620.5);
+  expect(overlayBounds!.height).toBeLessThanOrEqual(620.5);
 
-  await page.locator('[data-network-port-hotspot="ETH1"]').hover();
+  const portMarkerBounds = await page
+    .locator('[data-network-port-hotspot="ETH1"]')
+    .boundingBox();
+  expect(portMarkerBounds).not.toBeNull();
+  expect(portMarkerBounds!.width).toBeGreaterThanOrEqual(17);
+  expect(portMarkerBounds!.width).toBeLessThanOrEqual(20);
+  await page.mouse.move(
+    portMarkerBounds!.x + portMarkerBounds!.width / 2,
+    portMarkerBounds!.y + portMarkerBounds!.height / 2
+  );
   await expect(page.locator('[data-network-port-tooltip="ETH1"]')).toContainText(
     "Network port ETH1"
   );
