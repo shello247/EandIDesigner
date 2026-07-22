@@ -24,6 +24,7 @@ type GroupElement = SourceRange & {
   attributes: ParsedAttributes;
   content: string;
   contentStart: number;
+  parent?: GroupElement;
 };
 
 type MarkerElement = SourceRange & {
@@ -47,7 +48,7 @@ export type FigmaAnchorExtraction = {
 
 const PRIMITIVE_PATTERN =
   /<(circle|ellipse|rect)\b([^>]*?)(?:\/\s*>|>\s*<\/\1\s*>)/gi;
-const GROUP_PATTERN = /<g\b([^>]*)>([\s\S]*?)<\/g\s*>/gi;
+const GROUP_TOKEN_PATTERN = /<!--[\s\S]*?-->|<\/?g\b[^>]*>/gi;
 const ATTR_PATTERN = /([:\w-]+)\s*=\s*("([^"]*)"|'([^']*)')/g;
 const ELECTRICAL_ANCHOR_NAME_PATTERN =
   /(?:^|[\s_-])(terminal|anchor)[:_\-\s]+([A-Za-z0-9][A-Za-z0-9_.-]*)$/i;
@@ -248,9 +249,27 @@ function markerCenter(marker: MarkerElement): { x: number; y: number } | null {
   }
 
   const elementMatrix = parseTransform(marker.attributes);
-  const groupMatrix = parseTransform(marker.group?.attributes);
+  const groupAncestors: GroupElement[] = [];
+  let currentGroup = marker.group;
 
-  if (!elementMatrix || !groupMatrix) {
+  while (currentGroup) {
+    groupAncestors.push(currentGroup);
+    currentGroup = currentGroup.parent;
+  }
+
+  let groupMatrix = IDENTITY_MATRIX;
+
+  for (const group of groupAncestors.reverse()) {
+    const localMatrix = parseTransform(group.attributes);
+
+    if (!localMatrix) {
+      return null;
+    }
+
+    groupMatrix = multiplyMatrices(groupMatrix, localMatrix);
+  }
+
+  if (!elementMatrix) {
     return null;
   }
 
@@ -266,18 +285,47 @@ function markerCenter(marker: MarkerElement): { x: number; y: number } | null {
 }
 
 function collectGroups(svg: string): GroupElement[] {
-  return Array.from(svg.matchAll(GROUP_PATTERN), (match) => {
-    const start = match.index;
-    const openingTagEnd = match[0].indexOf(">") + 1;
+  const groups: GroupElement[] = [];
+  const stack: GroupElement[] = [];
 
-    return {
+  for (const match of svg.matchAll(GROUP_TOKEN_PATTERN)) {
+    const token = match[0];
+    const start = match.index;
+
+    if (token.startsWith("<!--")) {
+      continue;
+    }
+
+    if (/^<\/g\b/i.test(token)) {
+      const group = stack.pop();
+
+      if (!group) {
+        continue;
+      }
+
+      group.content = svg.slice(group.contentStart, start);
+      group.end = start + token.length;
+      groups.push(group);
+      continue;
+    }
+
+    const group: GroupElement = {
       start,
-      end: start + match[0].length,
-      attributes: parseAttributes(match[1]),
-      content: match[2],
-      contentStart: start + openingTagEnd
+      end: start + token.length,
+      attributes: parseAttributes(token),
+      content: "",
+      contentStart: start + token.length,
+      parent: stack.at(-1)
     };
-  });
+
+    if (/\/\s*>$/.test(token)) {
+      groups.push(group);
+    } else {
+      stack.push(group);
+    }
+  }
+
+  return groups;
 }
 
 function collectPrimitives(svg: string, groups: GroupElement[]): MarkerElement[] {

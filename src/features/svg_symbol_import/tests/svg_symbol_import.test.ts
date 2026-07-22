@@ -28,6 +28,29 @@ const networkSvg = `
   </g>
 </svg>`;
 
+const nestedChannelSvg = `
+<svg viewBox="0 0 42 143" xmlns="http://www.w3.org/2000/svg">
+  <rect x="6" y="4" width="30" height="135" fill="white" stroke="black"/>
+  <g id="Channels">
+    <g id="Channel 3">
+      <g id="Terminal 1.3"><circle id="Pin 10" cx="22.5" cy="129.5" r="0.5"/></g>
+      <g id="Terminal 1.2"><circle id="Pin 9" cx="22.5" cy="119.5" r="0.5"/></g>
+      <g id="Terminal 1.1"><circle id="Pin 8" cx="22.5" cy="112.5" r="0.5"/></g>
+    </g>
+    <g id="Channel 2">
+      <g id="Terminal 3.2"><circle id="Pin 7" cx="21.5" cy="52.5" r="0.5"/></g>
+      <g id="Terminal 3.1"><circle id="Pin 6" cx="21.5" cy="48.5" r="0.5"/></g>
+    </g>
+    <g id="Channel 1">
+      <g id="Terminal 2.5"><circle id="Pin 5" cx="21.5" cy="39.5" r="0.5"/></g>
+      <g id="Terminal 2.4"><circle id="Pin 4" cx="21.5" cy="34.5" r="0.5"/></g>
+      <g id="Terminal 2.3"><circle id="Pin 3" cx="21.5" cy="29.5" r="0.5"/></g>
+      <g id="Terminal 2.2"><circle id="Pin 2" cx="21.5" cy="24.5" r="0.5"/></g>
+      <g id="Terminal 2.1"><circle id="Pin 1" cx="21.5" cy="19.5" r="0.5"/></g>
+    </g>
+  </g>
+</svg>`;
+
 describe("SVG symbol import", () => {
   it("parses a valid SVG and extracts viewBox and anchors", () => {
     const result = parseImportedSvg({
@@ -80,6 +103,72 @@ describe("SVG symbol import", () => {
       }
     ]);
     expect(result.terminals).toEqual([]);
+  });
+
+  it("detects every terminal inside nested Figma channel groups", () => {
+    const result = parseImportedSvg({
+      rawSvg: nestedChannelSvg,
+      sourceAsset
+    });
+
+    expect(result.anchors).toEqual([
+      { key: "1.3", x: 22.5, y: 129.5, kind: "terminal" },
+      { key: "1.2", x: 22.5, y: 119.5, kind: "terminal" },
+      { key: "1.1", x: 22.5, y: 112.5, kind: "terminal" },
+      { key: "3.2", x: 21.5, y: 52.5, kind: "terminal" },
+      { key: "3.1", x: 21.5, y: 48.5, kind: "terminal" },
+      { key: "2.5", x: 21.5, y: 39.5, kind: "terminal" },
+      { key: "2.4", x: 21.5, y: 34.5, kind: "terminal" },
+      { key: "2.3", x: 21.5, y: 29.5, kind: "terminal" },
+      { key: "2.2", x: 21.5, y: 24.5, kind: "terminal" },
+      { key: "2.1", x: 21.5, y: 19.5, kind: "terminal" }
+    ]);
+    expect(result.terminals.map((terminal) => terminal.key)).toEqual(
+      result.anchors.map((anchor) => anchor.key)
+    );
+  });
+
+  it("accumulates transforms from every nested marker ancestor", () => {
+    const result = parseImportedSvg({
+      rawSvg: `
+        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <g id="Channels" transform="translate(10 20)">
+            <g id="Channel 1" transform="matrix(1 0 0 1 3 4)">
+              <g id="Terminal A1" transform="translate(2 1)">
+                <circle cx="5" cy="6" r="1" transform="translate(7 8)"/>
+              </g>
+            </g>
+          </g>
+        </svg>`,
+      sourceAsset
+    });
+
+    expect(result.anchors).toEqual([
+      { key: "A1", x: 27, y: 39, kind: "terminal" }
+    ]);
+  });
+
+  it("removes nested network marker groups without removing their wrapper", () => {
+    const result = parseImportedSvg({
+      rawSvg: `
+        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <g id="ports-wrapper" transform="translate(10 10)">
+            <path id="production-geometry" d="M 1 1 L 9 9"/>
+            <g id="network_port:ETH1" transform="translate(5 6)">
+              <circle cx="2" cy="3" r="1"/>
+            </g>
+          </g>
+        </svg>`,
+      sourceAsset
+    });
+
+    expect(result.anchors).toEqual([
+      { key: "ETH1", x: 17, y: 19, kind: "network_port" }
+    ]);
+    expect(result.svg).toContain('id="ports-wrapper"');
+    expect(result.svg).toContain('id="production-geometry"');
+    expect(result.svg).not.toContain("network_port:ETH1");
+    expect(result.svg).not.toContain('<circle cx="2"');
   });
 
   it("removes network marker geometry while retaining production geometry", () => {
