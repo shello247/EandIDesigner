@@ -1,10 +1,23 @@
 "use client";
 
-import type { PointerEvent } from "react";
+import { useMemo, useRef, type PointerEvent } from "react";
 import type {
   SymbolAnchor,
   SymbolMetadata
 } from "@/features/symbol_registry/data/schema";
+import {
+  SvgCoordinateStage,
+  useSvgCoordinateStageGeometry
+} from "@/shared/svg/svg-coordinate-stage";
+import {
+  clampPointToViewBox,
+  findNearestAnchorInScreenSpace,
+  roundSvgPoint,
+  SVG_ANCHOR_SELECTION_RADIUS_PX,
+  SVG_MARKER_DIAMETER_PX,
+  SVG_MARKER_STROKE_PX,
+  svgUserUnitsForPixels
+} from "@/shared/svg/svg-coordinate-geometry";
 
 export function ImportAnchorReviewCanvas({
   svg,
@@ -16,28 +29,65 @@ export function ImportAnchorReviewCanvas({
   onAnchorMove: (key: string, x: number, y: number) => void;
 }) {
   const viewBox = metadata.viewBox;
-  const markerRadius = Math.max(viewBox.width, viewBox.height) * 0.012;
+  const draggingAnchorKeyRef = useRef<string | null>(null);
+  const { overlayRef, pixelsPerUserUnit, clientToViewBoxPoint } =
+    useSvgCoordinateStageGeometry(viewBox);
+  const anchorPoints = useMemo(
+    () =>
+      metadata.anchors.map((anchor) => ({
+        x: anchor.x,
+        y: anchor.y,
+        anchor
+      })),
+    [metadata.anchors]
+  );
+  const markerRadius = svgUserUnitsForPixels(
+    SVG_MARKER_DIAMETER_PX / 2,
+    pixelsPerUserUnit
+  );
+  const markerStrokeWidth = svgUserUnitsForPixels(
+    SVG_MARKER_STROKE_PX,
+    pixelsPerUserUnit
+  );
+  const labelFontSize = svgUserUnitsForPixels(11, pixelsPerUserUnit);
+  const labelOffset = svgUserUnitsForPixels(12, pixelsPerUserUnit);
 
-  const handlePointerMove = (
-    event: PointerEvent<SVGCircleElement>,
-    key: string
-  ) => {
-    if (event.buttons !== 1) {
+  const findNearestAnchor = (clientX: number, clientY: number) => {
+    const pointer = clientToViewBoxPoint(clientX, clientY);
+    if (!pointer) {
+      return null;
+    }
+
+    return (
+      findNearestAnchorInScreenSpace(
+        anchorPoints,
+        pointer,
+        pixelsPerUserUnit,
+        SVG_ANCHOR_SELECTION_RADIUS_PX
+      )?.anchor ?? null
+    );
+  };
+
+  const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
+    const anchorKey = draggingAnchorKeyRef.current;
+    if (!anchorKey) {
       return;
     }
 
-    const svgElement = event.currentTarget.ownerSVGElement;
-    if (!svgElement) {
+    const pointer = clientToViewBoxPoint(event.clientX, event.clientY);
+    if (!pointer) {
       return;
     }
 
-    const rect = svgElement.getBoundingClientRect();
-    const x =
-      viewBox.x + ((event.clientX - rect.left) / rect.width) * viewBox.width;
-    const y =
-      viewBox.y + ((event.clientY - rect.top) / rect.height) * viewBox.height;
+    const nextPoint = roundSvgPoint(clampPointToViewBox(pointer, viewBox));
+    onAnchorMove(anchorKey, nextPoint.x, nextPoint.y);
+  };
 
-    onAnchorMove(key, Number(x.toFixed(2)), Number(y.toFixed(2)));
+  const finishDragging = (event: PointerEvent<SVGSVGElement>) => {
+    draggingAnchorKeyRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
 
   return (
@@ -45,39 +95,54 @@ export function ImportAnchorReviewCanvas({
       <div className="border-b border-slate-200 px-4 py-3">
         <h2 className="text-sm font-bold">SVG Preview</h2>
       </div>
-      <div className="relative mx-auto aspect-[4/3] max-h-[620px] min-h-[380px] w-full overflow-auto bg-white p-5">
-        <div
-          className="absolute inset-5 flex items-center justify-center"
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
-        <svg
-          className="absolute inset-5 h-[calc(100%-40px)] w-[calc(100%-40px)]"
-          viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
-          aria-label="Imported symbol anchor overlay"
-        >
-          {metadata.anchors.map((anchor) => (
-            <g key={anchor.key}>
+      <div className="flex min-h-[320px] items-center justify-center overflow-auto bg-white p-5">
+        <SvgCoordinateStage
+          svg={svg}
+          viewBox={viewBox}
+          overlayRef={overlayRef}
+          overlayLabel="Imported symbol anchor overlay"
+          overlayClassName="cursor-crosshair touch-none"
+          onPointerDown={(event) => {
+            if (event.button !== 0) {
+              return;
+            }
+
+            const nearest = findNearestAnchor(event.clientX, event.clientY);
+            if (!nearest) {
+              return;
+            }
+
+            event.preventDefault();
+            draggingAnchorKeyRef.current = nearest.key;
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={handlePointerMove}
+          onPointerUp={finishDragging}
+          onPointerCancel={finishDragging}
+          onLostPointerCapture={() => {
+            draggingAnchorKeyRef.current = null;
+          }}
+          overlayChildren={metadata.anchors.map((anchor) => (
+            <g key={anchor.key} pointerEvents="none">
               <circle
+                data-import-anchor-marker={anchor.key}
                 cx={anchor.x}
                 cy={anchor.y}
                 r={markerRadius}
-                className="cursor-move fill-teal-500 stroke-white"
-                strokeWidth={Math.max(viewBox.width, viewBox.height) * 0.004}
-                onPointerDown={(event) => {
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                }}
-                onPointerMove={(event) => handlePointerMove(event, anchor.key)}
+                className="fill-teal-500 stroke-white"
+                strokeWidth={markerStrokeWidth}
               />
               <text
-                x={anchor.x + viewBox.width * 0.015}
-                y={anchor.y - viewBox.height * 0.015}
-                className="fill-teal-800 text-[10px] font-bold"
+                x={anchor.x + labelOffset}
+                y={anchor.y - labelOffset}
+                className="fill-teal-800 font-bold"
+                fontSize={labelFontSize}
               >
                 {anchor.key}
               </text>
             </g>
           ))}
-        </svg>
+        />
       </div>
     </section>
   );

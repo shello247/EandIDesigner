@@ -49,14 +49,20 @@ svg {
   max-width: 100%;
 }
 
-.svg-preview-stage > div,
-.svg-preview-stage > div > svg {
+.svg-coordinate-stage-artwork,
+.svg-coordinate-stage-artwork > svg {
   display: block;
   height: 100%;
   width: 100%;
 }
 
-.svg-preview-stage > div > svg {
+.svg-coordinate-stage-artwork > svg {
+  max-height: none;
+  max-width: none;
+}
+
+.svg-preview-fallback > svg {
+  display: block;
   max-height: 620px;
   max-width: 100%;
 }
