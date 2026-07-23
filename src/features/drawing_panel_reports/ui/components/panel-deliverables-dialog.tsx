@@ -9,7 +9,7 @@ import {
   Search,
   X
 } from "lucide-react";
-import type { SymbolBomTemplateDetail } from "@/features/bom_creator/api/public";
+import type { SymbolBomTemplateDetail } from "@/features/bom_creator/types";
 import type {
   ApprovedDrawingSymbol
 } from "@/features/drawing_canvas/api/asset-contracts";

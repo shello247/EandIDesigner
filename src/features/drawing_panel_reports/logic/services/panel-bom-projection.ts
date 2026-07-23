@@ -1,4 +1,4 @@
-import type { BomAssemblyProjection } from "@/features/bom_creator/api/public";
+import type { BomAssemblyProjection } from "@/features/bom_creator/types";
 import type { PanelConnectivityGraph } from "@/features/drawing_panel_wiring/api/public";
 import type {
   PanelAssetScheduleRow,
