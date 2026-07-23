@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   bomAssemblyProjectionSchema,
   generatedDrawingBomSchema
-} from "@/features/bom_creator/api/public";
+} from "@/features/bom_creator/data/schema";
 import {
   panelDrawingQualityCountsSchema,
   panelElectricalDomainSchema,

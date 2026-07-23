@@ -12,6 +12,27 @@ const eslintConfig = [
       "playwright-report/**",
       "test-results/**"
     ]
+  },
+  {
+    files: [
+      "src/features/drawing_canvas/ui/**/*.{ts,tsx}",
+      "src/features/drawing_panel_reports/logic/**/*.ts",
+      "src/features/drawing_panel_reports/ui/**/*.{ts,tsx}"
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/features/bom_creator/api/public",
+              message:
+                "Client-reachable drawing modules must import browser-safe BOM logic and types directly."
+            }
+          ]
+        }
+      ]
+    }
   }
 ];
 

@@ -28,7 +28,7 @@ import {
   ShieldCheck,
   StickyNote
 } from "lucide-react";
-import type { SymbolBomTemplateDetail } from "@/features/bom_creator/api/public";
+import type { SymbolBomTemplateDetail } from "@/features/bom_creator/types";
 import { loadPanelBomTemplatesAction } from "@/features/drawing_panel_reports/api/actions";
 import type { PanelReportTraceRef } from "@/features/drawing_panel_reports/api/public";
 import type {

@@ -1,4 +1,4 @@
-import type { GeneratedDrawingBom } from "@/features/bom_creator/api/public";
+import type { GeneratedDrawingBom } from "@/features/bom_creator/types";
 import type {
   PackagePanelDrawingQualityReport,
   PanelConnectivityGraph

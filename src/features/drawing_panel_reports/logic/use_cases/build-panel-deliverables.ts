@@ -1,7 +1,5 @@
-import {
-  generateBomFromProjection,
-  type SymbolBomTemplateDetail
-} from "@/features/bom_creator/api/public";
+import { generateBomFromProjection } from "@/features/bom_creator/logic/use_cases/generate-bom-from-projection";
+import type { SymbolBomTemplateDetail } from "@/features/bom_creator/types";
 import { createPanelWiringSource } from "@/features/drawing_canvas/api/panel-wiring-contracts";
 import type {
   ApprovedDrawingSymbol,
