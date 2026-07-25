@@ -192,6 +192,7 @@ function PackagePreviewPage({
       return measureDrawingOperation("preview.svg", () => renderDrawingToSvg({
         model: sheetModel,
         approvedSymbols: symbols,
+        assets: model.assets,
         showAnchors: false,
         showConnections: true,
         sheetNumber,

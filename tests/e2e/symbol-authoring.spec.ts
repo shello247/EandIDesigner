@@ -15,6 +15,19 @@ const portraitSvg = `
   <circle id="terminal:3.2" cx="19.5" cy="57.5" r="0.5"/>
 </svg>`;
 
+const componentPositionSvg = `
+<svg viewBox="0 0 40 100" xmlns="http://www.w3.org/2000/svg">
+  <rect x="5" y="5" width="30" height="90" fill="white" stroke="black"/>
+  <circle id="terminal:A1" cx="10" cy="84" r="1"/>
+  <g id="Components">
+    <g id="Position 1">
+      <g id="Component: Relay">
+        <rect id="Position Box" x="8" y="20" width="24" height="42"/>
+      </g>
+    </g>
+  </g>
+</svg>`;
+
 async function expectAlignedCoordinateStage(page: Page) {
   const stage = page.locator('[data-testid="svg-coordinate-stage"]');
   const artwork = page.locator('[data-testid="svg-coordinate-artwork"]');
@@ -194,6 +207,51 @@ test("keeps a portrait import aligned and selects the intended dense terminal", 
 
   await expect(page.getByLabel("Anchor x 3.2")).not.toHaveValue("19.5");
   await expect(page.getByLabel("Anchor x 3.1")).toHaveValue("19.5");
+});
+
+test("imports a Figma component position as read-only registry geometry", async ({
+  page
+}) => {
+  const runId = Date.now().toString();
+  const symbolName = `Component Position Device ${runId}`;
+
+  await page.goto("/symbols/new");
+  await page.setInputFiles("#svg-file", {
+    name: "component-position-device.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(componentPositionSvg)
+  });
+
+  await expect(page.getByText("SVG imported.")).toBeVisible();
+  await expect(page.getByText(/1 component position detected/)).toBeVisible();
+  await expect(
+    page.locator('[data-import-component-position="1:relay"]')
+  ).toBeVisible();
+
+  await page.getByLabel("Display name").fill(symbolName);
+  await page
+    .getByLabel("Symbol key")
+    .fill(`component_position_device_${runId}`);
+  await page.getByLabel("Terminal function A1").fill("Relay coil A1");
+  await page.getByRole("button", { name: "Save imported symbol" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: symbolName, exact: true })
+  ).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("Assignment required for approval")).toBeVisible();
+
+  const hotspot = page.locator(
+    '[data-component-position-hotspot="1:relay"]'
+  );
+  const hotspotBox = await hotspot.boundingBox();
+  expect(hotspotBox).not.toBeNull();
+  await page.mouse.move(
+    hotspotBox!.x + hotspotBox!.width / 2,
+    hotspotBox!.y + hotspotBox!.height / 2
+  );
+  await expect(
+    page.locator('[data-component-position-tooltip="1:relay"]')
+  ).toContainText("Relay");
 });
 
 test("blocks invalid SVG import before save", async ({ page }) => {

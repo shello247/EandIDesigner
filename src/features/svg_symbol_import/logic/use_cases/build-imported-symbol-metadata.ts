@@ -14,6 +14,7 @@ import {
 import type { SvgViewBox } from "@/shared/svg/svg-inspector";
 import type { SvgImportNetworkProfileDraft } from "../../data/schema";
 import { buildNetworkProfileFromDraft } from "../services/network-profile-draft";
+import type { SymbolComponentPosition } from "@/features/symbol_components/api/public";
 
 function normalizeOptional(value: string | undefined): string | undefined {
   const normalized = value?.trim() ?? "";
@@ -64,6 +65,7 @@ export function buildImportedSymbolMetadata(input: {
   anchors: SymbolAnchor[];
   terminals: SymbolTerminal[];
   networkProfile?: SvgImportNetworkProfileDraft;
+  componentPositions?: SymbolComponentPosition[];
 }): SymbolMetadata {
   const isNetworkDevice = input.category === "network_device";
   const networkProfile =
@@ -100,6 +102,10 @@ export function buildImportedSymbolMetadata(input: {
         }
       : undefined,
     viewBox: input.viewBox,
+    componentPositions:
+      input.componentPositions && input.componentPositions.length > 0
+        ? input.componentPositions
+        : undefined,
     anchors: input.anchors.map((anchor) => ({
       ...anchor,
       key: anchor.key.trim()

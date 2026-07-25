@@ -12,6 +12,8 @@ import { SymbolLayoutMetadataPanel } from "./symbol-layout-metadata-panel";
 import { SymbolPanelWiringCapabilityPanel } from "./symbol-panel-wiring-capability-panel";
 import { TerminalMapTable } from "./terminal-map-table";
 import { ValidationPanel } from "./validation-panel";
+import type { ComponentAlternativeCandidate } from "@/features/symbol_components/api/public";
+import { SymbolComponentsPanel } from "@/features/symbol_components/ui/components/symbol-components-panel";
 
 type WorkspaceTab = "overview" | "bom" | "engineer_notes" | "documents";
 
@@ -28,10 +30,12 @@ const baseTabs: Array<{
 export function SymbolWorkspaceTabs({
   symbol,
   latest,
+  componentAlternatives,
   bomPanel
 }: {
   symbol: SymbolDetail;
   latest: SymbolVersionSummary;
+  componentAlternatives: ComponentAlternativeCandidate[];
   bomPanel?: ReactNode;
 }) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
@@ -109,6 +113,14 @@ export function SymbolWorkspaceTabs({
                 <SymbolPanelWiringCapabilityPanel
                   versionId={latest.id}
                   metadata={latest.metadata}
+                />
+                <SymbolComponentsPanel
+                  versionId={latest.id}
+                  positions={latest.metadata.componentPositions ?? []}
+                  alternatives={componentAlternatives.filter(
+                    (alternative) => alternative.symbolId !== symbol.id
+                  )}
+                  readOnly={!editable}
                 />
                 <TerminalMapTable
                   versionId={latest.id}

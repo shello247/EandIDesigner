@@ -63,6 +63,28 @@ function uniqueSheetLabels(asset: ManagedAssetCatalogItem): string[] {
   ];
 }
 
+function installedComponentNames(
+  asset: ManagedAssetCatalogItem,
+  symbols: ApprovedDrawingSymbol[]
+): string[] {
+  const names: string[] = [];
+
+  const visit = (selections: typeof asset.componentSelections) => {
+    for (const selection of selections ?? []) {
+      const symbol = symbols.find(
+        (candidate) =>
+          candidate.symbolId === selection.symbolId &&
+          candidate.versionId === selection.versionId
+      );
+      names.push(symbol?.displayName ?? `Missing ${selection.versionId}`);
+      visit(selection.children);
+    }
+  };
+
+  visit(asset.componentSelections);
+  return names;
+}
+
 function assetMatchesSearch(
   asset: ManagedAssetCatalogItem,
   query: string
@@ -410,6 +432,14 @@ export function AssetManagerDialog({
                                 <span className="mt-0.5 block truncate text-slate-500">
                                   {asset.title}
                                 </span>
+                                {asset.componentSelections?.length ? (
+                                  <span className="mt-1 block text-[11px] text-violet-700">
+                                    Components:{" "}
+                                    {installedComponentNames(asset, symbols).join(
+                                      " · "
+                                    )}
+                                  </span>
+                                ) : null}
                               </span>
                               <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-500">
                                 {asset.occurrenceCount}

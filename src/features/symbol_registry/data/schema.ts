@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { symbolComponentPositionsSchema } from "@/features/symbol_components/api/public";
 
 export const symbolStatusSchema = z.enum([
   "draft",
@@ -231,7 +232,8 @@ export const symbolMetadataSchema = z
     networkProfile: symbolNetworkProfileSchema.optional(),
     viewBox: viewBoxSchema,
     terminals: z.array(symbolTerminalSchema),
-    anchors: z.array(symbolAnchorSchema)
+    anchors: z.array(symbolAnchorSchema),
+    componentPositions: symbolComponentPositionsSchema.optional()
   })
   .superRefine((metadata, context) => {
     if (metadata.category === "network_device" && !metadata.networkProfile) {

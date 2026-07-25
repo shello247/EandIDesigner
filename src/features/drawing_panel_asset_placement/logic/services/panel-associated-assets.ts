@@ -15,6 +15,11 @@ import {
   isBackplanePlacement
 } from "@/features/drawing_canvas/logic/services/drawing-backplane-layouts";
 import {
+  getBackplaneDisplayUsableBounds,
+  resolveBackplaneLayoutScale
+} from "@/features/drawing_canvas/logic/services/drawing-backplane-scale";
+import { getComponentCompositionBounds } from "@/features/symbol_components/api/public";
+import {
   GENERATED_TERMINAL_BLOCK_SYMBOL_ID,
   GENERATED_TERMINAL_BLOCK_VERSION_ID,
   normalizeTerminalBlockPlacement,
@@ -375,6 +380,75 @@ function roleForAssetType(assetType: DrawingAssetType): DrawingPlacement["role"]
   return "device";
 }
 
+function constrainComponentCompositionToBackplane({
+  placement,
+  asset,
+  symbol,
+  symbols,
+  backplane,
+  sheet,
+  titleBlock
+}: {
+  placement: DrawingPlacement;
+  asset: DrawingAssetRecord;
+  symbol: ApprovedDrawingSymbol;
+  symbols: ApprovedDrawingSymbol[];
+  backplane: DrawingPlacement;
+  sheet: DrawingPackageSheet;
+  titleBlock: DrawingModel["titleBlock"];
+}): DrawingPlacement {
+  if (!asset.componentSelections?.length) {
+    return placement;
+  }
+
+  const bounds = getComponentCompositionBounds({
+    parentPlacement: placement,
+    parentSymbol: symbol,
+    selections: asset.componentSelections,
+    symbols
+  });
+  const sheetGeometry = {
+    ...sheet.page,
+    titleBlock
+  };
+  const usable = getBackplaneDisplayUsableBounds(sheetGeometry, backplane);
+  const maximumX = usable.x + usable.width;
+  const maximumY = usable.y + usable.height;
+  const deltaX =
+    bounds.width >= usable.width
+      ? usable.x - bounds.x
+      : bounds.x < usable.x
+        ? usable.x - bounds.x
+        : bounds.x + bounds.width > maximumX
+          ? maximumX - bounds.x - bounds.width
+          : 0;
+  const deltaY =
+    bounds.height >= usable.height
+      ? usable.y - bounds.y
+      : bounds.y < usable.y
+        ? usable.y - bounds.y
+        : bounds.y + bounds.height > maximumY
+          ? maximumY - bounds.y - bounds.height
+          : 0;
+
+  if (deltaX === 0 && deltaY === 0) {
+    return placement;
+  }
+
+  const scale = resolveBackplaneLayoutScale(sheetGeometry, backplane);
+  const layoutPosition = placement.layoutPosition ?? { xMm: 0, yMm: 0 };
+
+  return {
+    ...placement,
+    x: Number((placement.x + deltaX).toFixed(2)),
+    y: Number((placement.y + deltaY).toFixed(2)),
+    layoutPosition: {
+      xMm: Number((layoutPosition.xMm + deltaX / scale.factor).toFixed(2)),
+      yMm: Number((layoutPosition.yMm + deltaY / scale.factor).toFixed(2))
+    }
+  };
+}
+
 export function placeAssociatedPanelAssetOnBackplane({
   model,
   sheetId,
@@ -430,7 +504,7 @@ export function placeAssociatedPanelAssetOnBackplane({
     throw new Error(`${asset.tag} needs a layout-ready symbol before placement.`);
   }
 
-  const placement = autosizeLayoutHelperToBackplane({
+  const initialPlacement = autosizeLayoutHelperToBackplane({
     backplane,
     symbol: layout.symbol,
     sheet: {
@@ -454,6 +528,15 @@ export function placeAssociatedPanelAssetOnBackplane({
       layoutDimensions: layout.layoutDimensions,
       terminalBlock: layout.terminalBlock
     }
+  });
+  const placement = constrainComponentCompositionToBackplane({
+    placement: initialPlacement,
+    asset,
+    symbol: layout.symbol,
+    symbols,
+    backplane,
+    sheet,
+    titleBlock: model.titleBlock
   });
 
   return {

@@ -270,15 +270,17 @@ export async function getSymbolVersionForExport(symbolId: string) {
   };
 }
 
-export async function listDrawingSymbolVersions() {
+export async function listDrawingSymbolVersions(
+  referencedVersionIds: readonly string[] = []
+) {
   const rows = await prisma.symbol.findMany({
     where: {
-      status: { not: "archived" },
+      status: "approved",
       category: { not: "network_device" }
     },
     include: {
       versions: {
-        where: { status: { not: "archived" } },
+        where: { status: "approved" },
         orderBy: { versionNumber: "desc" },
         take: 1
       }
@@ -286,7 +288,7 @@ export async function listDrawingSymbolVersions() {
     orderBy: [{ category: "asc" }, { displayName: "asc" }]
   });
 
-  return rows.flatMap((symbol) => {
+  const selectableVersions = rows.flatMap((symbol) => {
     const version = symbol.versions[0];
 
     if (!version) {
@@ -304,10 +306,44 @@ export async function listDrawingSymbolVersions() {
         versionId: version.id,
         versionNumber: version.versionNumber,
         svg: version.svg,
-        metadata: parseMetadataJson(version.metadataJson)
+        metadata: parseMetadataJson(version.metadataJson),
+        selectable: true
       }
     ];
   });
+  const selectableVersionIds = new Set(
+    selectableVersions.map((version) => version.versionId)
+  );
+  const pinnedIds = [
+    ...new Set(referencedVersionIds.filter((id) => !selectableVersionIds.has(id)))
+  ];
+  const pinnedVersions =
+    pinnedIds.length === 0
+      ? []
+      : await prisma.symbolVersion.findMany({
+          where: {
+            id: { in: pinnedIds },
+            symbol: { category: { not: "network_device" } }
+          },
+          include: { symbol: true }
+        });
+
+  return [
+    ...selectableVersions,
+    ...pinnedVersions.map((version) => ({
+      symbolId: version.symbolId,
+      symbolKey: version.symbol.symbolKey,
+      displayName: version.symbol.displayName,
+      manufacturer: version.symbol.manufacturer,
+      model: version.symbol.model,
+      category: symbolCategorySchema.parse(version.symbol.category),
+      versionId: version.id,
+      versionNumber: version.versionNumber,
+      svg: version.svg,
+      metadata: parseMetadataJson(version.metadataJson),
+      selectable: false
+    }))
+  ];
 }
 
 export const listNetworkSymbolCatalog = cache(

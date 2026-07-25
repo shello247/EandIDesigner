@@ -13,6 +13,7 @@ export type ApprovedDrawingSymbol = {
   versionNumber: number;
   svg: string;
   metadata: SymbolMetadata;
+  selectable?: boolean;
 };
 
 export type DrawingListItem = {

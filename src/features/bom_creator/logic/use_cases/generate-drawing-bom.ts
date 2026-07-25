@@ -14,10 +14,15 @@ import {
   type BomGenerationAssetContext
 } from "../services/bom-generation-context";
 import { calculateBomQuantity } from "../services/bom-quantity-rules";
+import {
+  SYMBOL_COMPONENT_MAX_DEPTH,
+  type DrawingComponentSelection
+} from "@/features/symbol_components/api/public";
 
 export type BomGenerationSymbol = {
   symbolId: string;
   displayName: string;
+  versionId?: string;
 };
 
 export type GenerateDrawingBomInput = {
@@ -59,9 +64,11 @@ function isGeneratedSymbol(symbolId: string): boolean {
 function buildAssemblyLines({
   context,
   template,
+  componentPath
 }: {
   context: BomGenerationAssetContext;
   template: BomGenerationTemplate;
+  componentPath?: string[];
 }): {
   lines: GeneratedBomLine[];
   warnings: GeneratedBomWarning[];
@@ -78,6 +85,7 @@ function buildAssemblyLines({
           code: "manual_quantity_required",
           assetId: context.asset.id,
           itemId: line.itemId,
+          componentPath,
           message: `${context.asset.tag} requires a manual quantity for ${line.item.displayName}.`
         })
       );
@@ -89,13 +97,14 @@ function buildAssemblyLines({
           code: "archived_item",
           assetId: context.asset.id,
           itemId: line.itemId,
+          componentPath,
           message: `${line.item.displayName} is archived but still linked to ${context.asset.tag}.`
         })
       );
     }
 
     return {
-      id: `${context.asset.id}-${line.id}`,
+      id: `${context.asset.id}-${componentPath?.join("-") ?? "parent"}-${line.id}`,
       itemId: line.itemId,
       itemKey: line.item.itemKey,
       displayName: line.item.displayName,
@@ -108,6 +117,7 @@ function buildAssemblyLines({
       quantityStatus: quantityResult.status,
       sourceLineId: line.id,
       sourceAssetId: context.asset.id,
+      componentPath,
       notes: line.notes
     } satisfies GeneratedBomLine;
   });
@@ -177,6 +187,12 @@ export function generateDrawingBom({
     templates.map((template) => [template.symbolId, template])
   );
   const symbolById = new Map(symbols.map((symbol) => [symbol.symbolId, symbol]));
+  const symbolVersionKeys = new Set(
+    symbols.flatMap((symbol) =>
+      symbol.versionId ? [`${symbol.symbolId}:${symbol.versionId}`] : []
+    )
+  );
+  const versionAware = symbols.some((symbol) => Boolean(symbol.versionId));
   const warnings: GeneratedBomWarning[] = [];
   const assemblies: GeneratedBomAssembly[] = [];
 
@@ -185,6 +201,97 @@ export function generateDrawingBom({
     const symbol = symbolId ? symbolById.get(symbolId) : undefined;
     const assemblyWarnings: GeneratedBomWarning[] = [];
     let lines: GeneratedBomLine[] = [];
+
+    const expandComponents = (
+      selections: DrawingComponentSelection[] | undefined,
+      path: string[],
+      ancestry: string[],
+      depth: number
+    ) => {
+      if (depth > SYMBOL_COMPONENT_MAX_DEPTH) {
+        assemblyWarnings.push(
+          warning({
+            code: "component_depth",
+            assetId: context.asset.id,
+            componentPath: path,
+            message: `${context.asset.tag} component expansion exceeds ${SYMBOL_COMPONENT_MAX_DEPTH} levels at ${path.join(" / ")}.`
+          })
+        );
+        return;
+      }
+
+      for (const selection of selections ?? []) {
+        const childPath = [
+          ...path,
+          selection.positionKey,
+          selection.componentKey
+        ];
+        if (ancestry.includes(selection.symbolId)) {
+          assemblyWarnings.push(
+            warning({
+              code: "component_cycle",
+              assetId: context.asset.id,
+              componentPath: childPath,
+              message: `${context.asset.tag} component cycle was stopped at ${childPath.join(" / ")}.`
+            })
+          );
+          continue;
+        }
+
+        const childSymbol = symbolById.get(selection.symbolId);
+        const childTemplate = templateBySymbolId.get(selection.symbolId);
+        if (
+          versionAware &&
+          !symbolVersionKeys.has(
+            `${selection.symbolId}:${selection.versionId}`
+          )
+        ) {
+          assemblyWarnings.push(
+            warning({
+              code: "missing_component_version",
+              assetId: context.asset.id,
+              componentPath: childPath,
+              message: `${context.asset.tag} references missing pinned component version ${selection.versionId} at ${childPath.join(" / ")}.`
+            })
+          );
+        }
+        if (!childSymbol) {
+          assemblyWarnings.push(
+            warning({
+              code: "missing_symbol",
+              assetId: context.asset.id,
+              componentPath: childPath,
+              message: `${context.asset.tag} component symbol is unavailable at ${childPath.join(" / ")}.`
+            })
+          );
+        }
+        if (!childTemplate) {
+          assemblyWarnings.push(
+            warning({
+              code: "missing_template",
+              assetId: context.asset.id,
+              componentPath: childPath,
+              message: `${context.asset.tag} component does not have a linked BOM template at ${childPath.join(" / ")}.`
+            })
+          );
+        } else {
+          const built = buildAssemblyLines({
+            context,
+            template: childTemplate,
+            componentPath: childPath
+          });
+          lines.push(...built.lines);
+          assemblyWarnings.push(...built.warnings);
+        }
+
+        expandComponents(
+          selection.children,
+          childPath,
+          [...ancestry, selection.symbolId],
+          depth + 1
+        );
+      }
+    };
 
     if (!symbolId) {
       assemblyWarnings.push(
@@ -232,6 +339,12 @@ export function generateDrawingBom({
         assemblyWarnings.push(...built.warnings);
       }
     }
+    expandComponents(
+      context.asset.componentSelections,
+      [],
+      symbolId ? [symbolId] : [],
+      1
+    );
 
     const assembly = {
       assetId: context.asset.id,

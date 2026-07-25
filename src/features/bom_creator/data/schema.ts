@@ -47,7 +47,10 @@ export const generatedBomWarningCodeSchema = z.enum([
   "archived_item",
   "manual_quantity_required",
   "generated_symbol",
-  "missing_symbol"
+  "missing_symbol",
+  "missing_component_version",
+  "component_cycle",
+  "component_depth"
 ]);
 
 const optionalTextSchema = (maxLength: number) =>
@@ -637,7 +640,8 @@ export const generatedBomWarningSchema = z.object({
   code: generatedBomWarningCodeSchema,
   message: z.string().trim().min(1),
   assetId: z.string().trim().min(1).optional(),
-  itemId: z.string().trim().min(1).optional()
+  itemId: z.string().trim().min(1).optional(),
+  componentPath: z.array(z.string().trim().min(1)).optional()
 });
 
 export const generatedBomLineSchema = z.object({
@@ -654,6 +658,7 @@ export const generatedBomLineSchema = z.object({
   quantityStatus: bomQuantityStatusSchema,
   sourceLineId: z.string().trim().min(1),
   sourceAssetId: z.string().trim().min(1).optional(),
+  componentPath: z.array(z.string().trim().min(1)).optional(),
   notes: z.string().trim().optional()
 });
 

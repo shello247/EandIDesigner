@@ -483,7 +483,26 @@ describe("drawing asset identity", () => {
   });
 
   it("duplicates sheets as a new system with new monitor assets", () => {
-    const result = duplicateSheet(packageModel(), "sheet_1", symbols, {
+    const model = packageModel();
+    model.assets = [
+      {
+        id: "asset_tsm_101",
+        tag: "TSM-101",
+        type: "controller",
+        title: "Tank monitor",
+        symbolId: monitorSymbol.symbolId,
+        versionId: monitorSymbol.versionId,
+        componentSelections: [
+          {
+            positionKey: "position-1",
+            componentKey: "relay",
+            symbolId: "relay_symbol",
+            versionId: "relay_version"
+          }
+        ]
+      }
+    ];
+    const result = duplicateSheet(model, "sheet_1", symbols, {
       duplicateMode: "new-system"
     });
     const duplicate = result.model.sheets[1];
@@ -496,5 +515,9 @@ describe("drawing asset identity", () => {
     });
     expect(duplicatedMonitor?.assetId).not.toBe("asset_tsm_101");
     expect(duplicate.connections[0].wireId).toBe("C-102-WHT");
+    expect(
+      result.model.assets.find((asset) => asset.id === duplicatedMonitor?.assetId)
+        ?.componentSelections
+    ).toEqual(model.assets[0].componentSelections);
   });
 });

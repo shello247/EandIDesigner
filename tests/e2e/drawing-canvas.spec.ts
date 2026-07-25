@@ -1,10 +1,37 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   createE2eNmt81ToNrf81Drawing,
   deleteE2eDrawing
 } from "./drawing-fixtures";
 
 test.describe.configure({ mode: "serial" });
+
+async function addSymbolFromLibrary(
+  page: Page,
+  categoryName: RegExp,
+  symbolName: string
+) {
+  const category = page.getByRole("button", { name: categoryName });
+
+  if ((await category.getAttribute("aria-expanded")) !== "true") {
+    await category.click();
+  }
+
+  await page.getByRole("button", { name: symbolName, exact: true }).click();
+}
+
+async function addCableFromLibrary(page: Page) {
+  await addSymbolFromLibrary(page, /Cable Assemblies 1/, "CLX Cable 1 Pair");
+}
+
+async function activateSheet(page: Page, sheetName: string) {
+  await page.getByRole("button", { name: "Open sheet loader" }).click();
+  const dialog = page.getByRole("dialog", { name: "Sheet Loader" });
+  const row = dialog
+    .getByRole("cell", { name: sheetName, exact: true })
+    .locator("..");
+  await row.getByRole("button", { name: "Load", exact: true }).click();
+}
 
 test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", async ({
   page
@@ -362,9 +389,7 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await page.keyboard.press("Escape");
   await expect(page.locator("rect[data-resize-handle]")).toHaveCount(0);
 
-  await page
-    .getByRole("button", { name: "CLX Cable 1 Pair clx_cable_1_pair" })
-    .click();
+  await addCableFromLibrary(page);
   await expect(page.getByRole("dialog", { name: "Add Symbol" })).toBeVisible();
   await expect(page.getByLabel("Asset tag")).toHaveValue("C-102");
   await page.getByRole("button", { name: "Place symbol" }).click();
@@ -538,9 +563,10 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await page.getByRole("button", { name: "Add to drawing" }).click();
   await page.getByRole("menuitem", { name: /Sheet/ }).click();
   await page.getByRole("dialog", { name: "Add Sheet" }).getByRole("button", {
-    name: "Add sheet"
+    name: "Add sheet",
+    exact: true
   }).click();
-  await expect(page.getByTestId("drawing-sheet-frame")).toHaveCount(2);
+  await expect(page.getByTestId("drawing-sheet-frame")).toHaveCount(1);
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
     "Sheet 2 of 2"
   );
@@ -552,39 +578,24 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(
     page.getByTestId("active-sheet-readout")
   ).toContainText("Instrumentation");
-  await expect(
-    page.getByTestId("drawing-sheet-frame").nth(1)
-  ).toBeVisible();
+  await expect(page.getByTestId("drawing-sheet-frame")).toBeVisible();
   await expect(page.getByLabel("Description")).toHaveValue(
     "Instrument detail and sheet 2 notes"
   );
 
   const sheetFrames = page.getByTestId("drawing-sheet-frame");
-  const firstSheetBox = await sheetFrames.nth(0).boundingBox();
-  const secondSheetBox = await sheetFrames.nth(1).boundingBox();
-
-  if (!firstSheetBox || !secondSheetBox) {
-    throw new Error("Expected both drawing sheets to be rendered.");
-  }
-
-  expect(secondSheetBox.y).toBeGreaterThan(firstSheetBox.y);
   await expect(
-    sheetFrames.nth(1).locator(".drawing-sheet-caption-name")
+    sheetFrames.locator(".drawing-sheet-caption-name")
   ).toHaveText("Instrumentation");
   await expect(
-    sheetFrames.nth(1).getByText("Instrument detail and sheet 2 notes")
+    sheetFrames.getByText("Instrument detail and sheet 2 notes")
   ).toHaveCount(0);
 
-  await viewport.evaluate((element) => {
-    element.scrollTop = 0;
-    element.dispatchEvent(new Event("scroll", { bubbles: true }));
-  });
+  await activateSheet(page, "Wiring");
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
     "Sheet 1 of 2"
   );
-  await page
-    .getByRole("button", { name: /Activate sheet 2: Instrumentation/ })
-    .click();
+  await activateSheet(page, "Instrumentation");
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
     "Sheet 2 of 2"
   );
@@ -593,26 +604,28 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     .click();
   await expect(zoomDisplay).toHaveText("100%");
   await centerViewportScroll();
-  await zoomAtVisiblePaperPoint(sheetFrames.nth(1).locator("[data-sheet-paper]"));
+  await zoomAtVisiblePaperPoint(sheetFrames.locator("[data-sheet-paper]"));
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
     "Sheet 2 of 2"
   );
   await page.getByRole("button", { name: "Fit drawing" }).click();
 
-  await page
-    .getByRole("button", { name: "CLX Cable 1 Pair clx_cable_1_pair" })
-    .click();
+  await addCableFromLibrary(page);
   await expect(page.getByRole("dialog", { name: "Add Symbol" })).toBeVisible();
-  await expect(page.getByLabel("Asset tag")).toHaveValue("C-102");
+  await expect(page.getByLabel("Asset tag")).toHaveValue("C-103");
   await page.getByRole("button", { name: "Place symbol" }).click();
-  await expect(page.getByRole("textbox", { name: "Tag" })).toHaveValue("C-102");
+  await expect(page.getByRole("textbox", { name: "Tag" })).toHaveValue("C-103");
 
-  await page
-    .getByRole("button", { name: "NRF81 Tank Side Monitor nrf81_tank_side_monitor" })
-    .click();
+  await addSymbolFromLibrary(
+    page,
+    /Controllers 1/,
+    "NRF81 Tank Side Monitor"
+  );
   const referenceDialog = page.getByRole("dialog", { name: "Add Symbol" });
   await expect(referenceDialog).toBeVisible();
-  await page.getByRole("button", { name: /Reference existing/ }).click();
+  await referenceDialog
+    .getByRole("button", { name: /Reference existing Use/ })
+    .click();
   await expect(referenceDialog.getByText("TSM-101")).toBeVisible();
   await page.getByRole("button", { name: "Place symbol" }).click();
   await expect(page.getByRole("textbox", { name: "Tag" })).toHaveValue(
@@ -625,15 +638,13 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     sheetStage.getByText("Sheet 2 isolated content")
   ).toBeVisible();
 
-  await page.getByRole("button", { name: /Activate sheet 1: Wiring/ }).click();
+  await activateSheet(page, "Wiring");
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
     "Sheet 1 of 2"
   );
   await expect(sheetStage.getByText("Sheet 2 isolated content")).toHaveCount(0);
   await expect(page.getByText("Installation Instructions")).toBeVisible();
-  await page
-    .getByRole("button", { name: /Activate sheet 2: Instrumentation/ })
-    .click();
+  await activateSheet(page, "Instrumentation");
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
     "Sheet 2 of 2"
   );
@@ -648,9 +659,7 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
     "Sheet 1 of 2"
   );
-  await page
-    .getByRole("button", { name: /Activate sheet 2: Instrumentation/ })
-    .click();
+  await activateSheet(page, "Instrumentation");
   await expect(page.getByLabel("Description")).toHaveValue(
     "Instrument detail and sheet 2 notes"
   );
@@ -668,17 +677,17 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   expect(multiSheetPrintHtml).toContain("2 OF 2");
 
   await page
-    .getByRole("button", { name: "Collapse approved symbols panel" })
+    .getByRole("button", { name: "Collapse symbol library panel" })
     .click();
   await expect(page.getByTestId("drawing-symbols-rail")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Expand approved symbols panel" })
+    page.getByRole("button", { name: "Expand symbol library panel" })
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Expand approved symbols panel" })
+    .getByRole("button", { name: "Expand symbol library panel" })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Approved Symbols" })
+    page.getByRole("heading", { name: "Symbol Library" })
   ).toBeVisible();
 
   await page
@@ -757,24 +766,22 @@ test("saves and imports a drawing sheet template with asset resolution", async (
     "Sheet 2 of 2"
   );
   await expect(
-    page.getByTestId("drawing-sheet-frame").nth(1).getByText("C-102").first()
+    page.getByTestId("drawing-sheet-frame").getByText("C-102").first()
   ).toBeVisible();
   await expect(
-    page.getByTestId("drawing-sheet-frame").nth(1).getByText("TSM-101").first()
+    page.getByTestId("drawing-sheet-frame").getByText("TSM-101").first()
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Drawing saved.")).toBeVisible();
   await page.reload();
   await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible();
-  await page
-    .getByRole("button", { name: /Activate sheet 2: Wiring 2/ })
-    .click();
+  await activateSheet(page, "Wiring 2");
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
     "Sheet 2 of 2"
   );
   await expect(
-    page.getByTestId("drawing-sheet-frame").nth(1).getByText("C-102").first()
+    page.getByTestId("drawing-sheet-frame").getByText("C-102").first()
   ).toBeVisible();
 
   const printResponse = await page.request.get(`/drawings/${drawingId}/print`);

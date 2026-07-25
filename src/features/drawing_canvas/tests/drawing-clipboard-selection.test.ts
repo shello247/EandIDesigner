@@ -277,6 +277,24 @@ describe("drawing canvas selection and clipboard", () => {
 
   it("pastes as a new system with new monitor assets", () => {
     const model = modelWithTwoSheets();
+    model.assets = [
+      {
+        id: "asset_tsm101",
+        tag: "TSM-101",
+        type: "controller",
+        title: "Tank monitor",
+        symbolId: monitorSymbol.symbolId,
+        versionId: monitorSymbol.versionId,
+        componentSelections: [
+          {
+            positionKey: "position-1",
+            componentKey: "relay",
+            symbolId: "relay_symbol",
+            versionId: "relay_version"
+          }
+        ]
+      }
+    ];
     const clipboard = copySelectionToClipboard({
       model,
       sheetId: "sheet_1",
@@ -305,6 +323,11 @@ describe("drawing canvas selection and clipboard", () => {
     ]);
     expect(pastedSheet.placements[2].assetId).not.toBe("asset_tsm101");
     expect(pastedSheet.connections[0].wireId).toBe("C-102-WHT");
+    expect(
+      result.model.assets.find(
+        (asset) => asset.id === pastedSheet.placements[2].assetId
+      )?.componentSelections
+    ).toEqual(model.assets[0].componentSelections);
   });
 
   it("pastes generated terminal blocks as new globally numbered assets", () => {

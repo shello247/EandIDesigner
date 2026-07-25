@@ -35,6 +35,7 @@ import type {
   DrawingAnnotation,
   DrawingConnection,
   DrawingConnectionRoute,
+  DrawingAssetRecord,
   DrawingEndpoint,
   DrawingModel,
   DrawingPlacement,
@@ -274,10 +275,12 @@ import {
 import {
   allocateNextManagedAssetTag,
   createManagedAsset,
+  classifyManagedAssetFromPlacement,
   deleteManagedAsset,
   reconcileDrawingAssets,
   updateManagedAsset
 } from "@/features/drawing_asset_manager/logic/use_cases/drawing-asset-manager-use-cases";
+import { replaceDrawingAssetComponentSelections } from "@/features/symbol_components/api/public";
 import type {
   ManagedAssetCreateInput,
   ManagedAssetUpdateInput
@@ -1445,7 +1448,8 @@ export function DrawingCanvasShell({
     symbol,
     assetId,
     tag,
-    containerAssetId
+    containerAssetId,
+    componentSelections
   }: AddSymbolAssetSubmission) => {
     const placement: DrawingPlacement = {
       id: `pl_${Date.now()}`,
@@ -1461,7 +1465,38 @@ export function DrawingCanvasShell({
       scale: defaultPlacementScale(symbol)
     };
 
-    updateActiveSheet((current) => addPlacementCommand(current, placement));
+    commitModel((current) => {
+      const sheetId = getActiveSheetId(current, activeSheetId);
+      const currentCanvasModel = toSheetCanvasModel(current, sheetId);
+      const withPlacement = replaceSheetFromCanvasModel(
+        current,
+        sheetId,
+        addPlacementCommand(currentCanvasModel, placement)
+      );
+
+      if (componentSelections === undefined) {
+        return withPlacement;
+      }
+
+      const asset: DrawingAssetRecord = {
+        id: assetId,
+        tag,
+        type: classifyManagedAssetFromPlacement(placement, symbols),
+        title: symbol.displayName,
+        symbolId: symbol.symbolId,
+        versionId: symbol.versionId,
+        componentSelections,
+        metadata: { symbolKey: symbol.symbolKey }
+      };
+
+      return {
+        ...withPlacement,
+        assets: [
+          ...withPlacement.assets.filter((candidate) => candidate.id !== assetId),
+          asset
+        ]
+      };
+    });
     selectPlacement(placement.id);
     setSelectedConnectionId(undefined);
     setPendingSymbol(null);
@@ -1556,7 +1591,10 @@ export function DrawingCanvasShell({
     [activeAssociatedBackplane, model, symbols]
   );
 
-  const addLayoutSymbol = (symbol: ApprovedDrawingSymbol) => {
+  const addLayoutSymbol = (
+    symbol: ApprovedDrawingSymbol,
+    submission?: AddSymbolAssetSubmission
+  ) => {
     if (isTerminalBlockModuleSymbol(symbol)) {
       setMessage(
         "Individual terminal modules cannot be placed. Use Terminal Block Group."
@@ -1588,11 +1626,17 @@ export function DrawingCanvasShell({
       symbol.category === "terminal_block" &&
       symbol.metadata.panelCategory === "termination";
     const createsPhysicalAsset = Boolean(
-      isTerminalBlockLayoutSymbol || symbol.metadata.panelWiring
+      isTerminalBlockLayoutSymbol ||
+        symbol.metadata.panelWiring ||
+        symbol.metadata.componentPositions?.length
     );
-    const tag = createsPhysicalAsset
-      ? allocateNextPackageTag(model, symbol)
-      : symbol.displayName;
+    const tag =
+      submission?.tag ??
+      (createsPhysicalAsset
+        ? allocateNextPackageTag(model, symbol)
+        : symbol.displayName);
+    const assetId =
+      submission?.assetId ?? (createsPhysicalAsset ? createDrawingAssetId(placementId) : undefined);
     const placement = autosizeLayoutHelperToBackplane({
       backplane,
       symbol,
@@ -1601,7 +1645,7 @@ export function DrawingCanvasShell({
         id: placementId,
         ...(createsPhysicalAsset
           ? {
-              assetId: createDrawingAssetId(placementId),
+              assetId,
               title: symbol.displayName
             }
           : {}),
@@ -1621,7 +1665,38 @@ export function DrawingCanvasShell({
       }
     });
 
-    updateActiveSheet((current) => addPlacementCommand(current, placement));
+    commitModel((current) => {
+      const sheetId = getActiveSheetId(current, activeSheetId);
+      const currentCanvasModel = toSheetCanvasModel(current, sheetId);
+      const withPlacement = replaceSheetFromCanvasModel(
+        current,
+        sheetId,
+        addPlacementCommand(currentCanvasModel, placement)
+      );
+
+      if (!assetId || submission?.componentSelections === undefined) {
+        return withPlacement;
+      }
+
+      const asset: DrawingAssetRecord = {
+        id: assetId,
+        tag,
+        type: classifyManagedAssetFromPlacement(placement, symbols),
+        title: symbol.displayName,
+        symbolId: symbol.symbolId,
+        versionId: symbol.versionId,
+        componentSelections: submission.componentSelections,
+        metadata: { symbolKey: symbol.symbolKey }
+      };
+
+      return {
+        ...withPlacement,
+        assets: [
+          ...withPlacement.assets.filter((candidate) => candidate.id !== assetId),
+          asset
+        ]
+      };
+    });
     selectPlacement(placement.id);
     setSelectedConnectionId(undefined);
     setMessage(
@@ -3266,6 +3341,11 @@ export function DrawingCanvasShell({
         return;
       }
 
+      if (symbol.metadata.componentPositions?.length) {
+        setPendingSymbol(symbol);
+        return;
+      }
+
       if (isPanelLayoutLibrarySymbol(symbol)) {
         addLayoutSymbol(symbol);
         return;
@@ -3273,6 +3353,22 @@ export function DrawingCanvasShell({
 
       setPendingSymbol(symbol);
     }
+  };
+
+  const updateAssetComponentSelections = (
+    assetId: string,
+    componentSelections: NonNullable<
+      DrawingAssetRecord["componentSelections"]
+    >
+  ) => {
+    commitModel((current) =>
+      replaceDrawingAssetComponentSelections(
+        current,
+        assetId,
+        componentSelections
+      )
+    );
+    setMessage("Component configuration updated for every asset occurrence.");
   };
 
   const moveSheet = (sheetId: string, direction: -1 | 1) => {
@@ -3773,7 +3869,11 @@ export function DrawingCanvasShell({
           activeSheetModel={activeSheetCanvasModel}
           symbols={symbols}
           onCancel={() => setPendingSymbol(null)}
-          onPlace={addSymbol}
+          onPlace={(submission) =>
+            isPanelLayoutLibrarySymbol(submission.symbol)
+              ? addLayoutSymbol(submission.symbol, submission)
+              : addSymbol(submission)
+          }
         />
       ) : null}
       {isAddPanelOpen ? (
@@ -4571,6 +4671,7 @@ export function DrawingCanvasShell({
               onPanelTitleChange={updatePanelTitle}
               onTerminalBlockChange={updateTerminalBlockConfig}
               onPlacementContainerChange={updatePlacementContainer}
+              onAssetComponentSelectionsChange={updateAssetComponentSelections}
               selectedConnectionId={selectedConnectionId}
               selectedAnnotationId={selectedAnnotationId}
               onConnectionSelect={selectConnection}

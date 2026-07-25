@@ -18,14 +18,17 @@ import {
   SVG_MARKER_STROKE_PX,
   svgUserUnitsForPixels
 } from "@/shared/svg/svg-coordinate-geometry";
+import type { SymbolComponentPosition } from "@/features/symbol_components/api/public";
 
 export function ImportAnchorReviewCanvas({
   svg,
   metadata,
+  componentPositions = [],
   onAnchorMove
 }: {
   svg: string;
   metadata: Pick<SymbolMetadata, "viewBox"> & { anchors: SymbolAnchor[] };
+  componentPositions?: SymbolComponentPosition[];
   onAnchorMove: (key: string, x: number, y: number) => void;
 }) {
   const viewBox = metadata.viewBox;
@@ -122,27 +125,65 @@ export function ImportAnchorReviewCanvas({
           onLostPointerCapture={() => {
             draggingAnchorKeyRef.current = null;
           }}
-          overlayChildren={metadata.anchors.map((anchor) => (
-            <g key={anchor.key} pointerEvents="none">
-              <circle
-                data-import-anchor-marker={anchor.key}
-                cx={anchor.x}
-                cy={anchor.y}
-                r={markerRadius}
-                className="fill-teal-500 stroke-white"
-                strokeWidth={markerStrokeWidth}
-              />
-              <text
-                x={anchor.x + labelOffset}
-                y={anchor.y - labelOffset}
-                className="fill-teal-800 font-bold"
-                fontSize={labelFontSize}
-              >
-                {anchor.key}
-              </text>
-            </g>
-          ))}
+          overlayChildren={
+            <>
+              {componentPositions.flatMap((position) =>
+                position.components.map((component) => (
+                  <g
+                    key={`${position.key}:${component.key}`}
+                    pointerEvents="none"
+                    transform={`rotate(${component.box.rotationDeg} ${component.box.centerX} ${component.box.centerY})`}
+                  >
+                    <rect
+                      data-import-component-position={`${position.key}:${component.key}`}
+                      x={component.box.centerX - component.box.width / 2}
+                      y={component.box.centerY - component.box.height / 2}
+                      width={component.box.width}
+                      height={component.box.height}
+                      rx={svgUserUnitsForPixels(3, pixelsPerUserUnit)}
+                      className="fill-violet-500/10 stroke-violet-600"
+                      strokeDasharray={`${svgUserUnitsForPixels(5, pixelsPerUserUnit)} ${svgUserUnitsForPixels(3, pixelsPerUserUnit)}`}
+                      strokeWidth={markerStrokeWidth}
+                    />
+                    <text
+                      x={component.box.centerX - component.box.width / 2}
+                      y={component.box.centerY - component.box.height / 2 - labelOffset}
+                      className="fill-violet-800 font-bold"
+                      fontSize={labelFontSize}
+                    >
+                      {position.label} · {component.label}
+                    </text>
+                  </g>
+                ))
+              )}
+              {metadata.anchors.map((anchor) => (
+                <g key={anchor.key} pointerEvents="none">
+                  <circle
+                    data-import-anchor-marker={anchor.key}
+                    cx={anchor.x}
+                    cy={anchor.y}
+                    r={markerRadius}
+                    className="fill-teal-500 stroke-white"
+                    strokeWidth={markerStrokeWidth}
+                  />
+                  <text
+                    x={anchor.x + labelOffset}
+                    y={anchor.y - labelOffset}
+                    className="fill-teal-800 font-bold"
+                    fontSize={labelFontSize}
+                  >
+                    {anchor.key}
+                  </text>
+                </g>
+              ))}
+            </>
+          }
         />
+      </div>
+      <div className="border-t border-slate-200 px-4 py-3 text-xs text-slate-600">
+        {componentPositions.length === 0
+          ? "No component positions detected."
+          : `${componentPositions.length} component position${componentPositions.length === 1 ? "" : "s"} detected. Violet boxes are read-only and sourced from Figma.`}
       </div>
     </section>
   );

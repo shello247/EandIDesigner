@@ -395,7 +395,8 @@ export function reconcileDrawingAssets(
       symbolId: asset.symbolId,
       versionId: asset.versionId,
       metadata: asset.metadata,
-      terminalBlock: asset.terminalBlock
+      terminalBlock: asset.terminalBlock,
+      componentSelections: asset.componentSelections
     }))
   };
 }
