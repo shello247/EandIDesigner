@@ -200,11 +200,13 @@ function HotspotTooltip({
 export function SvgPreviewPanel({
   svg,
   title = "SVG preview",
-  metadata
+  metadata,
+  componentAlternativeNames = {}
 }: {
   svg: string;
   title?: string;
   metadata?: SymbolMetadata;
+  componentAlternativeNames?: Record<string, string>;
 }) {
   const [hoveredHotspotId, setHoveredHotspotId] = useState<string | null>(null);
   const [pinnedHotspotId, setPinnedHotspotId] = useState<string | null>(null);
@@ -245,6 +247,7 @@ export function SvgPreviewPanel({
       setHoveredHotspotId={setHoveredHotspotId}
       setPinnedHotspotId={setPinnedHotspotId}
       setFocusedHotspotId={setFocusedHotspotId}
+      componentAlternativeNames={componentAlternativeNames}
     />
   );
 }
@@ -260,7 +263,8 @@ function SvgPreviewPanelWithMetadata({
   focusedHotspotId,
   setHoveredHotspotId,
   setPinnedHotspotId,
-  setFocusedHotspotId
+  setFocusedHotspotId,
+  componentAlternativeNames
 }: {
   svg: string;
   title: string;
@@ -275,6 +279,7 @@ function SvgPreviewPanelWithMetadata({
     value: string | null | ((current: string | null) => string | null)
   ) => void;
   setFocusedHotspotId: (id: string | null) => void;
+  componentAlternativeNames: Record<string, string>;
 }) {
   const viewBox = metadata.viewBox;
   const { overlayRef, pixelsPerUserUnit, clientToViewBoxPoint } =
@@ -518,7 +523,10 @@ function SvgPreviewPanelWithMetadata({
                   metadata
                 )}
                 alternativeNames={
-                  activeComponentHotspot.component.allowedSymbolIds
+                  activeComponentHotspot.component.allowedSymbolIds.map(
+                    (symbolId) =>
+                      componentAlternativeNames[symbolId] ?? symbolId
+                  )
                 }
               />
             ) : null

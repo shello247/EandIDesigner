@@ -92,6 +92,12 @@ export function SymbolWorkspaceTabs({
             svg={latest.svg}
             title={`Version ${latest.versionNumber}`}
             metadata={latest.metadata}
+            componentAlternativeNames={Object.fromEntries(
+              componentAlternatives.map((alternative) => [
+                alternative.symbolId,
+                alternative.displayName
+              ])
+            )}
           />
           <div className="min-w-0 space-y-5">
             {isNetworkSymbol ? (
