@@ -15,6 +15,7 @@ import {
   renderPanelScheduleForPrint
 } from "@/features/drawing_panel_reports/api/public";
 import { buildSavedPanelDeliverables } from "@/features/drawing_panel_reports/data/queries";
+import { collectDrawingSymbolVersionIds } from "@/features/drawing_canvas/logic/services/drawing-symbol-version-references";
 
 export const dynamic = "force-dynamic";
 
@@ -23,14 +24,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const [drawing, symbols] = await Promise.all([
-    getDrawingDetail(id),
-    listSymbolsForDrawing()
-  ]);
+  const drawing = await getDrawingDetail(id);
 
   if (!drawing) {
     notFound();
   }
+  const symbols = await listSymbolsForDrawing(
+    collectDrawingSymbolVersionIds(drawing.model)
+  );
 
   const sheetCount = drawing.model.sheets.length;
   const sectionIndex = buildDrawingSectionIndex(drawing.model);
@@ -53,6 +54,7 @@ export async function GET(
       svg: renderDrawingToSvg({
         model: sheetModel,
         approvedSymbols: symbols,
+        assets: drawing.model.assets,
         showAnchors: false,
         showConnections: true,
         sheetNumber: index + 1,

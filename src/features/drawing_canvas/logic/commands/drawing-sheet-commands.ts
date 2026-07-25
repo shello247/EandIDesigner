@@ -8,6 +8,7 @@ import type {
 import { createDefaultDrawingSheet } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import {
+  preserveMappedDrawingAssets,
   resolveCopiedPlacementAsset,
   type AssetDuplicateMode,
   type CopiedAssetResolutionMap
@@ -507,14 +508,14 @@ export function duplicateSheet(
       : Math.max(0, Math.min(options.insertAt, model.sheets.length));
 
   return {
-    model: {
+    model: preserveMappedDrawingAssets({
       ...model,
       sheets: [
         ...model.sheets.slice(0, insertAt),
         duplicate,
         ...model.sheets.slice(insertAt)
       ]
-    },
+    }, assetMapping),
     sheetId: newSheetId
   };
 }

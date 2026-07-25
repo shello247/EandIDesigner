@@ -22,6 +22,8 @@ import {
   containsDetailedPanelDrawings,
   hasDetailedPanelMutation
 } from "../logic/services/drawing-detailed-panel-release";
+import { collectDrawingSymbolVersionIds } from "../logic/services/drawing-symbol-version-references";
+import { validateDrawingAssetComponentConfigurations } from "@/features/symbol_components/api/public";
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unexpected server error.";
@@ -80,6 +82,21 @@ export async function saveDrawingAction(
         error: "Detailed Panel Drawings are read-only in this deployment."
       };
     }
+    const symbols = await listSymbolsForDrawing(
+      collectDrawingSymbolVersionIds(input.model)
+    );
+    const componentIssue = validateDrawingAssetComponentConfigurations({
+      model: input.model,
+      symbols
+    }).find((issue) => issue.severity === "blocking");
+
+    if (componentIssue) {
+      return {
+        ok: false,
+        code: "validation",
+        error: componentIssue.message
+      };
+    }
     const drawing = await saveDrawing(input);
 
     if (!drawing) {
@@ -108,7 +125,20 @@ export async function approveDrawingAction(
         error: "Detailed Panel packages cannot be approved while the feature is read-only."
       };
     }
-    const symbols = await listSymbolsForDrawing();
+    const symbols = await listSymbolsForDrawing(
+      collectDrawingSymbolVersionIds(input.model)
+    );
+    const componentIssue = validateDrawingAssetComponentConfigurations({
+      model: input.model,
+      symbols
+    }).find((issue) => issue.severity === "blocking");
+    if (componentIssue) {
+      return {
+        ok: false,
+        code: "validation",
+        error: componentIssue.message
+      };
+    }
     const decision = buildDrawingApprovalDecision(input.model, symbols);
     const drawing = await saveDrawingReviewState(input, decision.status);
 

@@ -182,7 +182,9 @@ export function getSymbolsForLibraryContext(
   context: SymbolLibraryContext
 ): ApprovedDrawingSymbol[] {
   if (context === "wiring") {
-    const filtered = symbols.filter(symbolSupportsWiring);
+    const filtered = symbols.filter(
+      (symbol) => symbol.selectable !== false && symbolSupportsWiring(symbol)
+    );
     const hasBackplane = filtered.some(isGeneratedBackplaneSymbolReference);
     const hasWireTray = filtered.some(isGeneratedWireTraySymbolReference);
     const hasTerminalBlockGroup = filtered.some(

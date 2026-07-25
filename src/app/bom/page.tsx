@@ -13,7 +13,8 @@ import {
   listDrawingBomOptions
 } from "@/features/drawing_canvas/api/public";
 import type { DrawingModel } from "@/features/drawing_canvas/api/asset-contracts";
-import { listSymbolIdentitiesByIds } from "@/features/symbol_registry/api/public";
+import { listSymbolsForDrawing } from "@/features/symbol_registry/api/public";
+import { collectDrawingSymbolVersionIds } from "@/features/drawing_canvas/logic/services/drawing-symbol-version-references";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,15 @@ function getDrawingSymbolIds(model: DrawingModel): string[] {
 
   for (const asset of model.assets ?? []) {
     if (asset.symbolId) symbolIds.add(asset.symbolId);
+    const visit = (
+      selections: typeof asset.componentSelections
+    ) => {
+      for (const selection of selections ?? []) {
+        symbolIds.add(selection.symbolId);
+        visit(selection.children);
+      }
+    };
+    visit(asset.componentSelections);
   }
 
   for (const sheet of model.sheets) {
@@ -51,7 +61,7 @@ export default async function BomCreatorPage({
   if (drawing) {
     const symbolIds = getDrawingSymbolIds(drawing.model);
     const [symbols, templates] = await Promise.all([
-      listSymbolIdentitiesByIds(symbolIds),
+      listSymbolsForDrawing(collectDrawingSymbolVersionIds(drawing.model)),
       listBomGenerationTemplatesForSymbols(symbolIds)
     ]);
     const bom = generateDrawingBom({

@@ -1,5 +1,6 @@
 import type {
   DrawingAnnotation,
+  DrawingAssetRecord,
   DrawingPackageSheetKind,
   DrawingSectionTitlePage,
   DrawingSheetCanvasModel as DrawingModel
@@ -63,6 +64,8 @@ import {
   renderPanelConnectionPatternSvg,
   renderPanelPatternLegendSvg
 } from "./panel-connection-pattern-renderer";
+import { composeSelectedComponents } from "@/features/symbol_components/api/public";
+import { placementAssetId } from "./drawing-asset-identity";
 
 function escapeXml(value: string): string {
   return value
@@ -711,6 +714,59 @@ function extractInheritedRootAttributes(svg: string): string {
   return attributes.join(" ");
 }
 
+function renderSelectedComponentComposition(params: {
+  placement: DrawingModel["placements"][number];
+  parentSymbol: ApprovedDrawingSymbol;
+  assets: DrawingAssetRecord[];
+  symbols: ApprovedDrawingSymbol[];
+}): string {
+  if (!isLayoutHelperPlacement(params.placement)) {
+    return "";
+  }
+
+  const asset = params.assets.find(
+    (candidate) => candidate.id === placementAssetId(params.placement)
+  );
+  if (!asset?.componentSelections?.length) {
+    return "";
+  }
+
+  const composition = composeSelectedComponents({
+    parentPlacement: params.placement,
+    parentSymbol: params.parentSymbol,
+    selections: asset.componentSelections,
+    symbols: params.symbols
+  });
+
+  return composition.placements
+    .map((component) => {
+      const viewBox = component.symbol.metadata.viewBox;
+
+      return `
+        <g
+          data-component-path="${escapeXml(component.path.join(" / "))}"
+          data-component-symbol-id="${escapeXml(component.symbol.symbolId)}"
+          data-component-version-id="${escapeXml(component.symbol.versionId)}"
+          transform="translate(${component.centerX} ${component.centerY}) rotate(${component.rotationDeg})"
+          pointer-events="none"
+        >
+          <svg
+            x="${-component.widthMm / 2}"
+            y="${-component.heightMm / 2}"
+            width="${component.widthMm}"
+            height="${component.heightMm}"
+            viewBox="${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}"
+            preserveAspectRatio="xMidYMid meet"
+            ${extractInheritedRootAttributes(component.symbol.svg)}
+          >
+            ${stripSvgRoot(component.symbol.svg)}
+          </svg>
+        </g>
+      `;
+    })
+    .join("");
+}
+
 function wrapText(value: string, maxCharacters: number): string[] {
   return value
     .split(/\r?\n/)
@@ -1007,6 +1063,7 @@ function renderPanelExternalTerminationStubs(input: {
 export function renderDrawingToSvg(params: {
   model: DrawingModel;
   approvedSymbols: ApprovedDrawingSymbol[];
+  assets?: DrawingAssetRecord[];
   showAnchors?: boolean;
   showConnections?: boolean;
   sheetNumber?: number;
@@ -1024,6 +1081,7 @@ export function renderDrawingToSvg(params: {
   const {
     model,
     approvedSymbols,
+    assets = [],
     showAnchors = true,
     showConnections = true,
     sheetNumber = 1,
@@ -1216,6 +1274,12 @@ export function renderDrawingToSvg(params: {
                 : stripSvgRoot(symbol.svg)
             }
           </g>
+          ${renderSelectedComponentComposition({
+            placement: renderPlacement,
+            parentSymbol: symbol,
+            assets,
+            symbols: approvedSymbols
+          })}
           ${anchors}
         </g>
       `;

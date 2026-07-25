@@ -153,7 +153,8 @@ export function SvgImportStudio() {
           viewBox: preview.viewBox,
           anchors,
           terminals,
-          networkProfile
+          networkProfile,
+          componentPositions: preview.componentPositions
         });
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Metadata is invalid.");
@@ -232,6 +233,7 @@ export function SvgImportStudio() {
               <ImportAnchorReviewCanvas
                 svg={preview.svg}
                 metadata={metadataPreview}
+                componentPositions={preview.componentPositions}
                 onAnchorMove={(key, x, y) =>
                   setAnchors((current) =>
                     current.map((anchor) =>

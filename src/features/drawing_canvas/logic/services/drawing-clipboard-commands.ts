@@ -9,6 +9,7 @@ import type { ApprovedDrawingSymbol } from "../../types";
 import { isTerminalBlockModuleSymbol } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
 import { replaceSheetFromCanvasModel, toSheetCanvasModel } from "../commands/drawing-sheet-commands";
 import {
+  preserveMappedDrawingAssets,
   resolveCopiedPlacementAsset,
   type AssetDuplicateMode,
   type CopiedAssetResolutionMap
@@ -407,7 +408,10 @@ export function pasteClipboardToSheet(params: {
   };
 
   return {
-    model: replaceSheetFromCanvasModel(params.model, target.id, nextCanvasModel),
+    model: preserveMappedDrawingAssets(
+      replaceSheetFromCanvasModel(params.model, target.id, nextCanvasModel),
+      assetMapping
+    ),
     selection: {
       placementIds: placements.map((placement) => placement.id),
       annotationIds: annotations.map((annotation) => annotation.id)

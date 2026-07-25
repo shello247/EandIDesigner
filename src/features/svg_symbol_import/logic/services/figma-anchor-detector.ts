@@ -3,35 +3,23 @@ import {
   type SymbolAnchor,
   type ValidationIssue
 } from "@/features/symbol_registry/data/schema";
+import {
+  SVG_PRIMITIVE_PATTERN,
+  applySvgMatrix,
+  collectSvgGroups,
+  collectSvgPrimitives,
+  getSvgElementMatrix,
+  getSvgElementName,
+  getSvgNumberAttribute,
+  removeSvgSourceRanges,
+  type SvgGroupElement,
+  type SvgPrimitiveElement,
+  type SvgSourceRange
+} from "@/shared/svg/figma-svg-structure";
 
-type ParsedAttributes = Record<string, string>;
-
-type AffineMatrix = {
-  a: number;
-  b: number;
-  c: number;
-  d: number;
-  e: number;
-  f: number;
-};
-
-type SourceRange = {
-  start: number;
-  end: number;
-};
-
-type GroupElement = SourceRange & {
-  attributes: ParsedAttributes;
-  content: string;
-  contentStart: number;
-  parent?: GroupElement;
-};
-
-type MarkerElement = SourceRange & {
+type MarkerElement = SvgPrimitiveElement & {
   tagName: "circle" | "ellipse" | "rect";
-  attributes: ParsedAttributes;
-  group?: GroupElement;
-  removalRange?: SourceRange;
+  removalRange?: SvgSourceRange;
 };
 
 type ParsedMarkerName = {
@@ -46,46 +34,10 @@ export type FigmaAnchorExtraction = {
   issues: ValidationIssue[];
 };
 
-const PRIMITIVE_PATTERN =
-  /<(circle|ellipse|rect)\b([^>]*?)(?:\/\s*>|>\s*<\/\1\s*>)/gi;
-const GROUP_TOKEN_PATTERN = /<!--[\s\S]*?-->|<\/?g\b[^>]*>/gi;
-const ATTR_PATTERN = /([:\w-]+)\s*=\s*("([^"]*)"|'([^']*)')/g;
 const ELECTRICAL_ANCHOR_NAME_PATTERN =
   /(?:^|[\s_-])(terminal|anchor)[:_\-\s]+([A-Za-z0-9][A-Za-z0-9_.-]*)$/i;
 const NETWORK_PORT_NAME_PATTERN = /^(network_port|port)\s*:\s*(.*)$/i;
 const NETWORK_PORT_PREFIX_PATTERN = /^(network_port|port)\b/i;
-const IDENTITY_MATRIX: AffineMatrix = {
-  a: 1,
-  b: 0,
-  c: 0,
-  d: 1,
-  e: 0,
-  f: 0
-};
-
-function parseAttributes(source: string): ParsedAttributes {
-  const attributes: ParsedAttributes = {};
-
-  for (const match of source.matchAll(ATTR_PATTERN)) {
-    attributes[match[1]] = match[3] ?? match[4] ?? "";
-  }
-
-  return attributes;
-}
-
-function attributeName(attributes?: ParsedAttributes): string | undefined {
-  if (!attributes) {
-    return undefined;
-  }
-
-  return (
-    attributes["data-name"] ||
-    attributes["aria-label"] ||
-    attributes["inkscape:label"] ||
-    attributes.name ||
-    attributes.id
-  );
-}
 
 function parseMarkerName(value: string):
   | { marker: ParsedMarkerName }
@@ -146,98 +98,21 @@ function parseMarkerName(value: string):
   };
 }
 
-function numberAttribute(attributes: ParsedAttributes, key: string): number | null {
-  const value = Number(attributes[key]);
-  return Number.isFinite(value) ? value : null;
-}
-
-function parseTransform(attributes?: ParsedAttributes): AffineMatrix | null {
-  const transform = attributes?.transform?.trim();
-
-  if (!transform) {
-    return IDENTITY_MATRIX;
-  }
-
-  const match = transform.match(/^(translate|matrix)\(([^)]*)\)$/i);
-  if (!match) {
-    return null;
-  }
-
-  const values = match[2]
-    .trim()
-    .split(/[\s,]+/)
-    .filter(Boolean)
-    .map(Number);
-
-  if (values.some((value) => !Number.isFinite(value))) {
-    return null;
-  }
-
-  if (match[1].toLowerCase() === "translate") {
-    if (values.length < 1 || values.length > 2) {
-      return null;
-    }
-
-    return {
-      ...IDENTITY_MATRIX,
-      e: values[0],
-      f: values[1] ?? 0
-    };
-  }
-
-  if (values.length !== 6) {
-    return null;
-  }
-
-  return {
-    a: values[0],
-    b: values[1],
-    c: values[2],
-    d: values[3],
-    e: values[4],
-    f: values[5]
-  };
-}
-
-function multiplyMatrices(
-  parent: AffineMatrix,
-  child: AffineMatrix
-): AffineMatrix {
-  return {
-    a: parent.a * child.a + parent.c * child.b,
-    b: parent.b * child.a + parent.d * child.b,
-    c: parent.a * child.c + parent.c * child.d,
-    d: parent.b * child.c + parent.d * child.d,
-    e: parent.a * child.e + parent.c * child.f + parent.e,
-    f: parent.b * child.e + parent.d * child.f + parent.f
-  };
-}
-
-function applyMatrix(
-  point: { x: number; y: number },
-  matrix: AffineMatrix
-): { x: number; y: number } {
-  return {
-    x: matrix.a * point.x + matrix.c * point.y + matrix.e,
-    y: matrix.b * point.x + matrix.d * point.y + matrix.f
-  };
-}
-
 function markerCenter(marker: MarkerElement): { x: number; y: number } | null {
   let center: { x: number; y: number } | null = null;
 
   if (marker.tagName === "circle" || marker.tagName === "ellipse") {
-    const cx = numberAttribute(marker.attributes, "cx");
-    const cy = numberAttribute(marker.attributes, "cy");
+    const cx = getSvgNumberAttribute(marker.attributes, "cx");
+    const cy = getSvgNumberAttribute(marker.attributes, "cy");
 
     if (cx !== null && cy !== null) {
       center = { x: cx, y: cy };
     }
   } else {
-    const x = numberAttribute(marker.attributes, "x");
-    const y = numberAttribute(marker.attributes, "y");
-    const width = numberAttribute(marker.attributes, "width");
-    const height = numberAttribute(marker.attributes, "height");
+    const x = getSvgNumberAttribute(marker.attributes, "x");
+    const y = getSvgNumberAttribute(marker.attributes, "y");
+    const width = getSvgNumberAttribute(marker.attributes, "width");
+    const height = getSvgNumberAttribute(marker.attributes, "height");
 
     if (x !== null && y !== null && width !== null && height !== null) {
       center = { x: x + width / 2, y: y + height / 2 };
@@ -248,35 +123,12 @@ function markerCenter(marker: MarkerElement): { x: number; y: number } | null {
     return null;
   }
 
-  const elementMatrix = parseTransform(marker.attributes);
-  const groupAncestors: GroupElement[] = [];
-  let currentGroup = marker.group;
-
-  while (currentGroup) {
-    groupAncestors.push(currentGroup);
-    currentGroup = currentGroup.parent;
-  }
-
-  let groupMatrix = IDENTITY_MATRIX;
-
-  for (const group of groupAncestors.reverse()) {
-    const localMatrix = parseTransform(group.attributes);
-
-    if (!localMatrix) {
-      return null;
-    }
-
-    groupMatrix = multiplyMatrices(groupMatrix, localMatrix);
-  }
-
+  const elementMatrix = getSvgElementMatrix(marker);
   if (!elementMatrix) {
     return null;
   }
 
-  const transformed = applyMatrix(
-    center,
-    multiplyMatrices(groupMatrix, elementMatrix)
-  );
+  const transformed = applySvgMatrix(center, elementMatrix);
 
   return {
     x: Number(transformed.x.toFixed(2)),
@@ -284,77 +136,8 @@ function markerCenter(marker: MarkerElement): { x: number; y: number } | null {
   };
 }
 
-function collectGroups(svg: string): GroupElement[] {
-  const groups: GroupElement[] = [];
-  const stack: GroupElement[] = [];
-
-  for (const match of svg.matchAll(GROUP_TOKEN_PATTERN)) {
-    const token = match[0];
-    const start = match.index;
-
-    if (token.startsWith("<!--")) {
-      continue;
-    }
-
-    if (/^<\/g\b/i.test(token)) {
-      const group = stack.pop();
-
-      if (!group) {
-        continue;
-      }
-
-      group.content = svg.slice(group.contentStart, start);
-      group.end = start + token.length;
-      groups.push(group);
-      continue;
-    }
-
-    const group: GroupElement = {
-      start,
-      end: start + token.length,
-      attributes: parseAttributes(token),
-      content: "",
-      contentStart: start + token.length,
-      parent: stack.at(-1)
-    };
-
-    if (/\/\s*>$/.test(token)) {
-      groups.push(group);
-    } else {
-      stack.push(group);
-    }
-  }
-
-  return groups;
-}
-
-function collectPrimitives(svg: string, groups: GroupElement[]): MarkerElement[] {
-  return Array.from(svg.matchAll(PRIMITIVE_PATTERN), (match) => {
-    const start = match.index;
-    const end = start + match[0].length;
-    const containingGroups = groups.filter(
-      (group) => start >= group.contentStart && end <= group.end
-    );
-    const group = containingGroups.reduce<GroupElement | undefined>(
-      (smallest, candidate) =>
-        !smallest || candidate.end - candidate.start < smallest.end - smallest.start
-          ? candidate
-          : smallest,
-      undefined
-    );
-
-    return {
-      start,
-      end,
-      tagName: match[1].toLowerCase() as MarkerElement["tagName"],
-      attributes: parseAttributes(match[2]),
-      group
-    };
-  });
-}
-
 function groupMarkerCandidate(
-  group: GroupElement,
+  group: SvgGroupElement,
   primitives: MarkerElement[],
   strictNetworkGroup: boolean
 ): { marker?: MarkerElement; error?: string } {
@@ -368,7 +151,7 @@ function groupMarkerCandidate(
   }
 
   const remainingContent = group.content
-    .replace(PRIMITIVE_PATTERN, "")
+    .replace(SVG_PRIMITIVE_PATTERN, "")
     .replace(/<!--[\s\S]*?-->/g, "")
     .trim();
 
@@ -388,30 +171,21 @@ function groupMarkerCandidate(
   };
 }
 
-function removeRanges(svg: string, ranges: SourceRange[]): string {
-  const ordered = [...ranges].sort((left, right) => right.start - left.start);
-
-  return ordered.reduce(
-    (output, range) => output.slice(0, range.start) + output.slice(range.end),
-    svg
-  );
-}
-
 export function extractFigmaAnchors(svg: string): FigmaAnchorExtraction {
   const anchors: SymbolAnchor[] = [];
   const issues: ValidationIssue[] = [];
-  const removals: SourceRange[] = [];
+  const removals: SvgSourceRange[] = [];
   const seenKeys = new Map<string, SymbolAnchor["kind"]>();
   const consumedPrimitiveStarts = new Set<number>();
-  const groups = collectGroups(svg);
-  const primitives = collectPrimitives(svg, groups);
+  const groups = collectSvgGroups(svg);
+  const primitives = collectSvgPrimitives(svg, groups);
   const candidates: Array<{
     marker: MarkerElement;
     parsedName: ParsedMarkerName;
   }> = [];
 
   for (const group of groups) {
-    const name = attributeName(group.attributes);
+    const name = getSvgElementName(group.attributes);
     if (!name) {
       continue;
     }
@@ -460,7 +234,7 @@ export function extractFigmaAnchors(svg: string): FigmaAnchorExtraction {
       continue;
     }
 
-    const name = attributeName(primitive.attributes);
+    const name = getSvgElementName(primitive.attributes);
     if (!name) {
       continue;
     }
@@ -537,7 +311,7 @@ export function extractFigmaAnchors(svg: string): FigmaAnchorExtraction {
 
   return {
     anchors,
-    productionSvg: removeRanges(svg, removals),
+    productionSvg: removeSvgSourceRanges(svg, removals),
     issues
   };
 }

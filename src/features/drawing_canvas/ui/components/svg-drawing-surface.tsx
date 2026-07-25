@@ -409,6 +409,7 @@ export function SvgDrawingSurface({
           renderDrawingToSvg({
             model,
             approvedSymbols: symbols,
+            assets: drawingModel.assets,
             showAnchors: false,
             showConnections: false,
             sheetNumber: activeSheetNumber,
@@ -427,7 +428,7 @@ export function SvgDrawingSurface({
         { sheetId: activeSheet?.id ?? "missing" }
       )
     };
-  }, [activeSection?.number, activeSheet, activeSheetNumber, drawingTitle, model, panelConnectionPatterns, panelExternalTerminations, sheetCount, symbols]);
+  }, [activeSection?.number, activeSheet, activeSheetNumber, drawingModel.assets, drawingTitle, model, panelConnectionPatterns, panelExternalTerminations, sheetCount, symbols]);
   const activeGroupSheetIds =
     activeSectionMembership?.kind === "section"
       ? activeSectionMembership.isTitlePage

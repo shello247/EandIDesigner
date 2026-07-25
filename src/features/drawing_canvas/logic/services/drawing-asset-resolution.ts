@@ -42,6 +42,38 @@ export type CopiedAssetResolutionMap = Map<
   }
 >;
 
+export function preserveMappedDrawingAssets(
+  model: DrawingModel,
+  assetMapping: CopiedAssetResolutionMap
+): DrawingModel {
+  const assets = [...(model.assets ?? [])];
+  const existingIds = new Set(assets.map((asset) => asset.id));
+
+  for (const [sourceAssetId, target] of assetMapping) {
+    if (existingIds.has(target.assetId)) {
+      continue;
+    }
+
+    const source = assets.find((asset) => asset.id === sourceAssetId);
+
+    if (!source) {
+      continue;
+    }
+
+    assets.push({
+      ...source,
+      id: target.assetId,
+      tag: target.tag
+    });
+    existingIds.add(target.assetId);
+  }
+
+  return {
+    ...model,
+    assets
+  };
+}
+
 export type CompatibleAssetRelinkOptions = {
   currentAsset?: DrawingAssetCatalogItem;
   compatibleAssets: DrawingAssetCatalogItem[];

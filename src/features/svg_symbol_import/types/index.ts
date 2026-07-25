@@ -6,6 +6,7 @@ import type {
 } from "@/features/symbol_registry/data/schema";
 import type { SvgViewBox } from "@/shared/svg/svg-inspector";
 import type { SvgImportNetworkPortDraft } from "../data/schema";
+import type { SymbolComponentPosition } from "@/features/symbol_components/api/public";
 
 export type SvgImportSourceAsset = {
   fileName: string;
@@ -20,6 +21,7 @@ export type SvgImportPreview = {
   anchors: SymbolAnchor[];
   terminals: SymbolTerminal[];
   networkPorts: SvgImportNetworkPortDraft[];
+  componentPositions: SymbolComponentPosition[];
   issues: ValidationIssue[];
   sourceAsset: SvgImportSourceAsset;
 };

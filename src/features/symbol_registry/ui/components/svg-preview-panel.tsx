@@ -21,6 +21,12 @@ import type {
   SymbolNetworkPort,
   SymbolTerminal
 } from "../../data/schema";
+import {
+  ComponentPositionOverlay,
+  ComponentPositionTooltip,
+  findComponentPositionHotspot,
+  getComponentPositionHotspots
+} from "@/features/symbol_components/ui/components/component-position-overlay";
 
 type SymbolHotspot =
   | {
@@ -78,7 +84,10 @@ function getSymbolHotspots(metadata?: SymbolMetadata): SymbolHotspot[] {
   });
 }
 
-function getTooltipPosition(anchor: SymbolAnchor, metadata: SymbolMetadata) {
+function getTooltipPosition(
+  anchor: { x: number; y: number },
+  metadata: SymbolMetadata
+) {
   const left =
     ((anchor.x - metadata.viewBox.x) / metadata.viewBox.width) * 100;
   const top =
@@ -201,6 +210,10 @@ export function SvgPreviewPanel({
   const [pinnedHotspotId, setPinnedHotspotId] = useState<string | null>(null);
   const [focusedHotspotId, setFocusedHotspotId] = useState<string | null>(null);
   const hotspots = useMemo(() => getSymbolHotspots(metadata), [metadata]);
+  const componentHotspots = useMemo(
+    () => getComponentPositionHotspots(metadata?.componentPositions ?? []),
+    [metadata]
+  );
   const viewBox = metadata?.viewBox;
 
   if (!metadata || !viewBox || !isUsableSvgViewBox(viewBox)) {
@@ -225,6 +238,7 @@ export function SvgPreviewPanel({
       title={title}
       metadata={metadata}
       hotspots={hotspots}
+      componentHotspots={componentHotspots}
       hoveredHotspotId={hoveredHotspotId}
       pinnedHotspotId={pinnedHotspotId}
       focusedHotspotId={focusedHotspotId}
@@ -240,6 +254,7 @@ function SvgPreviewPanelWithMetadata({
   title,
   metadata,
   hotspots,
+  componentHotspots,
   hoveredHotspotId,
   pinnedHotspotId,
   focusedHotspotId,
@@ -251,6 +266,7 @@ function SvgPreviewPanelWithMetadata({
   title: string;
   metadata: SymbolMetadata;
   hotspots: SymbolHotspot[];
+  componentHotspots: ReturnType<typeof getComponentPositionHotspots>;
   hoveredHotspotId: string | null;
   pinnedHotspotId: string | null;
   focusedHotspotId: string | null;
@@ -290,11 +306,31 @@ function SvgPreviewPanelWithMetadata({
     },
     [clientToViewBoxPoint, hotspotPoints, pixelsPerUserUnit]
   );
+  const findInteractiveHotspot = useCallback(
+    (clientX: number, clientY: number) => {
+      const terminalOrPort = findNearestHotspot(clientX, clientY);
+      if (terminalOrPort) {
+        return { id: terminalOrPort.id, symbolHotspot: terminalOrPort };
+      }
+
+      const pointer = clientToViewBoxPoint(clientX, clientY);
+      const component = pointer
+        ? findComponentPositionHotspot(componentHotspots, pointer)
+        : null;
+
+      return component
+        ? { id: component.id, componentHotspot: component }
+        : null;
+    },
+    [clientToViewBoxPoint, componentHotspots, findNearestHotspot]
+  );
   const activeMarkerId =
     focusedHotspotId ?? hoveredHotspotId ?? pinnedHotspotId;
   const tooltipHotspotId = hoveredHotspotId ?? pinnedHotspotId;
   const activeHotspot =
     hotspots.find((hotspot) => hotspot.id === tooltipHotspotId) ?? null;
+  const activeComponentHotspot =
+    componentHotspots.find((hotspot) => hotspot.id === tooltipHotspotId) ?? null;
   const hotspotRadius = svgUserUnitsForPixels(
     SVG_MARKER_DIAMETER_PX / 2,
     pixelsPerUserUnit
@@ -311,6 +347,9 @@ function SvgPreviewPanelWithMetadata({
     SVG_MARKER_OUTER_GLOW_DIAMETER_PX / 2,
     pixelsPerUserUnit
   );
+  const componentCornerRadius = svgUserUnitsForPixels(3, pixelsPerUserUnit);
+  const componentDashLength = svgUserUnitsForPixels(5, pixelsPerUserUnit);
+  const componentDashGap = svgUserUnitsForPixels(3, pixelsPerUserUnit);
 
   const togglePinnedHotspot = (hotspotId: string) => {
     setPinnedHotspotId((current) =>
@@ -345,17 +384,27 @@ function SvgPreviewPanelWithMetadata({
           overlayRef={overlayRef}
           overlayLabel={
             metadata.category === "network_device"
-              ? "Network port data overlay"
-              : "Terminal data overlay"
+              ? "Network port and component data overlay"
+              : "Terminal and component data overlay"
           }
-          overlayClassName={hotspots.length > 0 ? "cursor-help" : ""}
+          overlayClassName={
+            hotspots.length > 0 || componentHotspots.length > 0
+              ? "cursor-help"
+              : ""
+          }
           onPointerMove={(event) => {
-            const nearest = findNearestHotspot(event.clientX, event.clientY);
+            const nearest = findInteractiveHotspot(
+              event.clientX,
+              event.clientY
+            );
             setHoveredHotspotId(nearest?.id ?? null);
           }}
           onPointerLeave={() => setHoveredHotspotId(null)}
           onClick={(event) => {
-            const nearest = findNearestHotspot(event.clientX, event.clientY);
+            const nearest = findInteractiveHotspot(
+              event.clientX,
+              event.clientY
+            );
             setHoveredHotspotId(nearest?.id ?? null);
             if (nearest) {
               togglePinnedHotspot(nearest.id);
@@ -369,8 +418,21 @@ function SvgPreviewPanelWithMetadata({
             }
           }}
           overlayChildren={
-            hotspots.length > 0 ? (
+            hotspots.length > 0 || componentHotspots.length > 0 ? (
               <>
+                <ComponentPositionOverlay
+                  hotspots={componentHotspots}
+                  activeId={activeMarkerId}
+                  pinnedId={pinnedHotspotId}
+                  strokeWidth={markerStrokeWidth}
+                  cornerRadius={componentCornerRadius}
+                  dashLength={componentDashLength}
+                  dashGap={componentDashGap}
+                  onFocus={setFocusedHotspotId}
+                  onBlur={() => setFocusedHotspotId(null)}
+                  onToggle={togglePinnedHotspot}
+                  onEscape={() => setPinnedHotspotId(null)}
+                />
                 {hotspots.map((hotspot) => {
                   const isActive = hotspot.id === activeMarkerId;
                   const key = hotspotKey(hotspot);
@@ -445,6 +507,20 @@ function SvgPreviewPanelWithMetadata({
           htmlOverlay={
             activeHotspot ? (
               <HotspotTooltip hotspot={activeHotspot} metadata={metadata} />
+            ) : activeComponentHotspot ? (
+              <ComponentPositionTooltip
+                hotspot={activeComponentHotspot}
+                style={getTooltipPosition(
+                  {
+                    x: activeComponentHotspot.component.box.centerX,
+                    y: activeComponentHotspot.component.box.centerY
+                  },
+                  metadata
+                )}
+                alternativeNames={
+                  activeComponentHotspot.component.allowedSymbolIds
+                }
+              />
             ) : null
           }
         />

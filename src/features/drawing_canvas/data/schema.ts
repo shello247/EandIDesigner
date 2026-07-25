@@ -4,6 +4,7 @@ import {
   panelDrawingContextSchema,
   panelWiringPackageDataSchema
 } from "@/features/drawing_panel_wiring/api/contracts";
+import { drawingComponentSelectionsSchema } from "@/features/symbol_components/api/public";
 
 export const drawingStatusSchema = z.enum([
   "draft",
@@ -46,6 +47,7 @@ export const drawingAssetRecordSchema = z.object({
   description: z.string().trim().max(400).optional(),
   symbolId: z.string().trim().min(1).optional(),
   versionId: z.string().trim().min(1).optional(),
+  componentSelections: drawingComponentSelectionsSchema.optional(),
   metadata: z
     .object({
       generatedKind: z.string().trim().max(80).optional(),

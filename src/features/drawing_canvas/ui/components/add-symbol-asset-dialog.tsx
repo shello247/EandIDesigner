@@ -17,12 +17,19 @@ import {
   getPanelEnclosureTitle,
   getVisibleSheetContainers
 } from "../../logic/services/drawing-asset-containment";
+import type { DrawingComponentSelection } from "@/features/symbol_components/api/public";
+import {
+  resolveAutomaticComponentSelections,
+  validateDrawingComponentSelections
+} from "@/features/symbol_components/api/public";
+import { AssetComponentConfigurator } from "@/features/symbol_components/ui/components/asset-component-configurator";
 
 export type AddSymbolAssetSubmission = {
   symbol: ApprovedDrawingSymbol;
   assetId: string;
   tag: string;
   containerAssetId?: string;
+  componentSelections?: DrawingComponentSelection[];
 };
 
 type AddMode = "create" | "reference";
@@ -74,12 +81,30 @@ export function AddSymbolAssetDialog({
   );
   const [containerAssetId, setContainerAssetId] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [componentSelections, setComponentSelections] = useState<
+    DrawingComponentSelection[]
+  >(
+    () =>
+      resolveAutomaticComponentSelections({
+        parent: symbol,
+        symbols
+      }).selections
+  );
   const selectedAsset =
     existingAssets.find((asset) => asset.assetId === selectedAssetId) ??
     existingAssets[0];
   const displayTag = mode === "reference" ? selectedAsset?.tag ?? "" : tag;
   const decrementedTag = stepEngineeringTag(tag, -1);
   const incrementedTag = stepEngineeringTag(tag, 1);
+  const componentIssues = useMemo(
+    () =>
+      validateDrawingComponentSelections({
+        parent: symbol,
+        selections: componentSelections,
+        symbols
+      }),
+    [componentSelections, symbol, symbols]
+  );
 
   const placeSymbol = () => {
     if (mode === "reference") {
@@ -115,7 +140,11 @@ export function AddSymbolAssetDialog({
       symbol,
       assetId: createDrawingAssetId(),
       tag: normalizedTag,
-      containerAssetId: containerAssetId || undefined
+      containerAssetId: containerAssetId || undefined,
+      componentSelections:
+        symbol.metadata.componentPositions?.length
+          ? componentSelections
+          : undefined
     });
   };
 
@@ -312,6 +341,25 @@ export function AddSymbolAssetDialog({
             </div>
           ) : null}
 
+          {mode === "create" && symbol.metadata.componentPositions?.length ? (
+            <div className="space-y-2">
+              <AssetComponentConfigurator
+                parent={symbol}
+                symbols={symbols}
+                value={componentSelections}
+                onChange={(next) => {
+                  setComponentSelections(next);
+                  setError(null);
+                }}
+              />
+              {componentIssues[0] ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+                  {componentIssues[0].message}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           {error ? (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
               {error}
@@ -326,6 +374,10 @@ export function AddSymbolAssetDialog({
           <button
             type="button"
             className="icon-button icon-button-primary"
+            disabled={
+              mode === "create" &&
+              componentIssues.some((issue) => issue.severity === "blocking")
+            }
             onClick={placeSymbol}
           >
             <PackagePlus aria-hidden="true" size={14} />

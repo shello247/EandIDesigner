@@ -95,6 +95,9 @@ import {
   type PanelWireAttributes
 } from "@/features/drawing_panel_wiring/api/public";
 import { isGeneratedPanelPatternLegendPlacement } from "../../logic/services/drawing-panel-reference-symbols";
+import type { DrawingComponentSelection } from "@/features/symbol_components/api/public";
+import { validateDrawingComponentSelections } from "@/features/symbol_components/api/public";
+import { AssetComponentConfigurator } from "@/features/symbol_components/ui/components/asset-component-configurator";
 
 function placementAnchorOptions(
   placementId: string,
@@ -141,6 +144,7 @@ export function PlacementPropertiesPanel({
   onPanelTitleChange,
   onTerminalBlockChange,
   onPlacementContainerChange,
+  onAssetComponentSelectionsChange,
   selectedConnectionId,
   selectedAnnotationId,
   onConnectionSelect,
@@ -199,6 +203,10 @@ export function PlacementPropertiesPanel({
   onPlacementContainerChange: (
     placementId: string,
     containerAssetId: string | undefined
+  ) => void;
+  onAssetComponentSelectionsChange: (
+    assetId: string,
+    selections: DrawingComponentSelection[]
   ) => void;
   selectedConnectionId?: string;
   selectedAnnotationId?: string;
@@ -303,6 +311,13 @@ export function PlacementPropertiesPanel({
         onPlacementChange={onPlacementChange}
       />
 
+      <SelectedAssetComponentsEditor
+        placement={selectedPlacement}
+        packageModel={packageModel}
+        symbols={symbols}
+        onChange={onAssetComponentSelectionsChange}
+      />
+
       <SelectedTerminalBlockEditor
         placement={selectedPlacement}
         packageModel={packageModel}
@@ -355,6 +370,106 @@ export function PlacementPropertiesPanel({
         onConnectionRouteReset={onConnectionRouteReset}
       /> : null}
     </div>
+  );
+}
+
+function SelectedAssetComponentsEditor({
+  placement,
+  packageModel,
+  symbols,
+  onChange
+}: {
+  placement?: DrawingModel["placements"][number];
+  packageModel: DrawingPackageModel;
+  symbols: ApprovedDrawingSymbol[];
+  onChange: (assetId: string, selections: DrawingComponentSelection[]) => void;
+}) {
+  if (!placement) {
+    return null;
+  }
+
+  const assetId = placementAssetId(placement);
+  const asset = packageModel.assets.find((candidate) => candidate.id === assetId);
+  const symbol = symbols.find(
+    (candidate) =>
+      candidate.symbolId === placement.symbolId &&
+      candidate.versionId === placement.versionId
+  );
+
+  if (!asset || !symbol?.metadata.componentPositions?.length) {
+    return null;
+  }
+
+  const selections = asset.componentSelections ?? [];
+  return (
+    <AssetComponentsDraftEditor
+      key={`${assetId}:${JSON.stringify(selections)}`}
+      assetId={assetId}
+      tag={asset.tag}
+      symbol={symbol}
+      symbols={symbols}
+      initialSelections={selections}
+      onChange={onChange}
+    />
+  );
+}
+
+function AssetComponentsDraftEditor({
+  assetId,
+  tag,
+  symbol,
+  symbols,
+  initialSelections,
+  onChange
+}: {
+  assetId: string;
+  tag: string;
+  symbol: ApprovedDrawingSymbol;
+  symbols: ApprovedDrawingSymbol[];
+  initialSelections: DrawingComponentSelection[];
+  onChange: (assetId: string, selections: DrawingComponentSelection[]) => void;
+}) {
+  const [draft, setDraft] = useState(initialSelections);
+  const issues = useMemo(
+    () =>
+      validateDrawingComponentSelections({
+        parent: symbol,
+        selections: draft,
+        symbols
+      }),
+    [draft, symbol, symbols]
+  );
+
+  return (
+    <section className="tool-panel overflow-hidden">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <h2 className="text-sm font-bold">Components</h2>
+        <p className="mt-0.5 text-xs text-slate-500">
+          Installed on {tag}. Changes apply to every occurrence of this asset.
+        </p>
+      </div>
+      <div className="space-y-3 p-4">
+        <AssetComponentConfigurator
+          parent={symbol}
+          symbols={symbols}
+          value={draft}
+          onChange={setDraft}
+        />
+        {issues[0] ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+            {issues[0].message}
+          </div>
+        ) : null}
+        <button
+          type="button"
+          className="tool-button"
+          disabled={issues.some((issue) => issue.severity === "blocking")}
+          onClick={() => onChange(assetId, draft)}
+        >
+          Apply component configuration
+        </button>
+      </div>
+    </section>
   );
 }
 

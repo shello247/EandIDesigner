@@ -5,12 +5,15 @@ import type { SymbolDetail } from "../../types";
 import { ApprovalBar } from "./approval-bar";
 import { SymbolStatusBadge } from "./symbol-status-badge";
 import { SymbolWorkspaceTabs } from "./symbol-workspace-tabs";
+import type { ComponentAlternativeCandidate } from "@/features/symbol_components/api/public";
 
 export function SymbolDetailPanel({
   symbol,
+  componentAlternatives,
   bomPanel
 }: {
   symbol: SymbolDetail;
+  componentAlternatives: ComponentAlternativeCandidate[];
   bomPanel?: ReactNode;
 }) {
   const latest = symbol.latestVersion;
@@ -54,6 +57,7 @@ export function SymbolDetailPanel({
           <SymbolWorkspaceTabs
             symbol={symbol}
             latest={latest}
+            componentAlternatives={componentAlternatives}
             bomPanel={bomPanel}
           />
         </>

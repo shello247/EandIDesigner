@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { parseDrawingModelJson } from "@/features/drawing_canvas/data/schema";
+import { mergeImportedComponentConfiguration } from "@/features/symbol_components/api/public";
+import { validateRegisteredSymbolComponents } from "@/features/symbol_components/api/server";
 import {
   createEngineerNoteInputSchema,
   parseMetadataJson,
@@ -25,7 +27,6 @@ import {
   assertSymbolVersionEditable,
   isSymbolVersionEditable
 } from "../logic/services/symbol-version-lifecycle";
-import { canApproveSymbolVersion } from "../logic/use_cases/approve-symbol-version";
 import { validateSymbol } from "../logic/use_cases/validate-symbol";
 import { getSymbolDetail, getSymbolVersionForExport } from "./queries";
 
@@ -96,10 +97,62 @@ function validationErrorMessage(validation: ReturnType<typeof validateSymbol>) {
   return blockingIssue?.message ?? "Symbol metadata is invalid.";
 }
 
+async function validateSymbolWithRegisteredComponents(
+  symbolId: string,
+  svg: string,
+  metadataInput: unknown
+) {
+  const validation = validateSymbol(svg, metadataInput);
+
+  if (!validation.metadata) {
+    return validation;
+  }
+
+  const componentIssues = await validateRegisteredSymbolComponents(
+    symbolId,
+    validation.metadata
+  );
+  const issues = [
+    ...validation.issues.filter(
+      (issue) => !issue.code.startsWith("COMPONENT_")
+    ),
+    ...componentIssues
+  ];
+
+  return {
+    ...validation,
+    issues,
+    blockingIssueCount: issues.filter(
+      (issue) => issue.severity === "blocking"
+    ).length
+  };
+}
+
 export async function saveSymbolDraft(input: SaveSymbolDraftInput) {
   const parsed = saveSymbolDraftInputSchema.parse(input);
-  const validation = validateSymbol(parsed.svg, parsed.metadata);
-  const metadata = validation.metadata ?? parsed.metadata;
+  const normalizedInputSymbolKey = normalizeSymbolKey(parsed.metadata.symbolKey);
+  const previousSymbol = await prisma.symbol.findUnique({
+    where: { symbolKey: normalizedInputSymbolKey },
+    select: {
+      versions: {
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+        select: { metadataJson: true }
+      }
+    }
+  });
+  const previousMetadata = previousSymbol?.versions[0]
+    ? parseMetadataJson(previousSymbol.versions[0].metadataJson)
+    : undefined;
+  const metadataWithPreservedComponents = {
+    ...parsed.metadata,
+    componentPositions: mergeImportedComponentConfiguration(
+      parsed.metadata.componentPositions,
+      previousMetadata?.componentPositions
+    )
+  };
+  const validation = validateSymbol(parsed.svg, metadataWithPreservedComponents);
+  const metadata = validation.metadata ?? metadataWithPreservedComponents;
   const symbolKey = normalizeSymbolKey(metadata.symbolKey);
   const metadataJson = stringifyMetadata({ ...metadata, symbolKey });
 
@@ -149,10 +202,15 @@ export async function saveSymbolDraft(input: SaveSymbolDraftInput) {
     });
   }
 
+  const completeValidation = await validateSymbolWithRegisteredComponents(
+    symbol.id,
+    validation.sanitizedSvg,
+    metadata
+  );
   await replaceValidationIssues({
     symbolId: symbol.id,
     versionId: version.id,
-    issues: validation.issues
+    issues: completeValidation.issues
   });
 
   return getSymbolDetail(symbol.id);
@@ -169,7 +227,11 @@ export async function validateSymbolVersion(versionId: string) {
   }
 
   const metadataInput: unknown = JSON.parse(version.metadataJson);
-  const validation = validateSymbol(version.svg, metadataInput);
+  const validation = await validateSymbolWithRegisteredComponents(
+    version.symbolId,
+    version.svg,
+    metadataInput
+  );
 
   if (
     isSymbolVersionEditable(symbolStatusSchema.parse(version.status)) &&
@@ -218,7 +280,11 @@ export async function updateSymbolTerminalMap(input: TerminalMapUpdateInput) {
       function: terminal.function?.trim() || undefined
     }))
   };
-  const validation = validateSymbol(version.svg, updatedMetadata);
+  const validation = await validateSymbolWithRegisteredComponents(
+    version.symbolId,
+    version.svg,
+    updatedMetadata
+  );
   const nextSymbolStatus =
     version.symbol.status === "archived" ? "archived" : "needs_review";
 
@@ -272,7 +338,11 @@ export async function updateSymbolLayoutMetadata(
     resizable: parsed.resizable,
     terminalBlockModule: parsed.terminalBlockModule
   };
-  const validation = validateSymbol(version.svg, updatedMetadata);
+  const validation = await validateSymbolWithRegisteredComponents(
+    version.symbolId,
+    version.svg,
+    updatedMetadata
+  );
   const nextVersionStatus =
     version.status === "approved" ? "needs_review" : version.status;
   const nextSymbolStatus =
@@ -320,7 +390,11 @@ export async function updateSymbolPanelWiringCapability(
     ...metadata,
     panelWiring: parsed.panelWiring
   };
-  const validation = validateSymbol(version.svg, updatedMetadata);
+  const validation = await validateSymbolWithRegisteredComponents(
+    version.symbolId,
+    version.svg,
+    updatedMetadata
+  );
   const nextSymbolStatus =
     version.symbol.status === "archived" ? "archived" : "needs_review";
 
@@ -379,7 +453,11 @@ export async function updateSymbolNetworkProfile(
     model,
     networkProfile: parsed.networkProfile
   };
-  const validation = validateSymbol(version.svg, updatedMetadata);
+  const validation = await validateSymbolWithRegisteredComponents(
+    version.symbolId,
+    version.svg,
+    updatedMetadata
+  );
 
   if (!validation.metadata) {
     throw new Error(validationErrorMessage(validation));
@@ -465,8 +543,11 @@ export async function approveSymbolVersion(versionId: string) {
   assertStoredVersionEditable(version);
 
   const metadataInput: unknown = JSON.parse(version.metadataJson);
-  const approval = canApproveSymbolVersion(version.svg, metadataInput);
-  const validation = approval.result;
+  const validation = await validateSymbolWithRegisteredComponents(
+    version.symbolId,
+    version.svg,
+    metadataInput
+  );
 
   await replaceValidationIssues({
     symbolId: version.symbolId,
@@ -474,7 +555,7 @@ export async function approveSymbolVersion(versionId: string) {
     issues: validation.issues
   });
 
-  if (!approval.ok || !validation.metadata) {
+  if (validation.blockingIssueCount > 0 || !validation.metadata) {
     throw new Error("Blocking validation issues must be resolved before approval.");
   }
 
@@ -519,6 +600,17 @@ function formatDrawingReferences(titles: string[]): string {
     : visibleTitles;
 }
 
+function selectionReferencesSymbol(
+  selections: ReturnType<typeof parseDrawingModelJson>["assets"][number]["componentSelections"],
+  symbolId: string
+): boolean {
+  return (selections ?? []).some(
+    (selection) =>
+      selection.symbolId === symbolId ||
+      selectionReferencesSymbol(selection.children, symbolId)
+  );
+}
+
 export async function deleteSymbol(symbolId: string) {
   const symbol = await prisma.symbol.findUnique({
     where: { id: symbolId },
@@ -540,9 +632,13 @@ export async function deleteSymbol(symbolId: string) {
   });
   const referencedBy = drawings.flatMap((drawing) => {
     const model = parseDrawingModelJson(drawing.modelJson);
-    const isReferenced = model.sheets.some((sheet) =>
-      sheet.placements.some((placement) => placement.symbolId === symbolId)
-    );
+    const isReferenced =
+      model.sheets.some((sheet) =>
+        sheet.placements.some((placement) => placement.symbolId === symbolId)
+      ) ||
+      model.assets.some((asset) =>
+        selectionReferencesSymbol(asset.componentSelections, symbolId)
+      );
 
     return isReferenced ? [drawing.title] : [];
   });
@@ -550,6 +646,38 @@ export async function deleteSymbol(symbolId: string) {
   if (referencedBy.length > 0) {
     throw new Error(
       `Cannot delete "${symbol.displayName}" because it is used in ${referencedBy.length} drawing${referencedBy.length === 1 ? "" : "s"}: ${formatDrawingReferences(referencedBy)}. Remove those placements first.`
+    );
+  }
+
+  const parentVersions = await prisma.symbolVersion.findMany({
+    where: {
+      symbolId: { not: symbolId }
+    },
+    select: {
+      metadataJson: true,
+      symbol: {
+        select: { displayName: true }
+      }
+    }
+  });
+  const referencedByParents = [
+    ...new Set(
+      parentVersions.flatMap((version) => {
+        const metadata = parseMetadataJson(version.metadataJson);
+        const isReferenced = (metadata.componentPositions ?? []).some(
+          (position) =>
+            position.components.some((component) =>
+              component.allowedSymbolIds.includes(symbolId)
+            )
+        );
+        return isReferenced ? [version.symbol.displayName] : [];
+      })
+    )
+  ];
+
+  if (referencedByParents.length > 0) {
+    throw new Error(
+      `Cannot delete "${symbol.displayName}" because it is an approved component alternative for ${referencedByParents.length} parent symbol${referencedByParents.length === 1 ? "" : "s"}: ${formatDrawingReferences(referencedByParents)}. Remove those component assignments first or archive this symbol instead.`
     );
   }
 

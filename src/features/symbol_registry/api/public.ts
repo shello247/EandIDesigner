@@ -1,4 +1,3 @@
-import { saveSymbolDraft } from "../data/mutations";
 import {
   getApprovedNetworkSymbolSvgAsset as getApprovedNetworkSymbolSvgAssetQuery,
   listApprovedNetworkSymbolVersionsByIds as listApprovedNetworkSymbolVersionsByIdsQuery,
@@ -32,7 +31,8 @@ export type {
   SymbolPanelWiringAssetType,
   SymbolPanelWiringCapability,
   SymbolTerminal,
-  SymbolTerminalPanelSide
+  SymbolTerminalPanelSide,
+  ValidationIssue
 } from "../data/schema";
 export {
   networkDeviceTypeSchema,
@@ -41,19 +41,26 @@ export {
   symbolMetadataSchema,
   symbolPanelWiringAssetTypeSchema,
   symbolPanelWiringCapabilitySchema,
-  symbolTerminalPanelSideSchema
+  symbolTerminalPanelSideSchema,
+  parseMetadataJson,
+  stringifyMetadata
 } from "../data/schema";
 
 export async function saveSymbolDraftToRegistry(input: SaveSymbolDraftInput) {
+  const { saveSymbolDraft } = await import("../data/mutations");
   return saveSymbolDraft(input);
 }
 
-export async function listSymbolsForDrawing() {
-  return listDrawingSymbolVersions();
+export async function listSymbolsForDrawing(
+  referencedVersionIds: readonly string[] = []
+) {
+  return listDrawingSymbolVersions(referencedVersionIds);
 }
 
-export async function listApprovedSymbolsForDrawing() {
-  return listDrawingSymbolVersions();
+export async function listApprovedSymbolsForDrawing(
+  referencedVersionIds: readonly string[] = []
+) {
+  return listDrawingSymbolVersions(referencedVersionIds);
 }
 
 export async function listNetworkSymbolCatalogForMapping(): Promise<
