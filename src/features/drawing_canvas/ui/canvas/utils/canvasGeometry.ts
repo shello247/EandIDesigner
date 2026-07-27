@@ -13,6 +13,12 @@ import {
 export const MIN_PLACEMENT_SCALE = 0.05;
 export const MAX_PLACEMENT_SCALE = 6;
 
+function roundCanvasValue(value: number, precision = 2): number {
+  const rounded = Number(value.toFixed(precision));
+
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
 export function packageKey(symbolId: string, versionId: string): string {
   return `${symbolId}:${versionId}`;
 }
@@ -183,6 +189,46 @@ export function calculatePlacementDimensionResizeUpdate(
     layoutDimensions: {
       lengthMm: Number(width.toFixed(2)),
       widthMm: Number(height.toFixed(2))
+    }
+  };
+}
+
+export function calculatePlacementLengthResizeUpdate(
+  resizeState: PlacementResizeState,
+  pointer: { x: number; y: number }
+) {
+  const rotationRadians = ((resizeState.rotation ?? 0) * Math.PI) / 180;
+  const axis = {
+    x: Math.cos(rotationRadians),
+    y: Math.sin(rotationRadians)
+  };
+  const pointerDelta =
+    resizeState.handle === "length-start"
+      ? {
+          x: resizeState.fixedPoint.x - pointer.x,
+          y: resizeState.fixedPoint.y - pointer.y
+        }
+      : {
+          x: pointer.x - resizeState.fixedPoint.x,
+          y: pointer.y - resizeState.fixedPoint.y
+        };
+  const length = Math.max(
+    5,
+    pointerDelta.x * axis.x + pointerDelta.y * axis.y
+  );
+  const direction = resizeState.handle === "length-start" ? -1 : 1;
+  const center = {
+    x: resizeState.fixedPoint.x + axis.x * (length / 2) * direction,
+    y: resizeState.fixedPoint.y + axis.y * (length / 2) * direction
+  };
+  const width = resizeState.baseSize.height;
+
+  return {
+    x: roundCanvasValue(center.x - length / 2),
+    y: roundCanvasValue(center.y - width / 2),
+    layoutDimensions: {
+      lengthMm: roundCanvasValue(length),
+      widthMm: roundCanvasValue(width)
     }
   };
 }

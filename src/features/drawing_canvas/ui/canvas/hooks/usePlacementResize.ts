@@ -5,6 +5,7 @@ import type { PlacementResizeState } from "../types";
 import {
   calculatePanelEnclosureResizeUpdate,
   calculatePlacementDimensionResizeUpdate,
+  calculatePlacementLengthResizeUpdate,
   calculatePlacementResizeUpdate,
   toSvgPoint
 } from "../utils/canvasGeometry";
@@ -202,10 +203,12 @@ export function usePlacementResize({
       }
 
       if (placement.layoutDimensions) {
-        const dimensionUpdate = calculatePlacementDimensionResizeUpdate(
-          resizeState,
-          toSvgPoint(event, model.sheet)
-        );
+        const pointer = toSvgPoint(event, model.sheet);
+        const dimensionUpdate =
+          resizeState.handle === "length-start" ||
+          resizeState.handle === "length-end"
+            ? calculatePlacementLengthResizeUpdate(resizeState, pointer)
+            : calculatePlacementDimensionResizeUpdate(resizeState, pointer);
         const parentBackplane =
           isLayoutHelperPlacement(placement) && placement.layoutParentId
             ? model.placements.find(

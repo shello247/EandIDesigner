@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getAnchorWorldPoint } from "../logic/services/drawing-geometry";
 import {
+  calculatePlacementLengthResizeUpdate,
   calculatePlacementResizeUpdate,
   calculatePlacementRotationUpdate,
   getRotationAngleFromPointer,
@@ -40,6 +41,72 @@ describe("canvasGeometry", () => {
         y: -5,
         scale: 1.5
       });
+  });
+
+  it("resizes a horizontal tray from its end without changing its width", () => {
+    const resizeState: PlacementResizeState = {
+      placementId: "tray_1",
+      handle: "length-end",
+      fixedPoint: { x: 10, y: 30 },
+      baseSize: { width: 100, height: 20 },
+      center: { x: 60, y: 30 },
+      rotation: 0
+    };
+
+    expect(
+      calculatePlacementLengthResizeUpdate(resizeState, { x: 150, y: 75 })
+    ).toEqual({
+      x: 10,
+      y: 20,
+      layoutDimensions: {
+        lengthMm: 140,
+        widthMm: 20
+      }
+    });
+  });
+
+  it("keeps the opposite endpoint fixed when resizing a rotated tray", () => {
+    const resizeState: PlacementResizeState = {
+      placementId: "tray_1",
+      handle: "length-start",
+      fixedPoint: { x: 60, y: 80 },
+      baseSize: { width: 100, height: 20 },
+      center: { x: 60, y: 30 },
+      rotation: 90
+    };
+
+    expect(
+      calculatePlacementLengthResizeUpdate(resizeState, { x: 60, y: -40 })
+    ).toEqual({
+      x: 0,
+      y: 10,
+      layoutDimensions: {
+        lengthMm: 120,
+        widthMm: 20
+      }
+    });
+  });
+
+  it("enforces the minimum tray length without changing its width", () => {
+    const resizeState: PlacementResizeState = {
+      placementId: "tray_1",
+      handle: "length-end",
+      fixedPoint: { x: 10, y: 30 },
+      baseSize: { width: 100, height: 20 },
+      center: { x: 60, y: 30 },
+      rotation: 0
+    };
+
+    expect(
+      calculatePlacementLengthResizeUpdate(resizeState, { x: 5, y: 30 })
+    ).toEqual({
+      x: 10,
+      y: 20,
+      layoutDimensions: {
+        lengthMm: 5,
+        widthMm: 20
+      }
+    });
   });
 
   it("calculates snapped placement rotation from pointer movement", () => {

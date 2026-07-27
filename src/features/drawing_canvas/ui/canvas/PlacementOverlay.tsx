@@ -27,6 +27,7 @@ import {
   isLayoutDimensionPlacement,
   type LayoutDimensionDisplayGeometry
 } from "../../logic/services/drawing-layout-dimensions";
+import { isWireTrayPlacement } from "../../logic/services/drawing-wire-tray-layouts";
 import type { DrawingCanvasSelection } from "../../logic/services/drawing-selection";
 import type {
   DragState,
@@ -49,6 +50,11 @@ type PlacementHandle = {
   y: number;
   cursor: string;
   fixedPoint: { x: number; y: number };
+};
+
+type PlacementLengthHandle = PlacementHandle & {
+  key: "length-start" | "length-end";
+  label: "start" | "end";
 };
 
 function getPlacementHandles(bounds: {
@@ -106,6 +112,50 @@ function getPlacementHandles(bounds: {
         x: bounds.x,
         y: bounds.y
       }
+    }
+  ];
+}
+
+function getPlacementLengthHandles(
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  },
+  rotation: number
+): PlacementLengthHandle[] {
+  const center = getPlacementCenter(bounds);
+  const start = rotatePoint(
+    { x: bounds.x, y: center.y },
+    center,
+    rotation
+  );
+  const end = rotatePoint(
+    { x: bounds.x + bounds.width, y: center.y },
+    center,
+    rotation
+  );
+  const axisRadians = (rotation * Math.PI) / 180;
+  const cursor =
+    Math.abs(Math.cos(axisRadians)) >= Math.abs(Math.sin(axisRadians))
+      ? "ew-resize"
+      : "ns-resize";
+
+  return [
+    {
+      key: "length-start",
+      label: "start",
+      ...start,
+      cursor,
+      fixedPoint: end
+    },
+    {
+      key: "length-end",
+      label: "end",
+      ...end,
+      cursor,
+      fixedPoint: start
     }
   ];
 }
@@ -575,6 +625,10 @@ export function PlacementOverlay({
             symbol.metadata.resizable === true ||
             isBackplanePlacement(placement));
         const handles = canResize ? getPlacementHandles(bounds, rotation) : [];
+        const lengthHandles =
+          canResize && isWireTrayPlacement(placement)
+            ? getPlacementLengthHandles(bounds, rotation)
+            : [];
         const dimensionHandles = dimensionGeometry
           ? getDimensionControlHandles(dimensionGeometry)
           : undefined;
@@ -817,6 +871,74 @@ export function PlacementOverlay({
                     </circle>
                   </>
                 ) : null}
+                {lengthHandles.map((handle) => {
+                  const radius = 5 / screenScale;
+                  const arrowHalf = 2.8 / screenScale;
+                  const arrowWing = 1.2 / screenScale;
+
+                  return (
+                    <g key={handle.key}>
+                      <circle
+                        data-resize-handle={handle.key}
+                        data-length-resize-handle={handle.label}
+                        aria-label={`Adjust ${placement.tag} length from the ${handle.label}`}
+                        cx={handle.x}
+                        cy={handle.y}
+                        r={radius}
+                        className="fill-cyan-50 stroke-cyan-600"
+                        strokeWidth={1.1 / screenScale}
+                        style={{ cursor: handle.cursor }}
+                        onPointerDown={(event) => {
+                          if (event.button !== 0) {
+                            return;
+                          }
+
+                          event.stopPropagation();
+                          event.currentTarget.setPointerCapture(event.pointerId);
+                          onFocusCanvas();
+                          onSelectPlacement(placement.id);
+                          onResizeStart({
+                            placementId: placement.id,
+                            handle: handle.key,
+                            fixedPoint: handle.fixedPoint,
+                            center: rotationControl.center,
+                            rotation,
+                            baseSize: {
+                              width: bounds.width,
+                              height: bounds.height
+                            }
+                          });
+                        }}
+                        onPointerMove={onResizeMove}
+                        onPointerUp={onResizeEnd}
+                        onPointerCancel={onResizeCancel}
+                      >
+                        <title>
+                          Adjust tray length from the {handle.label} (width locked)
+                        </title>
+                      </circle>
+                      <path
+                        d={[
+                          `M ${handle.x - arrowHalf} ${handle.y}`,
+                          `H ${handle.x + arrowHalf}`,
+                          `M ${handle.x - arrowHalf} ${handle.y}`,
+                          `L ${handle.x - arrowHalf + arrowWing} ${handle.y - arrowWing}`,
+                          `M ${handle.x - arrowHalf} ${handle.y}`,
+                          `L ${handle.x - arrowHalf + arrowWing} ${handle.y + arrowWing}`,
+                          `M ${handle.x + arrowHalf} ${handle.y}`,
+                          `L ${handle.x + arrowHalf - arrowWing} ${handle.y - arrowWing}`,
+                          `M ${handle.x + arrowHalf} ${handle.y}`,
+                          `L ${handle.x + arrowHalf - arrowWing} ${handle.y + arrowWing}`
+                        ].join(" ")}
+                        transform={`rotate(${rotation} ${handle.x} ${handle.y})`}
+                        className="pointer-events-none fill-none stroke-cyan-700"
+                        strokeWidth={0.8 / screenScale}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </g>
+                  );
+                })}
                 {handles.map((handle) => (
                   <rect
                     key={handle.key}

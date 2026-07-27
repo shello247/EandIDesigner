@@ -10,6 +10,11 @@ import {
 import { createTerminalBlockPlacement } from "../../src/features/drawing_canvas/logic/services/drawing-terminal-blocks";
 import { createPanelEnclosurePlacement } from "../../src/features/drawing_canvas/logic/services/drawing-asset-containment";
 import { createBackplanePlacement } from "../../src/features/drawing_canvas/logic/services/drawing-backplane-layouts";
+import {
+  GENERATED_WIRE_TRAY_SYMBOL_ID,
+  GENERATED_WIRE_TRAY_VERSION_ID,
+  WIRE_TRAY_LABEL
+} from "../../src/features/drawing_canvas/logic/services/drawing-wire-tray-layouts";
 import { stringifyMetadata } from "../../src/features/symbol_registry/data/schema";
 
 type FixtureSymbol = {
@@ -728,6 +733,85 @@ export async function createE2eTerminalBlockGroupPackage(): Promise<{
   });
 
   return { drawingId: drawing.id, symbolId: symbol.id };
+}
+
+export async function createE2eWireTrayResizePackage(): Promise<{
+  drawingId: string;
+  trayId: string;
+}> {
+  const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const base = createDefaultDrawingModel();
+  const panel = {
+    ...createPanelEnclosurePlacement({
+      model: base,
+      activeSheet: base.sheets[0],
+      assetId: `asset_tray_panel_${unique}`,
+      tag: "JB001",
+      title: "Wire Tray Resize Test Panel",
+      x: 30,
+      y: 30
+    }),
+    id: `tray_panel_${unique}`
+  };
+  const backplane = {
+    ...createBackplanePlacement({
+      panelPlacement: panel,
+      id: `tray_backplane_${unique}`
+    }),
+    layoutDimensions: { lengthMm: 300, widthMm: 200 }
+  };
+  const trayId = `wire_tray_${unique}`;
+  const tray = {
+    id: trayId,
+    symbolId: GENERATED_WIRE_TRAY_SYMBOL_ID,
+    versionId: GENERATED_WIRE_TRAY_VERSION_ID,
+    role: "other" as const,
+    tag: WIRE_TRAY_LABEL,
+    x: 0,
+    y: 0,
+    rotation: 0,
+    scale: 1,
+    layoutKind: "layout_helper" as const,
+    layoutParentId: backplane.id,
+    containerAssetId: panel.assetId,
+    layoutPosition: {
+      xMm: 40,
+      yMm: 55
+    },
+    layoutDimensions: {
+      lengthMm: 150,
+      widthMm: 30
+    }
+  };
+  const model = drawingPackageModelSchema.parse({
+    ...base,
+    assets: [
+      {
+        id: panel.assetId,
+        tag: panel.tag,
+        type: "junction_box",
+        title: "Wire Tray Resize Test Panel"
+      }
+    ],
+    sheets: [
+      {
+        ...base.sheets[0],
+        name: "JB001 Panel Layout Drawing",
+        placements: [panel, backplane, tray]
+      }
+    ]
+  });
+  const drawing = await prisma.drawing.create({
+    data: {
+      drawingKey: `e2e_wire_tray_resize_${unique}`,
+      title: "Wire Tray Length Resize Test",
+      status: "needs_review",
+      modelJson: stringifyDrawingModel(model)
+    },
+    select: { id: true }
+  });
+
+  return { drawingId: drawing.id, trayId };
 }
 
 export async function deleteE2eSymbol(symbolId: string | undefined) {
