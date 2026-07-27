@@ -393,6 +393,9 @@ Adjacent drawing features:
   length/width in millimetres, autosizes to the backplane usable width on
   placement, and renders through the Backplane scale. Orthogonal trays that
   meet at an endpoint render visual 45-degree mitered corners automatically.
+  When selected, the tray also exposes two cyan end handles. Dragging either
+  end changes only the longitudinal length, preserves the registered width,
+  and keeps the opposite end fixed through orthogonal rotation.
 - Horizontal and Vertical Dimension are generated non-asset layout helpers.
   Grey witness grips can float or attach to Backplane outer/usable edges and
   layout-item edges. Attached witness feet follow the referenced placement as

@@ -24,6 +24,8 @@ export type ResizeHandle =
   | "ne"
   | "sw"
   | "se"
+  | "length-start"
+  | "length-end"
   | "dimension-start"
   | "dimension-end"
   | "dimension-offset"
