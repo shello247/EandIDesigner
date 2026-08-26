@@ -3,7 +3,7 @@
 Start: 2026-08-26 16:11 America/Port_of_Spain
 End: 2026-08-26 16:22 America/Port_of_Spain
 Duration: approximately 11 minutes
-Status: verification complete; recovery checkpoint pending
+Status: complete; recovery checkpoint remotely verified
 
 ## Invariants
 
@@ -122,5 +122,6 @@ the actual initial payload.
 
 Raw metrics, build and browser evidence remain in ignored unique
 `task015-query-split-v1`, `task015-build-v1` and `task015-browser-v1` paths.
-Publication review, source checkpoint SHA and exact remote verification:
-pending.
+Publication review scanned the complete 7-file source set with zero findings.
+Source checkpoint `c8948aaef061cf651bfa82e46743a8e33141d554` was pushed and
+matched the exact remote branch SHA.

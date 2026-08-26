@@ -21,7 +21,7 @@ PLAN-002 — [Drawing Performance Improvements](plans/active/PLAN-002-drawing-pe
 - [x] PLAN-002-TASK-012 — Share normalized model and final derived source
 - [x] PLAN-002-TASK-013 — Reuse exact-version and generated render preparation
 - [x] PLAN-002-TASK-014 — Complete pinned render dependency collection
-- [ ] PLAN-002-TASK-015 — Batched render bundle and catalogue summaries
+- [x] PLAN-002-TASK-015 — Batched render bundle and catalogue summaries
 - [ ] PLAN-002-TASK-016 — Load catalogue details on demand
 - [ ] PLAN-002-TASK-017 — Migrate drawing consumers and save validation
 - [ ] PLAN-002-TASK-018 — Paginate exact drawing summaries without migration
