@@ -25,7 +25,7 @@ PLAN-002 — [Drawing Performance Improvements](plans/active/PLAN-002-drawing-pe
 - [x] PLAN-002-TASK-016 — Load catalogue details on demand
 - [x] PLAN-002-TASK-017 — Migrate drawing consumers and save validation
 - [x] PLAN-002-TASK-018 — Paginate exact drawing summaries without migration
-- [ ] PLAN-002-TASK-019 — Compact revision-consistent save acknowledgment
+- [x] PLAN-002-TASK-019 — Compact revision-consistent save acknowledgment
 - [ ] PLAN-002-TASK-020 — Control drawing-scoped unrelated prefetch
 - [ ] PLAN-002-TASK-021 — Integrated regression and repeated performance comparison
 - [ ] PLAN-002-TASK-022 — PDF/print verification and text compatibility check

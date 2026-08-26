@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-019 — compact revision-consistent save acknowledgment
+Task: PLAN-002-TASK-020 — control drawing-scoped unrelated prefetch
 Status: doing
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: trace the guarded save mutation and Server Action result, then return the persisted `{id, updatedAt}` revision without rereading or reparsing the complete drawing while preserving conflict and in-flight dirty behavior.
+Next action: reproduce and classify drawing-editor background GET fan-out, apply a drawing-scoped prefetch policy to unrelated navigation only, and measure complete save Action/RSC bytes while preserving list freshness and normal navigation.
 
 ## Progress snapshot
+
+019 CI `33016170028` passed exact `3e636cabd1c39f6191b979f5d45c9b3b45e107f6`: audit/lint/types/762 units/bootstrap/build/30 production workflows. 019 complete 17:40 (approximately 13m); 020 started 17:40. Stage6 remains open and untagged. No live promotion.
+
+019 changes normal save from a four-query full-detail reread to a three-query persisted `{id,updatedAt}` acknowledgment. Forty-sheet median/p95 fell 36.06/42.46ms to 21.95/26.11ms and mutation JSON 182,083 to 62 bytes. Conflict, approval-full-detail, and edit-during-in-flight behavior are explicit tests.
 
 Stage5 CI `33015096686` passed exact `b7eb5ca1e527ccdfaa81373d50a87bcac129c9ba`: audit/lint/types/760 units/bootstrap/build/29 production workflows. Tag `drawing-perf-pass-1-stage-5-20260826` is remotely verified and peels to that source. 018 complete 17:27 (approximately 20m); 019 started 17:27. No live promotion.
 
