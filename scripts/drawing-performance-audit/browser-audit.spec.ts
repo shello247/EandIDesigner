@@ -4,10 +4,11 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { guard, output, summarize, write } from "./common";
 import { seed } from "./fixtures";
+import { createDrawingActionMeasurement } from "./browser-metrics";
 guard();
 const phase=process.env.AUDIT_PHASE??"baseline";
 const diagnostic=phase.startsWith("diagnostic");
-type BrowserGlobal=typeof globalThis & {__EI_DRAWING_PERFORMANCE_ENABLED__?:boolean;__EI_DRAWING_PERFORMANCE_SAMPLES__?:unknown[];__EI_AUDIT_COUNTS__?:Record<string,{count:number;totalMs:number;maxMs:number}>;__auditLongTasks?:{start:number;duration:number}[];__auditClickTime?:number;__auditStartListener?:()=>void;__auditFrames?:number[];__auditRaf?:number};
+type BrowserGlobal=typeof globalThis & {__EI_DRAWING_PERFORMANCE_ENABLED__?:boolean;__EI_DRAWING_PERFORMANCE_SAMPLES__?:{name:string;durationMs:number;attributes?:{actionId?:string}}[];__EI_DRAWING_PERFORMANCE_COUNTS__?:Record<string,{count:number;totalMs:number;maxMs:number}>;__EI_DRAWING_PERFORMANCE_CONTEXT__?:{actionId?:string;revision?:string};__EI_AUDIT_COUNTS__?:Record<string,{count:number;totalMs:number;maxMs:number}>;__auditLongTasks?:{start:number;duration:number}[];__auditClickTime?:number;__auditStartListener?:()=>void;__auditFrames?:number[];__auditRaf?:number};
 test.beforeEach(async()=>{await seed();});
 async function setup(page:Page){
   await page.addInitScript((enabled)=>{
@@ -29,7 +30,7 @@ async function ready(page:Page){
 async function sample(page:Page){
   return page.evaluate(()=>{
     const w=globalThis as BrowserGlobal;
-    return {operations:w.__EI_DRAWING_PERFORMANCE_SAMPLES__??[],counts:w.__EI_AUDIT_COUNTS__??{},longTasks:w.__auditLongTasks??[],domNodes:document.getElementsByTagName("*").length,svgNodes:document.querySelectorAll("svg").length,mountedPreviewPages:document.querySelectorAll('[data-preview-svg-mounted="true"]').length,resources:performance.getEntriesByType("resource").map(entry=>{const r=entry as PerformanceResourceTiming;return {name:new URL(r.name).pathname,initiatorType:r.initiatorType,transferSize:r.transferSize,encodedBodySize:r.encodedBodySize,decodedBodySize:r.decodedBodySize,duration:r.duration};})};
+    return {operations:w.__EI_DRAWING_PERFORMANCE_SAMPLES__??[],counts:w.__EI_DRAWING_PERFORMANCE_COUNTS__??w.__EI_AUDIT_COUNTS__??{},longTasks:w.__auditLongTasks??[],domNodes:document.getElementsByTagName("*").length,svgNodes:document.querySelectorAll("svg").length,mountedPreviewPages:document.querySelectorAll('[data-preview-svg-mounted="true"]').length,resources:performance.getEntriesByType("resource").map(entry=>{const r=entry as PerformanceResourceTiming;return {name:new URL(r.name).pathname,initiatorType:r.initiatorType,transferSize:r.transferSize,encodedBodySize:r.encodedBodySize,decodedBodySize:r.decodedBodySize,duration:r.duration};})};
   });
 }
 function persist(name:string,value:unknown){const filename="browser-"+phase+".json";const records=fs.existsSync(path.join(output,filename))?JSON.parse(fs.readFileSync(path.join(output,filename),"utf8")):[];records.push({name,value});write(filename,records);}
@@ -50,20 +51,29 @@ async function action(page:Page,name:string,operation:()=>Promise<void>){
   const requests:{method:string;url:string}[]=[];
   const handler=(request:import("@playwright/test").Request)=>requests.push({method:request.method(),url:new URL(request.url()).pathname});
   page.on("request",handler);
-  await page.evaluate((trackFrames)=>{
-    const w=globalThis as BrowserGlobal;w.__EI_DRAWING_PERFORMANCE_SAMPLES__=[];w.__EI_AUDIT_COUNTS__={};w.__auditLongTasks=[];w.__auditClickTime=undefined;
+  const actionId=`${name}:${Date.now()}:${Math.random().toString(36).slice(2,8)}`;
+  await page.evaluate(({trackFrames,actionId})=>{
+    const w=globalThis as BrowserGlobal;w.__EI_DRAWING_PERFORMANCE_SAMPLES__=[];w.__EI_DRAWING_PERFORMANCE_COUNTS__={};w.__EI_AUDIT_COUNTS__={};w.__EI_DRAWING_PERFORMANCE_CONTEXT__={...w.__EI_DRAWING_PERFORMANCE_CONTEXT__,actionId};w.__auditLongTasks=[];w.__auditClickTime=undefined;
     if(w.__auditStartListener){document.removeEventListener("pointerdown",w.__auditStartListener,true);document.removeEventListener("keydown",w.__auditStartListener,true);}
     const start=()=>{if(w.__auditClickTime===undefined)w.__auditClickTime=performance.now();};w.__auditStartListener=start;
     document.addEventListener("pointerdown",start,{capture:true,once:true});
     document.addEventListener("keydown",start,{capture:true,once:true});
     w.__auditFrames=[];let previous:number|undefined;
     if(trackFrames){const tick=(time:number)=>{if(previous!==undefined&&w.__auditFrames!.length<2000)w.__auditFrames!.push(time-previous);previous=time;w.__auditRaf=requestAnimationFrame(tick);};w.__auditRaf=requestAnimationFrame(tick);}
-  },diagnostic);
+  },{trackFrames:diagnostic,actionId});
   const started=performance.now();
   try{await operation();await paint(page);}
   finally{page.off("request",handler);await page.evaluate(()=>{const w=globalThis as BrowserGlobal;if(w.__auditStartListener){document.removeEventListener("pointerdown",w.__auditStartListener,true);document.removeEventListener("keydown",w.__auditStartListener,true);w.__auditStartListener=undefined;}if(w.__auditRaf!==undefined)cancelAnimationFrame(w.__auditRaf);});}
   const elapsed=await page.evaluate(()=>{const start=(globalThis as BrowserGlobal).__auditClickTime;return start===undefined?null:performance.now()-start;});
-  const value={elapsedMs:elapsed??performance.now()-started,automationWallMs:performance.now()-started,requests,frameIntervals:await page.evaluate(()=>(globalThis as BrowserGlobal).__auditFrames??[]),...await sample(page)};
+  const settledInteractionMs=elapsed??performance.now()-started;
+  const snapshot=await sample(page);
+  const value={...createDrawingActionMeasurement({actionId,settledInteractionMs,automationWallMs:performance.now()-started,snapshot}),requests,frameIntervals:await page.evaluate(()=>(globalThis as BrowserGlobal).__auditFrames??[])};
+  await page.evaluate(()=>{
+    const w=globalThis as BrowserGlobal;
+    w.__EI_DRAWING_PERFORMANCE_CONTEXT__=w.__EI_DRAWING_PERFORMANCE_CONTEXT__?.revision
+      ? {revision:w.__EI_DRAWING_PERFORMANCE_CONTEXT__.revision}
+      : undefined;
+  });
   return {name,...value};
 }
 test("navigation",async({browser})=>{
@@ -140,6 +150,19 @@ test("instrumentation overhead",async({page})=>{
       const value=await action(page,"overhead-selection",()=>page.locator('svg[aria-label="Interactive drawing overlay"] rect[data-placement-id="g0_device_'+i%2+'"]').click({force:true}));
       if(i>=5)values.push(value);
     }
+    for(const value of values){
+      expect(Object.keys(value.counts).length).toBeLessThanOrEqual(14);
+      if(enabled){
+        expect(value.calculationStages.length).toBeGreaterThan(0);
+        expect(value.calculationStages.every(sample=>
+          typeof sample.attributes?.actionId==="string" &&
+          /^edit:\d+$/.test(String(sample.attributes?.revision))
+        )).toBe(true);
+      }else{
+        expect(value.calculationStages).toHaveLength(0);
+        expect(Object.keys(value.counts)).toHaveLength(0);
+      }
+    }
     persist("overhead-"+block+"-"+(enabled?"enabled":"disabled"),values);
   }
 });
@@ -158,7 +181,7 @@ test("geometry and identity",async({page})=>{
         await page.mouse.move(box.x+box.width/2+16,box.y+box.height/2+(kind==="rotate"?12:5),{steps:8});await page.mouse.up();
       });
       expect(value.requests).toHaveLength(0);
-      if(diagnostic)expect(value.counts.pushDrawingHistoryEntry?.count).toBe(1);
+      if(diagnostic)expect(value.counts["canvas.history-commit"]?.count).toBe(1);
       if(i>=5)values.push(value);
       await page.getByTestId("drawing-canvas-viewport").focus();await page.keyboard.press("Control+z");await paint(page);
     }

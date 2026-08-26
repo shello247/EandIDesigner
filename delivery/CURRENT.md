@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-007 — closed Wire Catalog mounting
+Task: PLAN-002-TASK-008 — accurate bounded action and rendering metrics
 Status: done
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: publish/verify007 source checkpoint, then begin008 accurate bounded metrics. Stage2 remains open.
+Next action: publish/verify008 checkpoint; require clean CI before Stage2 tag, then begin009 stable engineering snapshots.
 
 ## Progress snapshot
+
+008 local completion14:43 (approx11m): bounded diagnostics are off with zero allocation by default; action/revision-correlated stages separate from settled time. Final parity,90gesture invariants, Wire Catalog Linux sync,719units/types/lint/build pass. Prior CI/audit failures retained. Stage2 tag awaits clean checkpoint CI.
+
+007 checkpoint7d1c97a6945508733a6f4808af05a3778b5a6cde publication-reviewed, pushed and exact remote branch SHA verified.008 started14:32. Stage2 remains open; no live promotion.
 
 007 complete14:32 (approx9m): held-chunk regression proves no unopened request/overlay and first-open lazy load. Draft, handled error/retry, close/reopen/focus/Escape pass; nested Escape regression fixed.8focused tests/types/lint/build and2production workflows pass. Prior red/diagnostic failures retained; no timing gain claimed.
 

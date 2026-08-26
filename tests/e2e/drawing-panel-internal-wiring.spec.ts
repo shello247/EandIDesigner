@@ -79,6 +79,7 @@ test("loads Wire Catalog only on request and preserves close/reopen and retry be
     await manager.getByLabel("Name", { exact: true }).fill(`${name} retry`);
     await manager.getByRole("button", { name: "Create specification" }).click();
     await expect(manager.getByText("Wire Catalog updated.", { exact: true })).toBeVisible();
+    await expect(manager.getByRole("button", { name: "Close Wire Catalog" })).toBeEnabled();
     await page.keyboard.press("Escape");
     await expect(manager).toHaveCount(0);
     await expect(more).toBeFocused();

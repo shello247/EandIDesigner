@@ -243,7 +243,10 @@ import {
   resolvePlacementArrangement,
   type PlacementArrangementAction
 } from "../../logic/services/drawing-selection-arrangement";
-import { measureDrawingOperation } from "../../logic/services/drawing-performance-diagnostics";
+import {
+  measureDrawingOperation,
+  updateDrawingPerformanceContext
+} from "../../logic/services/drawing-performance-diagnostics";
 import {
   createEmptyDrawingHistory,
   pushDrawingHistoryEntry,
@@ -885,10 +888,11 @@ export function DrawingCanvasShell({
   >(
     () =>
       panelConnectivityGraph
-        ? buildPlacementWireContextDisplayIndex({
-            graph: panelConnectivityGraph,
-            requests: placementWireContextRequests
-          })
+        ? measureDrawingOperation("panel.placement-wire-context", () =>
+            buildPlacementWireContextDisplayIndex({
+              graph: panelConnectivityGraph,
+              requests: placementWireContextRequests
+            }))
         : {
             rowsBySheetId: new Map(),
             summariesBySheetPlacement: new Map()
@@ -898,11 +902,12 @@ export function DrawingCanvasShell({
   const connectedWireScheduleIndex = useMemo<ConnectedWireScheduleIndex>(
     () =>
       panelConnectivityGraph
-        ? buildConnectedWireScheduleIndex({
-            graph: panelConnectivityGraph,
-            schedulesBySheetId: connectedWireSchedulesBySheetId,
-            displayModesBySheetPlacement: placementConnectionDisplayModes
-          })
+        ? measureDrawingOperation("panel.connected-wire-schedule", () =>
+            buildConnectedWireScheduleIndex({
+              graph: panelConnectivityGraph,
+              schedulesBySheetId: connectedWireSchedulesBySheetId,
+              displayModesBySheetPlacement: placementConnectionDisplayModes
+            }))
         : new Map(),
     [
       connectedWireSchedulesBySheetId,
@@ -1379,7 +1384,9 @@ export function DrawingCanvasShell({
           return current;
         }
 
-        const nextModel = normalizeCanvasModel(rawNextModel, symbols);
+        const nextModel = measureDrawingOperation(
+          "canvas.normalize", () => normalizeCanvasModel(rawNextModel, symbols)
+        );
         const beforeEntry = currentHistoryEntry(current);
         const shouldRecord = options.history !== "skip";
 
@@ -1394,9 +1401,9 @@ export function DrawingCanvasShell({
             now - previousCoalesce.time < 900;
 
           if (!shouldCoalesce) {
-            historyRef.current = pushDrawingHistoryEntry(
-              historyRef.current,
-              beforeEntry
+            historyRef.current = measureDrawingOperation(
+              "canvas.history-commit",
+              () => pushDrawingHistoryEntry(historyRef.current, beforeEntry)
             );
           }
 
@@ -1441,8 +1448,13 @@ export function DrawingCanvasShell({
     const result = commitCanvasGesture(draft);
 
     if (result.changed) {
-      const nextModel = normalizeCanvasModel(result.model, symbols);
-      historyRef.current = pushDrawingHistoryEntry(historyRef.current, entry);
+      const nextModel = measureDrawingOperation(
+        "canvas.normalize", () => normalizeCanvasModel(result.model, symbols)
+      );
+      historyRef.current = measureDrawingOperation(
+        "canvas.history-commit",
+        () => pushDrawingHistoryEntry(historyRef.current, entry)
+      );
       modelRef.current = nextModel;
       setModelState(nextModel);
       setEditRevision((current) => current + 1);
@@ -1510,6 +1522,10 @@ export function DrawingCanvasShell({
 
     return () => window.clearTimeout(timeoutId);
   }, [message]);
+
+  useEffect(() => {
+    updateDrawingPerformanceContext({ revision: `edit:${editRevision}` });
+  }, [editRevision]);
 
   useEffect(() => {
     if (editRevision === savedRevision) return;
@@ -1594,7 +1610,7 @@ export function DrawingCanvasShell({
 
   const loadSheetFromDialog = (sheetId: string) => {
     measureDrawingOperation(
-      "canvas.sheet-load",
+      "canvas.sheet-dispatch",
       () => selectSheet(sheetId),
       { fromSheetId: resolvedActiveSheetId, toSheetId: sheetId }
     );
