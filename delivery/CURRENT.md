@@ -1,12 +1,14 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-002 — recovery baseline and guarded runner
-Status: doing — security prerequisite complete; Task003 also complete
+Task: PLAN-002-TASK-004 — production hydration mismatch
+Status: next — Stage0 recovery complete; Task003 already complete
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: finish Task002 clean recovery build/runtime and harness failure/uniqueness checks; then proceed to004 hydration and005 stale locators. No new permission needed for agreed tasks.
+Next action: publish/verify Stage0 tag, reproduce actual hydration markup mismatch and add regression test before fixing cause. No SSR or warning suppression; then005 stale locators.
 
 ## Progress snapshot
+
+Stage0 complete13:47: originala833827 clean recovery install/bootstrap/build and create/save/reload browser pass; pristine Git status retained. Harness14 tests, scoped lint, full types pass. Recovery/candidate servers stopped; only live3000 PID31720 remains. Original source matches at17:46:43Z. Tag: drawing-perf-pass-1-stage-0-20260826 (publish/verify before continuing). Known browser22pass/5fail is not a release pass.
 
 Task002A complete13:41: audit0,types0,704units/lint/build pass; browser22pass/5fail exact same failing set as baseline. No new detected regression; no greenStage1 claim. Owned3100 stopped; original source hashes still match. Security code99f38c5 and type repair9349e31 remotely verified. See002A report for evidence and retained risks.
 

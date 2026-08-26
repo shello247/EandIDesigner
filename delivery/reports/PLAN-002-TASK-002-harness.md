@@ -3,7 +3,17 @@
 Start: 2026-08-26 13:00 America/Port_of_Spain
 End: paused 2026-08-26 13:05 America/Port_of_Spain
 Duration: approximately 5 minutes active before pause
-Status: blocked before stage completion
+Status: complete after authorized security prerequisite and Task003; historical pause retained below
+
+## Resumed completion — 2026-08-26 13:42-13:47
+
+Task active duration approximately10m total (initial5m plus resumed5m), excludes002A/003. Clean detached recovery checkouta833827 remained pristine: independent install/Prisma generation, guarded synthetic bootstrap, original Next16.2.11 production build, and create/save/reload browser workflow all pass. Raw build/bootstrap: recovery-check artifacts/drawing-performance/recovery-check/baseline/; browser: recovery-smoke-02/. Source fingerprint60083064b7a83917387f36da083fd511122d57a57428e0d19a950352a8610442, no drift. The recovery's known vulnerabilities/types/browser failures remain documented; it is not a release.
+
+Hardened runner records synchronous Windows launch exceptions as start/result/log files, waits for stdio close, refuses existing log-only labels, and hashes the actual external runner/config used with a recovery checkout. Four regression tests added: success/output draining, duplicate preservation, missing executable, synchronous Windows batch failure. Red run reproduces missing result; green harness14 tests passes. Standalone full types and scoped audit/pass lint pass. Source fingerprint88e6148ced57b18b6d9687867a9126271bfef6b3f517c853e2bbac4fa4386d1c.
+
+Reusable Playwright config selects the guarded checkout's tests/device profile without importing a second runner. Rejects reused browser evidence only in parent process; workers legitimately re-import after output creation. First recovery smoke was blocked by that worker-reimport guard, retained as harness failure; corrected smoke passes without product/test changes in the original checkout. Browser output paths are unique; no original evidence overwritten.
+
+Both owned3100 servers were stopped with PID/command ownership checks. Original source still matches at17:46:43Z; live3000 PID31720 untouched; no canonical database reads/writes. Stage0 source-recovery tag: drawing-perf-pass-1-stage-0-20260826, created on this reviewed task checkpoint and remote-verified before Task004. Previous remote checkpoint456ab343175252118fbf5eedfe56128474be8ab9. No stage1/release claim, main merge or live promotion.
 
 ## Changes
 

@@ -4,20 +4,20 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-002
 Stage: 0
 Priority: P1
-Status: doing
+Status: done
 Test impact: add
 Started: 2026-08-26 13:00
-Completed: pending
-Duration: pending
+Completed: 2026-08-26 13:47
+Duration: approximately10m active across13:00-13:05 and13:42-13:47; intervening002A/003 tracked separately
 Prerequisite: Task002A completed13:41 with exact baseline browser failures retained; Task003 types fixed. Resume clean recovery build/runtime and audit runner checks.
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] Unique run paths; target guards; independent install/build/bootstrap; baseline failures preserved.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] Unique run paths; target guards; independent install/build/bootstrap; baseline failures preserved.
+- [x] Harness14 tests, scoped lint and standalone types pass; clean recovery browser create/save/reload passes.
+- [x] Baseline failures/outliers retained; config worker-reimport failure and corrected rerun retained.
+- [x] Initial recovery and security/type source checkpoints verified remotely; completedStage0 tag recorded with this task report.
 
 ## Execution
 

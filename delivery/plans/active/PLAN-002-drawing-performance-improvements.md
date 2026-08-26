@@ -1,7 +1,7 @@
 # PLAN-002 — Drawing Performance Improvements
 
 Status: active
-Progress:002A security and003 type repairs complete; zero audit/types,704units/lint/build pass. Production browsers retain baseline22pass/5knownfail. Resume002 recovery harness; no stage gate passed or performance optimization applied yet.
+Progress: Stage0 recovery/isolation plus002A security and003 typing complete. Audit/types0,704units/lint/build pass; browsers retain22pass/5knownfail. Proceed004 hydration then005 locators; no performance optimization yet.
 Started: 2026-08-26 12:55
 Completed: pending
 Duration: pending
@@ -85,7 +85,7 @@ Port3000/live canonical DB untouched. Independent worktree/deps/Prisma/build; gu
 
 ## Gates and stop conditions
 
-- [ ] Stage0 reviewed source recovery remote verified; isolated clean install/build/runtime baseline.
+- [x] Stage0 reviewed source recovery remote verified; isolated clean install/build/runtime baseline. Tag drawing-perf-pass-1-stage-0-20260826; known baseline failures retained.
 - [ ] Stage1 full lint/types/unit/build and audited production browsers pass; no hydration suppression/weakened assertions.
 - [ ] Stage2 closed dialog absent and accurate bounded metrics/parity.
 - [ ] Stage3 graph/invalidation/parity/history/requests counts improve without confirmed regression.
