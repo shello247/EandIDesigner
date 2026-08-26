@@ -4,19 +4,19 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-023
 Stage: 7
 Priority: P1
-Status: doing
+Status: done
 Test impact: none
 Started: 2026-08-26 18:47
-Completed: pending
-Duration: pending
+Completed: 2026-08-26 18:55
+Duration: approximately 8 minutes
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] Restored checkpoint builds/runs synthetic data; final report/recovery map pushed; original source/port unchanged; no merge/live promotion.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] Restored checkpoint builds/runs synthetic data; final report/recovery map prepared; original source/port unchanged; no merge/live promotion.
+- [x] Focused tests, affected browser checks and necessary broader gates recorded.
+- [x] Compared with verified predecessor; original failures/outliers retained.
+- [x] Source-only checkpoint reviewed; publication, tag, and remote SHA are recorded in the final recovery-map update.
 
 ## Execution
 

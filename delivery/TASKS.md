@@ -2,7 +2,7 @@
 
 ## Active plan
 
-PLAN-002 — [Drawing Performance Improvements](plans/active/PLAN-002-drawing-performance-improvements.md), active.
+None.
 
 ## Queue
 
@@ -29,13 +29,17 @@ PLAN-002 — [Drawing Performance Improvements](plans/active/PLAN-002-drawing-pe
 - [x] PLAN-002-TASK-020 — Control drawing-scoped unrelated prefetch
 - [x] PLAN-002-TASK-021 — Integrated regression and repeated performance comparison
 - [x] PLAN-002-TASK-022 — PDF/print verification and text compatibility check
-- [ ] PLAN-002-TASK-023 — Clean-checkout recovery and final verified checkpoint (active)
+- [x] PLAN-002-TASK-023 — Clean-checkout recovery and final verified checkpoint
 
 ## Planned plans
 
 None.
 
 ## Completed
+
+PLAN-002 — [Drawing Performance Improvements](plans/completed/PLAN-002-drawing-performance-improvements.md), 26 August 2026. Complete with verified performance gains, output parity, recovery rehearsal, and explicitly deferred cloud multi-user readiness work.
+
+[Final assessment](reports/PLAN-002-final-assessment.md) · [Recovery map](reports/PLAN-002-recovery-map.md)
 
 PLAN-001 — [Drawing performance investigation](plans/completed/PLAN-001-drawing-performance-investigation.md), 26 August 2026. Complete with documented test failures and coverage limitations; no product optimization.
 

@@ -1,12 +1,15 @@
 # Current work
 
-Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-023 — clean-checkout recovery and final verified checkpoint
-Status: doing
-Started: 2026-08-26 18:47 America/Port_of_Spain
-Next action: publish and verify the Task 22 checkpoint, restore it into a disposable worktree, prove clean-checkout install/build/synthetic run, complete the final recovery map and close PLAN-002 without merging or promoting it.
+Plan: PLAN-002 — delivery/plans/completed/PLAN-002-drawing-performance-improvements.md
+Task: none
+Status: complete
+Started: 2026-08-26 12:55 America/Port_of_Spain
+Completed: 2026-08-26 18:55 America/Port_of_Spain
+Next action: await the user's separate decision on squash-PR/live promotion or a new production-readiness programme. Do not merge, restart the live editor, or begin deferred work automatically.
 
 ## Progress snapshot
+
+023 complete18:55 (approximately8m): detached exact `d93c29f2f782e2e93a4e9671082b5f04de62e4ae` completed independent npm ci (zero audit findings), fresh guarded SQLite bootstrap, production build and create/save/reload smoke. Original source verification is unchanged/removed empty; live3000 remains PID31720 and3100 is clear. Final assessment/recovery map prepared; final checkpoint publication/tag pending. PLAN-002 implementation is complete; no live promotion.
 
 022 complete18:47 (approximately11m): five PDFs for each 10/40/120-sheet package pass. Candidate print HTML is byte-identical to baseline; every page text hash, page size and sheet order matches; pages1/4/last are pixel-identical and visually inspected. PDF median fell 3,696.22→2,129.00ms, 7,192.32→4,161.25ms and 16,277.66→9,781.65ms. The unchanged private-use punctuation/literal-ID extraction caveat is retained. Audit fixture reset is now deterministic. Checkpoint publication pending;023 started18:47. No live promotion.
 
