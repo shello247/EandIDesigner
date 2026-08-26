@@ -170,6 +170,16 @@ describe("drawing generated symbol preparation", () => {
         colonInVersionId
       ])
     ).toBe(colonInVersionId);
+
+    expect(
+      getRenderableSymbolForPlacement(
+        {
+          ...placementFor(first),
+          versionId: "missing_historical_version"
+        },
+        [first]
+      )
+    ).toBeUndefined();
   });
 
   it("reuses occurrence-specific terminal geometry only for one immutable placement", () => {

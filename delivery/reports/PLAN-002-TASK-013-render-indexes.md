@@ -3,7 +3,7 @@
 Start: 2026-08-26 15:37 America/Port_of_Spain
 End: 2026-08-26 15:55 America/Port_of_Spain
 Duration: approximately 18 minutes
-Status: complete; checkpoint publication and Stage3 CI pending
+Status: complete; checkpoint and Stage3 remotely verified
 
 ## Invariants
 
@@ -59,4 +59,4 @@ The first `task013-snapshot-parity` invocation used a phase name without the req
 
 ## Recovery
 
-Raw benchmark, build, diagnostic and browser evidence remains in unique ignored `task013-*` and `diagnostic-task013-*` paths. Source checkpoint: commit containing this report; publication review, push, exact remote verification and the Stage3 CI/tag result are recorded at task close and in the next Delivery update.
+Raw benchmark, build, diagnostic and browser evidence remains in unique ignored `task013-*` and `diagnostic-task013-*` paths. Publication review scanned the complete 11-file staged set with zero findings. Source checkpoint `a4c2d8ced508b22bc69a7b212ffd6271d1b52138` was pushed and matched the exact remote branch SHA. Clean-checkout CI run `33007739398` passed all gates in 4m4s. Annotated tag `drawing-perf-pass-1-stage-3-20260826` was pushed and its remote peeled target matched the checkpoint exactly.

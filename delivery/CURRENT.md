@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-013 — reuse exact-version and generated render preparation
-Status: complete; checkpoint publication and Stage3 CI pending
+Task: PLAN-002-TASK-014 — complete pinned render dependency collection
+Status: doing
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: publication-review and remote-verify Task013, run the clean-checkout CI gate, then tag Stage3 only if that exact checkpoint passes.
+Next action: publication-review and remotely verify the Task014 source checkpoint; then begin Task015 exact render bundle and catalogue-summary contracts.
 
 ## Progress snapshot
+
+014 implementation verified16:10 (approx10m): predecessor missed managed-asset and placement/asset module-template references and forwarded11generated pseudo IDs. Candidate returns all10 persisted fixture dependencies only, retains exact missing history with no latest fallback.735units, lint/types/build and6production workflows pass. Checkpoint publication pending.
+
+Stage3 CI33007739398 passed exacta4c2d8ced508b22bc69a7b212ffd6271d1b52138: audit/lint/types/733units/harness/bootstrap/build/28production workflows. Tag drawing-perf-pass-1-stage-3-20260826 remote verified, peeled exact.014 started16:00. No live promotion.
 
 013 complete15:55 (approx18m): exact lookup26.79/36.90ms to final2.17/2.97; generated resolution60.73/81.87ms to final0.10/0.15, identical checksums. Weak-key indexes preserve first-match, delimiter-safe exact identity, placement/asset/symbol invalidation and occurrence isolation.733units, types/lint/build,7targeted and28/28full production workflows pass; final hardening build and3workflow rerun also pass. Stage3 checkpoint/CI/tag pending.
 
