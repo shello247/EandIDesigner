@@ -58,9 +58,17 @@ const navItems = [
   }
 ];
 
+export function sidebarPrefetchPolicy(pathname: string): false | undefined {
+  const segments = pathname.split("/").filter(Boolean);
+  const isDrawingEditor =
+    segments.length === 2 && segments[0] === "drawings" && segments[1] !== "new";
+  return isDrawingEditor ? false : undefined;
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const prefetch = sidebarPrefetchPolicy(pathname);
 
   useEffect(() => {
     const compactViewport = window.matchMedia("(max-width: 767px)");
@@ -86,6 +94,7 @@ export function AppSidebar() {
           {isCollapsed ? null : (
             <Link
               href="/symbols"
+              prefetch={prefetch}
               className="flex min-w-0 flex-1 items-center gap-3 text-slate-950"
               title="EI Designer"
             >
@@ -119,6 +128,7 @@ export function AppSidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={prefetch}
                 className={[
                   "sidebar-nav-item",
                   active ? "sidebar-nav-item-active" : "",

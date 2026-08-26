@@ -116,11 +116,10 @@ export async function saveDrawingAction(
     }
     const acknowledgment = await saveDrawing(input);
 
-    revalidatePath("/drawings");
     // The editor already owns the saved model and consumes the returned
-    // updated timestamp. Revalidating its active route here forces a second
-    // large server render inside the save transition and can leave webpack
-    // development sessions permanently suspended after a successful write.
+    // updated timestamp. The drawing list is force-dynamic and is fetched
+    // afresh on explicit navigation, so invalidating it here only expands and
+    // prolongs this action's RSC response.
     return { ok: true, data: acknowledgment };
   } catch (error) {
     return toActionError(error);
