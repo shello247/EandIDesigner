@@ -267,7 +267,7 @@ describe("associated panel assets", () => {
       },
       id: "connection_backplane"
     });
-    const stripAsset: DrawingAssetRecord = {
+    const stripAsset = {
       id: "asset_tb_101",
       tag: "TB-101",
       type: "terminal_block",
@@ -288,7 +288,7 @@ describe("associated panel assets", () => {
           }
         ]
       }
-    };
+    } satisfies DrawingAssetRecord;
     const stripSource: DrawingPlacement = {
       id: "strip_source",
       assetId: stripAsset.id,

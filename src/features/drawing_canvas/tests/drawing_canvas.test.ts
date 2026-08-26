@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 import type { SymbolMetadata } from "@/features/symbol_registry/data/schema";
 import {
   createDefaultDrawingModel,
@@ -340,6 +340,7 @@ describe("drawing canvas domain", () => {
       point: { x: 60, y: 70 },
       sheet: model.sheet
     });
+    assert(note.kind !== "connected_wire_schedule");
 
     model.annotations = [
       {
@@ -468,6 +469,8 @@ describe("drawing canvas domain", () => {
 
     const parsed = drawingSheetCanvasModelSchema.parse(model);
     expect(parsed.annotations[0].width).toBeUndefined();
+    assert(parsed.annotations[0].kind !== "connected_wire_schedule");
+    assert(parsed.annotations[1].kind !== "connected_wire_schedule");
     expect(parsed.annotations[0].title).toBeUndefined();
     expect(parsed.annotations[1].title).toBe("Installation Instructions");
     expect(parsed.annotations[1].leader?.enabled).toBe(true);

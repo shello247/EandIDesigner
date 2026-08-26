@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 import { updateManagedAsset } from "@/features/drawing_asset_manager/logic/use_cases/drawing-asset-manager-use-cases";
 import type { SymbolMetadata } from "@/features/symbol_registry/data/schema";
 import type { DrawingModel, DrawingPlacement } from "../data/schema";
@@ -182,6 +182,7 @@ function modelWithTwoSheets(): DrawingModel {
       },
       {
         id: "sheet_2",
+        kind: "drawing",
         name: "Sheet 2",
         page: { ...model.sheets[0].page },
         placements: [],
@@ -251,6 +252,7 @@ function modelWithPanelDistributionBlocks(
       },
       {
         id: "sheet_other",
+        kind: "drawing",
         name: "Other Sheet",
         page: { ...model.sheets[0].page },
         placements: [],
@@ -832,6 +834,7 @@ describe("drawing canvas selection and clipboard", () => {
   it("moves selected note leaders with selected notes", () => {
     const model = modelWithTwoSheets();
     const sheetModel = toSheetCanvasModel(model, "sheet_1");
+    assert(sheetModel.annotations[0].kind !== "connected_wire_schedule");
     sheetModel.annotations[0] = {
       ...sheetModel.annotations[0],
       leader: {

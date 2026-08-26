@@ -319,7 +319,6 @@ describe("drawing selection arrangement", () => {
         {
           id: "connection_1",
           wireId: "W-001",
-          kind: "wire",
           from: { placementId: first.id, anchorKey: "T1" },
           to: { placementId: second.id, anchorKey: "T2" },
           route: {

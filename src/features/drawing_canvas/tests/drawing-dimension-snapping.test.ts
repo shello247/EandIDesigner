@@ -25,7 +25,6 @@ function placement(
   updates: Partial<DrawingPlacement> & Pick<DrawingPlacement, "id">
 ): DrawingPlacement {
   return {
-    id: updates.id,
     symbolId: "layout_symbol",
     versionId: "layout_symbol_v1",
     role: "other",

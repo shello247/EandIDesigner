@@ -4,11 +4,11 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-002A
 Stage: 0 prerequisite
 Priority: P0 verification blocker
-Status: todo
+Status: doing
 Started: 2026-08-26 13:21
 Completed: pending
 Duration: pending
-Prerequisite update: security audit/704 units/lint pass; Next16.3 build surfaces the known39 test-type diagnostics. Bring forward already-approved Task003, then finish002A browser/build verification. No new scope needed.
+Prerequisite update: Task003 repairs all39 test diagnostics; standalone types,704 unit tests, lint and production build pass. Resume002A browser verification.
 Timezone: America/Port_of_Spain
 
 ## Authorization and scope

@@ -75,7 +75,7 @@ describe("SVG coordinate-stage interactions", () => {
   let root: Root;
 
   beforeEach(() => {
-    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal("ResizeObserver", TestResizeObserver);
     vi.stubGlobal("PointerEvent", TestPointerEvent);
     vi.spyOn(SVGSVGElement.prototype, "getBoundingClientRect").mockReturnValue({
@@ -125,7 +125,6 @@ describe("SVG coordinate-stage interactions", () => {
     container.remove();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
-    globalThis.IS_REACT_ACT_ENVIRONMENT = false;
   });
 
   it("uses one aligned stage and adapts dense Registry markers in screen pixels", async () => {

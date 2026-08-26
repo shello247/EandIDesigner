@@ -21,7 +21,7 @@ const DETAIL_SHEET_ID = "sheet_detail";
 const SCHEDULE_ID = "schedule_1";
 
 function createFixture(connectionCount = 25): DrawingModel {
-  const base = createDefaultDrawingModel("Continuation Test");
+  const base = createDefaultDrawingModel();
   const fieldSheet = createDefaultDrawingSheet({
     id: "sheet_field",
     name: "Panel Wiring"

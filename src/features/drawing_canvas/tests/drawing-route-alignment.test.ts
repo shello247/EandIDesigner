@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DrawingConnectionRoute } from "../data/schema";
+import { createDefaultDrawingModel, type DrawingConnectionRoute } from "../data/schema";
 import {
   buildEditableRouteSegments,
   insertRouteControlPointOnSegment,
@@ -8,7 +8,8 @@ import {
 } from "../logic/services/connection-route-alignment";
 import { routeToPathData } from "../logic/services/connection-route-renderer";
 
-const sheet = { width: 200, height: 120 };
+const defaults = createDefaultDrawingModel();
+const sheet = { ...defaults.sheets[0].page, titleBlock: defaults.titleBlock, width: 200, height: 120 };
 
 function route(): DrawingConnectionRoute {
   return {

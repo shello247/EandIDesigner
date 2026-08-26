@@ -23,7 +23,7 @@ describe("panel schedule export", () => {
       "bom"
     ]);
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(bytes);
+    await workbook.xlsx.load(new Uint8Array(bytes).buffer);
     expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
       "Manifest",
       "Terminal Schedule",

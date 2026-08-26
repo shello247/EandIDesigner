@@ -206,7 +206,7 @@ describe("terminal strip composition geometry", () => {
           layoutUsage: "panel_layout",
           physicalWidthMm: 2,
           physicalHeightMm: 6,
-          mountingType: "surface",
+          mountingType: "backplate",
           viewBox: { x: 0, y: 0, width: 2, height: 6 },
           anchors: [],
           terminals: []

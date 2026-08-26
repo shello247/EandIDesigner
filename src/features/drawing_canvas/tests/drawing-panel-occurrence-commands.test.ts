@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 import { createPanelWiringSource } from "../api/panel-wiring-contracts";
 import {
   createDefaultDrawingModel,
@@ -237,9 +237,8 @@ describe("Detailed Panel asset occurrence commands", () => {
       occurrenceKind: "wiring",
       terminalResolutionStatus: "resolved"
     });
-    expect(detailedOccurrence?.terminals).toHaveLength(
-      asset.terminalBlock?.count
-    );
+    assert(asset.terminalBlock);
+    expect(detailedOccurrence?.terminals).toHaveLength(asset.terminalBlock.count);
     expect(
       detailedOccurrence?.terminals
         .find((terminal) => terminal.terminalKey === "T5")

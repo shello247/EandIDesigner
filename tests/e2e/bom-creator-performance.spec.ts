@@ -18,7 +18,7 @@ test("bounds large drawing BOM payloads and renders only the selected view", asy
     },
     select: { id: true }
   });
-  const items = [];
+  const items: Array<{ id: string; displayName: string }> = [];
   let drawingId: string | undefined;
 
   try {

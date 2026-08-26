@@ -6,7 +6,7 @@ import {
 import { createDetailedPanelDrawingSheet } from "../logic/commands/drawing-detailed-panel-sheet-commands";
 
 function modelWithPanel(): DrawingModel {
-  const model = createDefaultDrawingModel("Panel Test");
+  const model = createDefaultDrawingModel();
 
   return {
     ...model,
@@ -47,7 +47,7 @@ describe("detailed panel sheet commands", () => {
   });
 
   it("creates exactly one unplaced enclosure asset and references it", () => {
-    const model = createDefaultDrawingModel("Panel Test");
+    const model = createDefaultDrawingModel();
     const result = createDetailedPanelDrawingSheet(model, {
       mode: "create",
       panelType: "panel",

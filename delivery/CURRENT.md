@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-003 — repair standalone test typing (brought forward)
-Status: next — dependency fixes awaiting this already-approved build prerequisite
+Task: PLAN-002-TASK-002A — dependency-security browser verification
+Status: doing — Task003 type repair verified
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: repair39 existing test diagnostics without weakening assertions, in a separate commit; then complete002A production/browser verification and Task002. Do not bypass the updated build's real test checking.
+Next action: checkpoint Task003, run maintained production drawing browsers on guarded synthetic3100; compare known failures. Then finish002A and resume002 recovery baseline.
 
 ## Progress snapshot
+
+Task003 complete13:36: standalone typecheck0 errors,704 units/116files, full lint and production build pass. No runtime logic or weakened assertions; metadata fixtures corrected and discriminants narrowed. No stage tag; browser/hydration gate remains.
+
+Security WIP99f38c530e0fad2c4349b914c245aca664e3ec6b pushed and exact remote SHA verified. Task003 started13:33 local. No verified-stage tag yet.
 
 Task001 complete. Recovery a8338272ea99e79f1909a6e8edd3cf8fa95bd01e pushed and exact remote SHA verified. All 655 audited product source hashes match; original reliability-hardening and live port3000 PID31720 untouched. No product optimization yet.
 

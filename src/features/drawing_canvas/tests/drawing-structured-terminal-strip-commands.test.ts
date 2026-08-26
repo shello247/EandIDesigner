@@ -96,7 +96,9 @@ const dinRailSymbol: ApprovedDrawingSymbol = {
     displayName: "Standard TH35 DIN Rail",
     category: "rail",
     layoutUsage: "panel_layout",
-    mountingType: "other",
+    mountingType: "backplate",
+    anchors: [],
+    terminals: [],
     physicalWidthMm: 300,
     physicalHeightMm: 35,
     viewBox: { x: 0, y: 0, width: 300, height: 35 }

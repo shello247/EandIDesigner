@@ -32,7 +32,7 @@ const symbol: ApprovedDrawingSymbol = {
     physicalHeightMm: 60,
     layoutUsage: "both",
     anchors: [{ key: "LINE", x: 20, y: 0, kind: "terminal" }],
-    terminals: [{ key: "L", label: "Line", anchorKey: "LINE", panelSide: "single" }],
+    terminals: [{ key: "L", label: "Line", anchorKey: "LINE", panelSide: "single", requiredForWiring: false }],
     panelWiring: { assetType: "breaker", tagPrefix: "MCB", schematicScale: 0.5 }
   }
 };

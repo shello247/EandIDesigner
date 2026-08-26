@@ -9,7 +9,7 @@ PLAN-002 — [Drawing Performance Improvements](plans/active/PLAN-002-drawing-pe
 - [x] PLAN-002-TASK-001 — Reviewed source recovery and verified GitHub snapshot
 - [ ] PLAN-002-TASK-002A — Authorized dependency-security prerequisite (before resuming Task002)
 - [ ] PLAN-002-TASK-002 — Guarded run configuration and clean isolated baseline
-- [ ] PLAN-002-TASK-003 — Repair standalone test typing
+- [x] PLAN-002-TASK-003 — Repair standalone test typing (brought forward for security build)
 - [ ] PLAN-002-TASK-004 — Reproduce and fix production hydration mismatch
 - [ ] PLAN-002-TASK-005 — Refresh stale drawing browser locators
 - [ ] PLAN-002-TASK-006 — Establish production drawing release gates
