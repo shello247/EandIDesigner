@@ -17,6 +17,8 @@ test("authors, removes, restores, and reloads a structured panel jumper", async 
   try {
     await page.goto(`/drawings/${fixture.drawingId}`);
     await page.getByRole("button", { name: "Open sheet loader" }).click();
+    await page.getByRole("dialog", { name: "Sheet Loader" })
+      .getByRole("button", { name: "Expand Front Matter" }).click();
     await page
       .getByRole("dialog", { name: "Sheet Loader" })
       .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
@@ -77,6 +79,8 @@ test("authors, removes, restores, and reloads a structured panel jumper", async 
     );
     await page.reload();
     await page.getByRole("button", { name: "Open sheet loader" }).click();
+    await page.getByRole("dialog", { name: "Sheet Loader" })
+      .getByRole("button", { name: "Expand Front Matter" }).click();
     await page
       .getByRole("dialog", { name: "Sheet Loader" })
       .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })

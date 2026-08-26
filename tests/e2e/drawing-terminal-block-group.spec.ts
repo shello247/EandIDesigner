@@ -51,11 +51,15 @@ test("builds one structured terminal strip on a panel backplane", async ({
 
     await page.getByRole("button", { name: "Asset Manager" }).click();
     const assetManager = page.getByRole("dialog", { name: "Asset Manager" });
-    await assetManager
-      .getByRole("button", { name: "Terminal Blocks 1" })
-      .click();
+    const terminalCategory = assetManager.getByRole("button", { name: "Terminal Blocks, 1 asset" });
+    await expect(terminalCategory).toHaveAttribute("aria-expanded", /^(true|false)$/);
+    if (await terminalCategory.getAttribute("aria-expanded") === "false") {
+      await terminalCategory.click();
+    }
+    await expect(terminalCategory).toHaveAttribute("aria-expanded", "true");
     await expect(assetManager.getByRole("button", { name: /TB-101/ })).toBeVisible();
     await assetManager.getByRole("button", { name: /TB-101/ }).click();
+    await assetManager.getByRole("button", { name: /^1 Identity/ }).click();
     await expect(assetManager).toContainText("Terminal strip members");
     await expect(assetManager).toContainText("M07");
     await expect(assetManager.getByLabel("General description")).toHaveValue(

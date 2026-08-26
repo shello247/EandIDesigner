@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-004 — production hydration mismatch
-Status: complete — checkpoint then proceed005
+Task: PLAN-002-TASK-005 — browser locators
+Status: complete — checkpoint then006
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: checkpoint004, then005 stale navigation locators, preserving engineering assertions.
+Next action: checkpoint005 then establish production CI gate and run full Stage1 verification.
 
 ## Progress snapshot
+
+005 complete13:59: four production workflows pass with all engineering assertions retained. Focused lint/full types pass. No application change. Full Stage1 gate next under006.
+
+004 checkpoint59bdde1ed9bcdc635149e116e9b13ad0fe933695 remotely verified.005 started13:57. Last verified-stage tag remains Stage0.
 
 004 complete13:56: one panel SVG title expression fixes demonstrated empty SSR title.2regression cases fail-before/pass-after;16harness tests, full types/lint/build and unchanged production assignment browser pass. No page errors. Original source verified unchanged. Stage1 not yet complete.
 

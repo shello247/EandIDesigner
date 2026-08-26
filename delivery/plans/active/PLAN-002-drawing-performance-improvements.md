@@ -1,7 +1,7 @@
 # PLAN-002 — Drawing Performance Improvements
 
 Status: active
-Progress: Stage0 recovery/isolation plus002A security and003 typing complete. Audit/types0,704units/lint/build pass; browsers retain22pass/5knownfail. Proceed004 hydration then005 locators; no performance optimization yet.
+Progress: Stage0 recovery/isolation plus002A security/003typing/004hydration/005locators complete. All5previously failing browser workflows pass in focused production runs; proceed006 full regression/CI gate. No performance optimization yet.
 Started: 2026-08-26 12:55
 Completed: pending
 Duration: pending

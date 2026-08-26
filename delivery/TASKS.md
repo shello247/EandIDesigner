@@ -11,7 +11,7 @@ PLAN-002 — [Drawing Performance Improvements](plans/active/PLAN-002-drawing-pe
 - [x] PLAN-002-TASK-002 — Guarded run configuration and clean isolated baseline
 - [x] PLAN-002-TASK-003 — Repair standalone test typing (brought forward for security build)
 - [x] PLAN-002-TASK-004 — Reproduce and fix production hydration mismatch
-- [ ] PLAN-002-TASK-005 — Refresh stale drawing browser locators
+- [x] PLAN-002-TASK-005 — Refresh stale drawing browser locators
 - [ ] PLAN-002-TASK-006 — Establish production drawing release gates
 - [ ] PLAN-002-TASK-007 — Remove closed Wire Catalog mounting overhead
 - [ ] PLAN-002-TASK-008 — Accurate bounded action and rendering metrics

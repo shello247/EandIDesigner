@@ -4,18 +4,18 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-005
 Stage: 1
 Priority: P1
-Status: todo
+Status: done
 Test impact: update
-Started: pending
-Completed: pending
-Duration: pending
+Started: 2026-08-26 13:57
+Completed: 2026-08-26 13:59
+Duration: approximately2m
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] Collapsed sections/category controls handled; original engineering assertions retained; affected workflows pass.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
+- [x] Collapsed sections/category controls handled; original engineering assertions retained; affected workflows pass.
+- [x] Focused tests, affected browser checks and necessary broader gates recorded.
+- [x] Compared with verified predecessor; original failures/outliers retained.
 - [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
 
 ## Execution
@@ -37,4 +37,3 @@ Use the guarded runner for focused Vitest/Playwright and lint/type/build checks 
 ## Report
 
 delivery/reports/PLAN-002-TASK-005-browser-locators.md
-

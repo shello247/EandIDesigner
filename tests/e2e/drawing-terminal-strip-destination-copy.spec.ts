@@ -74,12 +74,17 @@ test("copies an existing terminal strip from the destination panel sheet", async
 
     await page.getByRole("button", { name: "Asset Manager" }).click();
     const assetManager = page.getByRole("dialog", { name: "Asset Manager" });
-    await assetManager
-      .getByRole("button", { name: /Terminal Blocks 2/ })
-      .click();
+    const terminalCategory = assetManager.getByRole("button", { name: "Terminal Blocks, 2 assets" });
+    await expect(terminalCategory).toHaveAttribute("aria-expanded", /^(true|false)$/);
+    if (await terminalCategory.getAttribute("aria-expanded") === "false") {
+      await terminalCategory.click();
+    }
+    await expect(terminalCategory).toHaveAttribute("aria-expanded", "true");
     await assetManager.getByRole("button", { name: /TB-102/ }).click();
+    await assetManager.getByRole("button", { name: /^3 Sheet Associations/ }).click();
     await expect(assetManager).toContainText("PLC001 Panel Layout Drawing");
     await assetManager.getByRole("button", { name: /TB-101/ }).click();
+    await assetManager.getByRole("button", { name: /^3 Sheet Associations/ }).click();
     await expect(assetManager).toContainText("JB001 Panel Layout Drawing");
     await assetManager.getByRole("button", { name: "Close asset manager" }).click();
 
