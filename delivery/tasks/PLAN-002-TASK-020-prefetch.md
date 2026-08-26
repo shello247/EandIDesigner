@@ -4,19 +4,19 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-020
 Stage: 6
 Priority: P1
-Status: doing
+Status: done
 Test impact: add
 Started: 2026-08-26 17:40
-Completed: pending
-Duration: pending
+Completed: 2026-08-26 18:00
+Duration: approximately 20 minutes
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] No automatic unrelated destination fan-out during saves; list freshness/navigation preserved; measure RSC plus action bytes.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] No automatic unrelated destination fan-out during saves; list freshness/navigation preserved; measure RSC plus action bytes.
+- [x] Focused tests, affected browser checks and necessary broader gates recorded.
+- [x] Compared with verified predecessor; original failures/outliers retained.
+- [x] Source-only checkpoint reviewed, pushed and remote SHA verified.
 
 ## Execution
 

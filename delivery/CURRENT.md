@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-020 — control drawing-scoped unrelated prefetch
+Task: PLAN-002-TASK-021 — integrated regression and repeated performance comparison
 Status: doing
-Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: reproduce and classify drawing-editor background GET fan-out, apply a drawing-scoped prefetch policy to unrelated navigation only, and measure complete save Action/RSC bytes while preserving list freshness and normal navigation.
+Started: 2026-08-26 18:00 America/Port_of_Spain
+Next action: run the integrated baseline/candidate comparison, twenty repeated UI cycles, fifty-entry history limit, full regression matrix, and record every remaining budget failure without changing product behavior.
 
 ## Progress snapshot
+
+Stage6 CI `33017558582` passed exact `e8b406811a9dffa666a9bb9a10c569ab5d4dfd01`: audit/lint/types/770 units/bootstrap/build/30 production workflows. Tag `drawing-perf-pass-1-stage-6-20260826` is remotely verified and peels to that source. 020 complete 18:00 (approximately 20m); 021 started 18:00. No live promotion.
+
+020 disables automatic sidebar prefetch only inside an active drawing editor and removes save-time drawing-list revalidation. Across 30 forty-sheet saves, unrelated requests fell 226 to 0, response body 212,609 to 150 bytes, and median/p95 254.49/298.87ms to 215.52/245.43ms. Explicit list navigation returned the fresh saved title. Three failed transport-probe iterations are retained: an early response-body race, an invalid `response.finished()` assumption, and an intentionally interrupted confirmation run before CDP byte counting.
 
 019 CI `33016170028` passed exact `3e636cabd1c39f6191b979f5d45c9b3b45e107f6`: audit/lint/types/762 units/bootstrap/build/30 production workflows. 019 complete 17:40 (approximately 13m); 020 started 17:40. Stage6 remains open and untagged. No live promotion.
 
