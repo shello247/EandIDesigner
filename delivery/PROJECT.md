@@ -1,7 +1,7 @@
 # EI Designer drawing performance pass
 
 Active: PLAN-002 — controlled performance improvement, 23 tasks, public source recovery checkpoints authorized.
-Stage0–3 verified. Stage3 checkpointa4c2d8ced508b22bc69a7b212ffd6271d1b52138 is remotely recoverable and tagged. Task015 query-split checkpointc8948aaef061cf651bfa82e46743a8e33141d554 is remotely verified; Task016 on-demand catalogue detail loading is active. No live promotion.
+Stage0–3 verified. Stage3 checkpoint a4c2d8ced508b22bc69a7b212ffd6271d1b52138 is remotely recoverable and tagged. Task016 lazy-loader checkpoint 5899503f4953c7ea9b8cd63fb5399c36a333279c is remotely verified; Task017 drawing-consumer migration is active. No live promotion.
 Completed: PLAN-001 — evidence audit; original 524 engineering tests pass, hydration/stale-locator/type-test failures documented.
 
 Implementation: linked drawing-performance-pass-1 worktree; codex/drawing-performance-pass-1 branch. Original reliability-hardening stays live and unchanged. Canonical main used only for Git administration; no data inspection. No schema/provider/dependency/engineering identity changes, no main merge/live promotion.

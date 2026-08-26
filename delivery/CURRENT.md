@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-016 — load catalogue details on demand
+Task: PLAN-002-TASK-017 — migrate drawing consumers and save validation
 Status: doing
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: map current symbol insertion flows and add a deduplicated exact-version loader with explicit loading/error/retry/no-partial-insertion tests before changing UI consumers.
+Next action: map every drawing full-catalogue consumer, migrate editor/save/preview/print/PDF to dependency bundles plus summaries, and prove the initial full-symbol payload is independent of unused catalogue size.
 
 ## Progress snapshot
+
+016 checkpoint `5899503f4953c7ea9b8cd63fb5399c36a333279c` publication-reviewed, pushed and exact remote branch SHA verified. 017 started 16:30. Stage 4 remains open; no live promotion.
+
+016 complete 16:30 (approximately 7m): editor-scoped exact-version loader deduplicates concurrent requests, caches immutable successes, leaves errors retryable and prevents partial insertion. Six loader contracts, 746 units, lint/types/build and three production workflows pass. Actual drawing-consumer migration remains deliberately in 017.
 
 015 checkpointc8948aaef061cf651bfa82e46743a8e33141d554 publication-reviewed, pushed and exact remote branch SHA verified.016 started16:23. Stage4 remains open; no live promotion.
 

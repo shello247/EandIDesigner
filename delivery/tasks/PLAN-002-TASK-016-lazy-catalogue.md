@@ -4,19 +4,19 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-016
 Stage: 4
 Priority: P1
-Status: doing
+Status: done
 Test impact: add
 Started: 2026-08-26 16:23
-Completed: pending
-Duration: pending
+Completed: 2026-08-26 16:30
+Duration: approximately 7 minutes
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] Deduplicated full-record loads; explicit error/retry; no partial insertion; summary loads do not invalidate graph.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] Deduplicated full-record loads; explicit error/retry; no partial insertion; summary loads do not invalidate graph.
+- [x] Focused tests, affected browser checks and necessary broader gates recorded.
+- [x] Compared with verified predecessor; original failures/outliers retained.
+- [x] Source-only checkpoint reviewed, pushed and remote SHA verified.
 
 ## Execution
 

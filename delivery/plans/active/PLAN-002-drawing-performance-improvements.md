@@ -1,7 +1,7 @@
 # PLAN-002 — Drawing Performance Improvements
 
 Status: active
-Progress: Stage0–3 verified. Stage3 checkpointa4c2d8ced508b22bc69a7b212ffd6271d1b52138 is remotely recoverable and tagged. Task015 query-split checkpointc8948aaef061cf651bfa82e46743a8e33141d554 is remotely verified; Task016 on-demand catalogue detail loading is active.
+Progress: Stage0–3 verified. Stage3 checkpoint a4c2d8ced508b22bc69a7b212ffd6271d1b52138 is remotely recoverable and tagged. Task016 lazy-loader checkpoint 5899503f4953c7ea9b8cd63fb5399c36a333279c is remotely verified; Task017 drawing-consumer migration is active.
 Started: 2026-08-26 12:55
 Completed: pending
 Duration: pending
