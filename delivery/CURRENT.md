@@ -1,11 +1,48 @@
-# Current work
+# CURRENT — Delivery OS
 
-Plan: PLAN-002 — delivery/plans/completed/PLAN-002-drawing-performance-improvements.md
-Task: none
-Status: complete
-Started: 2026-08-26 12:55 America/Port_of_Spain
-Completed: 2026-08-26 18:55 America/Port_of_Spain
-Next action: await the user's separate decision on squash-PR/live promotion or a new production-readiness programme. Do not merge, restart the live editor, or begin deferred work automatically.
+## Where to look first
+
+- Tasks index: `delivery/TASKS.md`
+- Project brain: `delivery/PROJECT.md`
+- Final assessment: `delivery/reports/PLAN-002-final-assessment.md`
+- Recovery map: `delivery/reports/PLAN-002-recovery-map.md`
+
+## Active plan
+
+- PlanId: none (PLAN-002 completed)
+- Plan path: `delivery/plans/completed/PLAN-002-drawing-performance-improvements.md`
+- Started: 2026-08-26 12:55 America/Port_of_Spain
+- Completed: 2026-08-26 18:55 America/Port_of_Spain
+- Elapsed: approximately 6 hours including serial verification and checkpoint waits
+
+## Current task
+
+- TaskId: none
+- Status: complete / idle
+- Most recent task: PLAN-002-TASK-023, approximately 8 minutes
+
+## Next action
+
+- Await the user's separate decision on squash-PR/live promotion or a new production-readiness programme. Do not merge, restart the live editor, or begin deferred work automatically.
+
+## Quick commands
+
+- Install: `npm ci`
+- Dev: `npm run dev:webpack`
+- Test: `npm run test`
+- Drawing E2E: `npm run test:drawing -- --reporter=line`
+- Lint: `npm run lint`
+- Type-check: `npm run typecheck`
+- Build: `$env:DATABASE_URL='file:./dev.db'; npm run build`
+
+## Open these files next
+
+- `delivery/PROJECT.md`
+- `delivery/TASKS.md`
+- `delivery/plans/completed/PLAN-002-drawing-performance-improvements.md`
+- `delivery/reports/PLAN-002-final-assessment.md`
+- `delivery/reports/PLAN-002-recovery-map.md`
+- `delivery/reports/PLAN-002-TASK-023-recovery-rehearsal.md`
 
 ## Progress snapshot
 
