@@ -2,9 +2,12 @@ import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import {
   approvedNetworkVersionIdsSchema,
+  drawingSymbolCatalogSummarySchema,
+  drawingSymbolVersionIdsSchema,
   parseMetadataJson,
   symbolTechnicalKindSchema,
   symbolStatusSchema,
+  type DrawingSymbolCatalogSummary,
   type ValidationIssue
 } from "./schema";
 import {
@@ -385,6 +388,167 @@ export async function listDrawingSymbolVersions(
     }))
   ];
 }
+
+const DRAWING_VERSION_QUERY_CHUNK_SIZE = 400;
+
+type DrawingSymbolVersionRow = {
+  id: string;
+  symbolId: string;
+  versionNumber: number;
+  svg: string;
+  metadataJson: string;
+  symbol: {
+    id: string;
+    symbolKey: string;
+    displayName: string;
+    manufacturer: string | null;
+    model: string | null;
+    category: string;
+    managedCategory: { id: string; name: string } | null;
+  };
+};
+
+function toExactDrawingSymbolVersion(version: DrawingSymbolVersionRow) {
+  return {
+    symbolId: version.symbolId,
+    symbolKey: version.symbol.symbolKey,
+    displayName: version.symbol.displayName,
+    manufacturer: version.symbol.manufacturer,
+    model: version.symbol.model,
+    category: symbolTechnicalKindSchema.parse(version.symbol.category),
+    technicalKind: symbolTechnicalKindSchema.parse(version.symbol.category),
+    managedCategory: requireManagedCategory(version.symbol.managedCategory),
+    versionId: version.id,
+    versionNumber: version.versionNumber,
+    svg: version.svg,
+    metadata: parseMetadataJson(version.metadataJson),
+    selectable: false
+  };
+}
+
+export async function listDrawingSymbolVersionsByIds(
+  versionIds: readonly string[]
+) {
+  const requestedVersionIds = drawingSymbolVersionIdsSchema.parse(versionIds);
+
+  if (requestedVersionIds.length === 0) {
+    return [];
+  }
+
+  const versionsById = new Map<string, DrawingSymbolVersionRow>();
+
+  for (
+    let offset = 0;
+    offset < requestedVersionIds.length;
+    offset += DRAWING_VERSION_QUERY_CHUNK_SIZE
+  ) {
+    const chunk = requestedVersionIds.slice(
+      offset,
+      offset + DRAWING_VERSION_QUERY_CHUNK_SIZE
+    );
+    const rows = await prisma.symbolVersion.findMany({
+      where: {
+        id: { in: chunk },
+        symbol: { category: { not: "network_device" } }
+      },
+      select: {
+        id: true,
+        symbolId: true,
+        versionNumber: true,
+        svg: true,
+        metadataJson: true,
+        symbol: {
+          select: {
+            id: true,
+            symbolKey: true,
+            displayName: true,
+            manufacturer: true,
+            model: true,
+            category: true,
+            managedCategory: {
+              select: { id: true, name: true }
+            }
+          }
+        }
+      }
+    });
+
+    for (const row of rows) {
+      versionsById.set(row.id, row);
+    }
+  }
+
+  return requestedVersionIds.flatMap((versionId) => {
+    const version = versionsById.get(versionId);
+    return version ? [toExactDrawingSymbolVersion(version)] : [];
+  });
+}
+
+export const listDrawingSymbolCatalogSummaries = cache(
+  async (): Promise<DrawingSymbolCatalogSummary[]> => {
+    const rows = await prisma.symbol.findMany({
+      where: {
+        status: "approved",
+        category: { not: "network_device" }
+      },
+      select: {
+        id: true,
+        symbolKey: true,
+        displayName: true,
+        manufacturer: true,
+        model: true,
+        category: true,
+        managedCategory: {
+          select: { id: true, name: true }
+        },
+        versions: {
+          where: { status: "approved" },
+          orderBy: { versionNumber: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            versionNumber: true,
+            metadataJson: true
+          }
+        }
+      },
+      orderBy: [
+        { managedCategory: { name: "asc" } },
+        { displayName: "asc" },
+        { id: "asc" }
+      ]
+    });
+
+    return rows.flatMap((symbol) => {
+      const version = symbol.versions[0];
+      if (!version) return [];
+
+      const metadata = parseMetadataJson(version.metadataJson);
+      return [
+        drawingSymbolCatalogSummarySchema.parse({
+          symbolId: symbol.id,
+          symbolKey: symbol.symbolKey,
+          displayName: symbol.displayName,
+          manufacturer: symbol.manufacturer,
+          model: symbol.model,
+          technicalKind: symbolTechnicalKindSchema.parse(symbol.category),
+          managedCategory: requireManagedCategory(symbol.managedCategory),
+          versionId: version.id,
+          versionNumber: version.versionNumber,
+          capabilities: {
+            layoutUsage: metadata.layoutUsage,
+            physicalWidthMm: metadata.physicalWidthMm,
+            physicalHeightMm: metadata.physicalHeightMm,
+            mountingType: metadata.mountingType,
+            panelCategory: metadata.panelCategory,
+            terminalBlockModule: metadata.terminalBlockModule,
+            terminalStripCapability: metadata.terminalStripCapability
+          }
+        })
+      ];
+    });
+  }
+);
 
 export const listNetworkSymbolCatalog = cache(
   async (): Promise<ApprovedNetworkSymbolCatalogItem[]> => {

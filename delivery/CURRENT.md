@@ -4,9 +4,11 @@ Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvemen
 Task: PLAN-002-TASK-015 — batched exact render bundle and catalogue summaries
 Status: doing
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: reproduce the full-catalogue overfetch with query-contract tests, then add exact-version and lightweight summary data/API contracts without migrating consumers yet.
+Next action: publication-review and remotely verify the Task015 source checkpoint; then begin Task016 deduplicated on-demand catalogue detail loading.
 
 ## Progress snapshot
+
+015 implementation verified16:22 (approx11m): exact bundle stays2,829bytes/~1ms from25to1,000unused symbols versus legacy2.85MB/111.55ms at1,000; summary355,398bytes/94.76ms. Test-first query contracts,740units, lint/types/build and4production workflows pass. Checkpoint publication pending.
 
 014 checkpoint2cd5d670a36b1d9a382c97e96cdb2e7ff00b2f78 publication-reviewed, pushed and exact remote branch SHA verified.015 started16:11. Stage4 remains open; no live promotion.
 

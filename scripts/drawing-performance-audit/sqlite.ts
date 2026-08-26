@@ -11,7 +11,11 @@ const {stringifyDrawingModel}=await import("../../src/features/drawing_canvas/da
 let queries:{fingerprint:string;sql:string;durationMs:number}[]=[];
 client.$on("query",event=>{if(queries.length<10000)queries.push({fingerprint:sha(event.query.replace(/\s+/g," ")),sql:event.query,durationMs:event.duration});});
 const {listDrawings,getDrawingDetail}=await import("../../src/features/drawing_canvas/data/queries");
-const {listSymbolsForDrawing}=await import("../../src/features/symbol_registry/api/public");
+const {
+  listDrawingRenderSymbols,
+  listDrawingSymbolCatalogSummaries,
+  listSymbolsForDrawing
+}=await import("../../src/features/symbol_registry/api/public");
 const {saveDrawing}=await import("../../src/features/drawing_canvas/data/mutations");
 const results:unknown[]=[];
 async function run(name:string,operation:()=>Promise<unknown>,facts:Record<string,unknown>={}){
@@ -47,6 +51,8 @@ try{
   for(const count of [25,250,1000]){
     await setCatalogueCount(count);
     await run("symbols-catalogue-"+count,()=>listSymbolsForDrawing(["audit_symbol_0000_v1"]),{syntheticSymbols:count,referencedVersions:1});
+    await run("symbols-render-bundle-"+count,()=>listDrawingRenderSymbols(["audit_symbol_0000_v1"]),{syntheticSymbols:count,referencedVersions:1});
+    await run("symbols-catalogue-summaries-"+count,()=>listDrawingSymbolCatalogSummaries(),{syntheticSymbols:count});
   }
   await setCatalogueCount(25);
   for(const id of ["audit_mixed_10","audit_mixed_40","audit_mixed_120","audit_dense"]){

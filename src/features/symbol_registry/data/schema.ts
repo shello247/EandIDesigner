@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { symbolComponentPositionsSchema } from "@/features/symbol_components/api/public";
+import { symbolCategorySummarySchema } from "@/features/symbol_categories/api/public";
 
 export const symbolStatusSchema = z.enum([
   "draft",
@@ -511,6 +512,34 @@ export const approvedNetworkVersionIdsSchema = z
   .max(5000)
   .transform((versionIds) => [...new Set(versionIds)]);
 
+export const drawingSymbolVersionIdsSchema = z
+  .array(z.string().trim().min(1).max(120))
+  .max(5000)
+  .transform((versionIds) => [...new Set(versionIds)]);
+
+export const drawingSymbolCatalogCapabilitiesSchema = z.object({
+  layoutUsage: symbolLayoutUsageSchema.optional(),
+  physicalWidthMm: z.number().positive().optional(),
+  physicalHeightMm: z.number().positive().optional(),
+  mountingType: symbolPanelMountingTypeSchema.optional(),
+  panelCategory: symbolPanelCategorySchema.optional(),
+  terminalBlockModule: symbolTerminalBlockModuleSchema.optional(),
+  terminalStripCapability: symbolTerminalStripCapabilitySchema.optional()
+});
+
+export const drawingSymbolCatalogSummarySchema = z.object({
+  symbolId: z.string().trim().min(1).max(120),
+  symbolKey: z.string().trim().min(1).max(120),
+  displayName: z.string().trim().min(1).max(200),
+  manufacturer: z.string().trim().max(160).nullable().optional(),
+  model: z.string().trim().max(160).nullable().optional(),
+  technicalKind: symbolTechnicalKindSchema,
+  managedCategory: symbolCategorySummarySchema,
+  versionId: z.string().trim().min(1).max(120),
+  versionNumber: z.number().int().positive(),
+  capabilities: drawingSymbolCatalogCapabilitiesSchema
+});
+
 export const terminalMapVerificationIssueSchema = z.object({
   severity: validationIssueSeveritySchema,
   terminalKey: z.string().trim().max(80).optional(),
@@ -655,6 +684,15 @@ export type SaveSymbolMetadataChangesInput = z.infer<
 >;
 export type ApprovedNetworkVersionIds = z.infer<
   typeof approvedNetworkVersionIdsSchema
+>;
+export type DrawingSymbolVersionIds = z.infer<
+  typeof drawingSymbolVersionIdsSchema
+>;
+export type DrawingSymbolCatalogCapabilities = z.infer<
+  typeof drawingSymbolCatalogCapabilitiesSchema
+>;
+export type DrawingSymbolCatalogSummary = z.infer<
+  typeof drawingSymbolCatalogSummarySchema
 >;
 export type TerminalMapVerificationIssue = z.infer<
   typeof terminalMapVerificationIssueSchema

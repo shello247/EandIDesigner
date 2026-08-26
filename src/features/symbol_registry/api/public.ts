@@ -1,7 +1,9 @@
 import {
   getApprovedNetworkSymbolSvgAsset as getApprovedNetworkSymbolSvgAssetQuery,
   listApprovedNetworkSymbolVersionsByIds as listApprovedNetworkSymbolVersionsByIdsQuery,
+  listDrawingSymbolCatalogSummaries as listDrawingSymbolCatalogSummariesQuery,
   listDrawingSymbolVersions,
+  listDrawingSymbolVersionsByIds,
   listNetworkSymbolCatalog,
   listNetworkSymbolVersions,
   listSymbolIdentitiesByIds
@@ -16,6 +18,9 @@ export type { ApprovedNetworkSymbol, ApprovedNetworkSymbolCatalogItem };
 
 export type {
   AnchorKind,
+  DrawingSymbolCatalogCapabilities,
+  DrawingSymbolCatalogSummary,
+  DrawingSymbolVersionIds,
   NetworkDeviceType,
   NetworkPortMedia,
   SaveSymbolDraftInput,
@@ -38,6 +43,9 @@ export type {
   ValidationIssue
 } from "../data/schema";
 export {
+  drawingSymbolCatalogCapabilitiesSchema,
+  drawingSymbolCatalogSummarySchema,
+  drawingSymbolVersionIdsSchema,
   networkDeviceTypeSchema,
   networkPortMediaSchema,
   symbolCategorySchema,
@@ -67,6 +75,16 @@ export async function listApprovedSymbolsForDrawing(
   referencedVersionIds: readonly string[] = []
 ) {
   return listDrawingSymbolVersions(referencedVersionIds);
+}
+
+export async function listDrawingRenderSymbols(
+  referencedVersionIds: readonly string[]
+) {
+  return listDrawingSymbolVersionsByIds(referencedVersionIds);
+}
+
+export async function listDrawingSymbolCatalogSummaries() {
+  return listDrawingSymbolCatalogSummariesQuery();
 }
 
 export async function listNetworkSymbolCatalogForMapping(): Promise<
