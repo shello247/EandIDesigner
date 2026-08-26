@@ -1,7 +1,7 @@
 # PLAN-002 — Drawing Performance Improvements
 
 Status: active
-Progress: Stage0 recovery/isolation and Stage1 verification complete. CI32998854844 passes full lint/types/714units/build and27production workflows at c63a0ef5db295103a2d0a9ecc9f9e161aacb9b83. Stage2 begins with007closed Wire Catalog mounting. No measured optimization gain claimed yet.
+Progress: Stage0 recovery/isolation and Stage1 verification complete. Stage2 Task007 complete: catalog manager code/download waits for first request; draft/error/retry/focus behavior passes. Task008 accurate bounded metrics next. No milliseconds gain claimed before repeated measurement.
 Started: 2026-08-26 12:55
 Completed: pending
 Duration: pending

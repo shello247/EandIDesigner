@@ -129,7 +129,7 @@ import {
   type WireCatalogEntry,
   type WireSpecificationSnapshot
 } from "@/features/wire_catalog/api/public";
-import { WireCatalogPicker } from "@/features/wire_catalog/ui/public";
+import { WireCatalogPicker } from "@/features/wire_catalog/ui/components/wire-catalog-picker";
 import { isGeneratedPanelPatternLegendPlacement } from "../../logic/services/drawing-panel-reference-symbols";
 import type { DrawingComponentSelection } from "@/features/symbol_components/api/public";
 import { validateDrawingComponentSelections } from "@/features/symbol_components/api/public";

@@ -392,7 +392,7 @@ const AssetManagerDialog = dynamic(
 );
 const WireCatalogManager = dynamic(
   () =>
-    import("@/features/wire_catalog/ui/public").then(
+    import("@/features/wire_catalog/ui/components/wire-catalog-manager").then(
       (module) => module.WireCatalogManager
     ),
   {
@@ -502,6 +502,7 @@ export function DrawingCanvasShell({
     initialWireCatalogEntries
   );
   const [isWireCatalogOpen, setIsWireCatalogOpen] = useState(false);
+  const [hasRequestedWireCatalog, setHasRequestedWireCatalog] = useState(false);
   const [isLegacyWireUpgradeOpen, setIsLegacyWireUpgradeOpen] =
     useState(false);
   const [viewMode, setViewMode] = useState<CanvasViewMode>("edit");
@@ -573,6 +574,7 @@ export function DrawingCanvasShell({
   const drawingSettingsReturnFocusRef = useRef<HTMLElement | null>(null);
   const sheetSettingsReturnFocusRef = useRef<HTMLElement | null>(null);
   const connectionsReturnFocusRef = useRef<HTMLElement | null>(null);
+  const wireCatalogReturnFocusRef = useRef<HTMLElement | null>(null);
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
   const [isAddTerminalBlockOpen, setIsAddTerminalBlockOpen] = useState(false);
   const [isCopyTerminalBlockOpen, setIsCopyTerminalBlockOpen] = useState(false);
@@ -644,6 +646,10 @@ export function DrawingCanvasShell({
   const clearConnectionInspections = () => {
     setConnectionSourceInspection(null);
     setConnectionHoverInspection(null);
+  };
+  const openWireCatalog = () => {
+    setHasRequestedWireCatalog(true);
+    openLocalDialog(setIsWireCatalogOpen, wireCatalogReturnFocusRef);
   };
   const revealPropertiesForWireAuthoring = () => {
     if (propertiesCollapsedBeforeWireModeRef.current === null) {
@@ -4599,7 +4605,7 @@ export function DrawingCanvasShell({
           wireNumber={proposedInternalWireNumber}
           initialDescription={previousInternalWireDescription}
           catalogEntries={wireCatalogEntries}
-          onManageCatalog={() => setIsWireCatalogOpen(true)}
+          onManageCatalog={openWireCatalog}
           onCancel={() => {
             const draft = pendingInternalWire;
             setPendingInternalWire(null);
@@ -4659,7 +4665,7 @@ export function DrawingCanvasShell({
           onSelectInternalWireRoute={selectDetailedPanelWireRoute}
           onAddInternalWireRoute={addDetailedPanelWireRoute}
           onDeleteInternalWire={requestInternalWireDelete}
-          onManageWireCatalog={() => setIsWireCatalogOpen(true)}
+          onManageWireCatalog={openWireCatalog}
           onUpgradeLegacyWires={() => setIsLegacyWireUpgradeOpen(true)}
           onSelectPatternRoute={selectDetailedPanelPatternRoute}
           onAddPatternRepresentation={addDetailedPanelPatternRoute}
@@ -4698,12 +4704,15 @@ export function DrawingCanvasShell({
           onSubmit={submitDestinationTerminalStripCopy}
         />
       ) : null}
-      <WireCatalogManager
-        open={isWireCatalogOpen}
-        initialEntries={wireCatalogEntries}
-        onClose={() => setIsWireCatalogOpen(false)}
-        onEntriesUpdated={setWireCatalogEntries}
-      />
+      {/* Defer the first mount; retain the instance afterward so closing keeps its draft. */}
+      {hasRequestedWireCatalog ? (
+        <WireCatalogManager
+          open={isWireCatalogOpen}
+          initialEntries={wireCatalogEntries}
+          onClose={() => closeLocalDialog(setIsWireCatalogOpen, wireCatalogReturnFocusRef)}
+          onEntriesUpdated={setWireCatalogEntries}
+        />
+      ) : null}
       {isLegacyWireUpgradeOpen ? (
         <LegacyWireIdentityUpgradeDialog
           preview={legacyWireUpgradePreview}
@@ -5188,7 +5197,7 @@ export function DrawingCanvasShell({
               onConnectionRouteReset={resetConnectionRoute}
               onInternalWireChange={updateDetailedPanelInternalWire}
               wireCatalogEntries={wireCatalogEntries}
-              onManageWireCatalog={() => setIsWireCatalogOpen(true)}
+              onManageWireCatalog={openWireCatalog}
               onPanelPatternChange={updateDetailedPanelPattern}
               onPanelPatternLegendVisibilityChange={
                 updatePanelPatternLegendVisibility

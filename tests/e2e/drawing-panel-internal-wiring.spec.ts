@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "./drawing-test";
+import fs from "node:fs";
+import path from "node:path";
 import {
   createE2ePanelComponentPackage,
   deleteE2eDrawing,
@@ -9,6 +11,84 @@ import {
   openPanelEngineeringWorkbench,
   selectPanelEngineeringView,
 } from "./panel-workflow-helpers";
+
+test("loads Wire Catalog only on request and preserves close/reopen and retry behavior", async ({ page }) => {
+  // Resolve the actual production chunk instead of relying on a build-specific hash.
+  const chunksRoot = path.resolve(".next/static/chunks");
+  const catalogueChunks = fs.readdirSync(chunksRoot, { recursive: true })
+    .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".js"))
+    .filter((entry) => fs.readFileSync(path.join(chunksRoot, entry), "utf8")
+      .includes("Approved wire type, size, and color combinations"));
+  expect(catalogueChunks.length).toBeGreaterThan(0);
+  const requests: string[] = [];
+  let holdRequests = false;
+  let releaseChunk: () => void = () => undefined;
+  const blockedChunk = new Promise<void>((resolve) => { releaseChunk = resolve; });
+  await page.route("**/_next/static/chunks/**", async (route) => {
+    if (catalogueChunks.some((chunk) => new URL(route.request().url()).pathname
+      .endsWith(`/chunks/${chunk.replaceAll("\\", "/")}`))) {
+      requests.push(route.request().url());
+      if (holdRequests) await blockedChunk;
+    }
+    await route.continue();
+  });
+  const fixture = await createE2ePanelComponentPackage();
+  try {
+    await page.goto(`/drawings/${fixture.drawingId}`);
+    await expect(page.getByRole("button", { name: "Open sheet loader" })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "Loading Wire Catalog" })).toHaveCount(0);
+    expect(requests).toEqual([]);
+    await page.getByRole("button", { name: "Open sheet loader" }).click();
+    const loader = page.getByRole("dialog", { name: "Sheet Loader" });
+    await loader.getByRole("button", { name: "Expand Front Matter" }).click();
+    await loader.getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
+      .getByRole("button", { name: "Load" }).click();
+    const workbench = await openPanelEngineeringWorkbench(page);
+    await selectPanelEngineeringView(workbench, "Internal Wires");
+    expect(requests).toEqual([]);
+    const more = workbench.getByLabel(/More panel engineering options/);
+    holdRequests = true;
+    await more.click();
+    await workbench.getByRole("menuitem", { name: "Wire Catalog", exact: true }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Loading Wire Catalog" })).toBeVisible();
+    await expect.poll(() => requests.length).toBeGreaterThan(0);
+    releaseChunk();
+    const manager = page.getByRole("dialog", { name: "Wire Catalog", exact: true });
+    await expect(manager).toBeVisible();
+    const name = `E2E lazy catalog ${fixture.drawingId}`;
+    await manager.getByLabel("Name", { exact: true }).fill(name);
+    await manager.getByLabel("Wire type", { exact: true }).fill("H07V-K");
+    await manager.getByLabel("Size", { exact: true }).fill("1.5 mm²");
+    await manager.getByLabel("Color", { exact: true }).fill("Blue");
+    await manager.getByRole("button", { name: "Close Wire Catalog" }).click();
+    await expect(manager).toHaveCount(0);
+    await expect(more).toBeFocused();
+    await more.click();
+    await workbench.getByRole("menuitem", { name: "Wire Catalog", exact: true }).click();
+    await expect(manager.getByLabel("Name", { exact: true })).toHaveValue(name);
+    await manager.getByRole("button", { name: "Create specification" }).click();
+    await expect(manager.getByText("Wire Catalog updated.", { exact: true })).toBeVisible();
+    // Exercise an actual handled validation error, then retry without closing the editor.
+    await manager.getByLabel("Name", { exact: true }).fill(name);
+    await manager.getByLabel("Wire type", { exact: true }).fill("H07V-K");
+    await manager.getByLabel("Size", { exact: true }).fill("1.5 mm²");
+    await manager.getByLabel("Color", { exact: true }).fill("Blue");
+    await manager.getByRole("button", { name: "Create specification" }).click();
+    await expect(manager.getByText("A wire catalog entry with this name already exists.", { exact: true })).toBeVisible();
+    await expect(manager.getByLabel("Name", { exact: true })).toHaveValue(name);
+    await manager.getByLabel("Name", { exact: true }).fill(`${name} retry`);
+    await manager.getByRole("button", { name: "Create specification" }).click();
+    await expect(manager.getByText("Wire Catalog updated.", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(manager).toHaveCount(0);
+    await expect(more).toBeFocused();
+    expect(requests).toHaveLength(catalogueChunks.length);
+  } finally {
+    releaseChunk();
+    await deleteE2eDrawing(fixture.drawingId);
+    await deleteE2eSymbol(fixture.symbolId);
+  }
+});
 
 async function expectAuthoringPropertiesWithoutNetworkAnalysis(
   page: Page,

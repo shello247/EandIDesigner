@@ -8,7 +8,7 @@ import {
   type WireCatalogEntry,
   type WireSpecificationSnapshot
 } from "@/features/wire_catalog/api/public";
-import { WireCatalogPicker } from "@/features/wire_catalog/ui/public";
+import { WireCatalogPicker } from "@/features/wire_catalog/ui/components/wire-catalog-picker";
 import {
   deriveInternalWireId,
   formatWireNumber,

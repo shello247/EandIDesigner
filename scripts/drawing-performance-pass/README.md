@@ -22,7 +22,7 @@ The ordinary `npm run test:e2e` configuration is not weakened or changed. The ne
 - `drawing-panel-sheet.spec.ts`, `drawing-panel-discovery.spec.ts`, `drawing-panel-connection-reference.spec.ts`: broader drawing coverage to assess in Stage7; not claimed passing by this gate.
 - `drawing-panel-deliverables.spec.ts`, `drawing-panel-generic-release.spec.ts`, `drawing-panel-quality-review.spec.ts`, `drawing-panel-release.spec.ts`: historical deliverables/review/release interfaces, some deliberately removed/deferred. Preserve their assertions/history pending explicit scope review; do not restore removed UI for a green result.
 
-New maintained workflows should extend the scope with corresponding evidence. The gate is not exhaustive certification or a multi-user/cloud capacity test.
+Task007 adds a28th workflow within the same24files: no unopened Wire Catalog download/overlay, first-open loading, draft/focus preservation, handled validation error/retry and nested Escape. New maintained workflows should extend the scope with corresponding evidence. The gate is not exhaustive certification or a multi-user/cloud capacity test.
 
 Every maintained spec imports `tests/e2e/drawing-test.ts`. Its automatic fixture fails on unhandled page errors from the main page and popups, and detaches listeners after the test. It retains the total error count and at most20messages, so an error storm cannot create an unbounded diagnostic array. Existing workflow assertions and the original explicit hydration assertion remain.
 

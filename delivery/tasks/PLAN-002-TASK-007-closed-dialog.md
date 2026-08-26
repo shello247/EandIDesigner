@@ -4,19 +4,19 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-007
 Stage: 2
 Priority: P1
-Status: todo
+Status: done
 Test impact: add
-Started: pending
-Completed: pending
-Duration: pending
+Started: 2026-08-26 14:23
+Completed: 2026-08-26 14:32
+Duration: approx 9m
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] No closed loading overlay; first-open/error/retry/close/focus behavior preserved.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] No closed loading overlay/request; first-open/error/retry/close/focus behavior preserved.
+- [x] Focused tests, affected browser checks and necessary broader gates recorded.
+- [x] Compared with verified predecessor; original failures/outliers retained.
+- [x] Source-only checkpoint reviewed, pushed and remote SHA verified.
 
 ## Execution
 
@@ -38,4 +38,3 @@ Use the guarded runner for focused Vitest/Playwright and lint/type/build checks 
 ## Report
 
 delivery/reports/PLAN-002-TASK-007-closed-dialog.md
-

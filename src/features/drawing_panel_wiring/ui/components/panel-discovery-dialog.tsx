@@ -458,6 +458,8 @@ export function PanelDiscoveryDialog({
                           className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
                           onClick={(event) => {
                             closeMoreMenu(event.currentTarget);
+                            // The menu item is now hidden; return focus to its visible trigger.
+                            event.currentTarget.closest("details")?.querySelector("summary")?.focus();
                             onManageWireCatalog();
                           }}
                         >

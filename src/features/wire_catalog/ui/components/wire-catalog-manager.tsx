@@ -39,13 +39,18 @@ export function WireCatalogManager({
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isPending) {
+      if (event.key !== "Escape") return;
+      // Own Escape while this modal is above the workbench/internal-wire dialog.
+      // Even during a save, it must not dismiss the underlying authoring dialog.
+      event.preventDefault();
+      event.stopPropagation();
+      if (!isPending) {
         if (deleting) setDeleting(null);
         else onClose();
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [deleting, isPending, onClose, open]);
 
   if (!open) return null;

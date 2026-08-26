@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-006 — production CI gate
+Task: PLAN-002-TASK-007 — closed Wire Catalog mounting
 Status: done
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: publish/verify Stage1 annotated tag and documentation checkpoint, then begin007. Stage1 CI passed; do not promote live or merge.
+Next action: publish/verify007 source checkpoint, then begin008 accurate bounded metrics. Stage2 remains open.
 
 ## Progress snapshot
+
+007 complete14:32 (approx9m): held-chunk regression proves no unopened request/overlay and first-open lazy load. Draft, handled error/retry, close/reopen/focus/Escape pass; nested Escape regression fixed.8focused tests/types/lint/build and2production workflows pass. Prior red/diagnostic failures retained; no timing gain claimed.
+
+Stage1 tag remote verified (peeled c63a0ef5db295103a2d0a9ecc9f9e161aacb9b83); documentation07387b294f9e897571bb4d86d4731691471525fd pushed/verified.007 started14:23. No live promotion or main merge.
 
 006 completed14:23 (approx23m). CI32998854844 passed at18:21:04Z for exact c63a0ef5db295103a2d0a9ecc9f9e161aacb9b83: audit/lint/types/714units/harness/bootstrap/build/27production workflows. No retries/page errors. Stage1 tag targets this tested code SHA, not a later documentation commit. Prior failure evidence retained.
 
