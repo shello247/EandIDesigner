@@ -1,7 +1,7 @@
 # PLAN-002 — Drawing Performance Improvements
 
 Status: active
-Progress: Stage0 recovery/isolation plus002A security/003typing/004hydration/005locators complete. All5previously failing browser workflows pass in focused production runs; proceed006 full regression/CI gate. No performance optimization yet.
+Progress: Stage0 recovery/isolation and Stage1 verification complete. CI32998854844 passes full lint/types/714units/build and27production workflows at c63a0ef5db295103a2d0a9ecc9f9e161aacb9b83. Stage2 begins with007closed Wire Catalog mounting. No measured optimization gain claimed yet.
 Started: 2026-08-26 12:55
 Completed: pending
 Duration: pending
@@ -86,7 +86,7 @@ Port3000/live canonical DB untouched. Independent worktree/deps/Prisma/build; gu
 ## Gates and stop conditions
 
 - [x] Stage0 reviewed source recovery remote verified; isolated clean install/build/runtime baseline. Tag drawing-perf-pass-1-stage-0-20260826; known baseline failures retained.
-- [ ] Stage1 full lint/types/unit/build and audited production browsers pass; no hydration suppression/weakened assertions.
+- [x] Stage1 full lint/types/unit/build and audited production browsers pass; no hydration suppression/weakened assertions. Tag drawing-perf-pass-1-stage-1-20260826 targets c63a0ef5db295103a2d0a9ecc9f9e161aacb9b83.
 - [ ] Stage2 closed dialog absent and accurate bounded metrics/parity.
 - [ ] Stage3 graph/invalidation/parity/history/requests counts improve without confirmed regression.
 - [ ] Stage4 dependency closure, lazy catalogue and all render/export/validation consumers correct.

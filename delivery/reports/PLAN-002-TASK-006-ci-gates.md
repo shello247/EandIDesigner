@@ -1,9 +1,9 @@
 # PLAN-002-TASK-006 — Production drawing verification gate
 
 Start: 2026-08-26 14:00 America/Port_of_Spain
-End: pending
-Duration: pending
-Status: verifying
+End: 2026-08-26 14:23 America/Port_of_Spain
+Duration: approx 23m
+Status: done
 
 ## Change and scope
 
@@ -53,3 +53,11 @@ Published checkpoint: `e6b4f77673dcd47697c4ad8509626f693c1d5ac2`, exact remote b
 First CI run failed in full units:713pass/1fail. `scripts/tests/development-runtime.test.ts` supplied a Windows drive path to native Linux `path.resolve` but expected Windows absolute-path semantics. The resolver correctly treats that input as relative on Linux. Mechanical test-only repair uses a native absolute fixture/explicit expected string on each OS; Windows backslash conversion remains covered on Windows. No runtime/database selector changes or skipped assertion. This is a platform fixture defect, not a newly discovered unrelated application runtime failure. Original CI failure artifacts remain available and are retained locally; full CI rerun required.
 
 CI annotation: existing v4 checkout/setup-node/upload-artifact actions declare Node20 and the runner forces Node24. This warning did not fail the job; action-version modernization is not silently bundled into this fixture repair. Repository runtime remains Node24.
+
+Fixture-only repair checkpoint `c63a0ef5db295103a2d0a9ecc9f9e161aacb9b83` pushed and exact remote SHA verified. Local4development-runtime tests and focused lint pass (`task006-platform-fixture`). First CI artifacts are retained at `artifacts/drawing-performance/pass-1/ci-32998543073-failure/`. [Second CI run](https://github.com/shello247/EandIDesigner/actions/runs/32998854844) is in progress for the repaired SHA; no retry of the original failing commit or removal of its evidence.
+
+## Final Stage 1 acceptance
+
+Second CI completed successfully at 2026-08-26T18:21:04Z for exactly `c63a0ef5db295103a2d0a9ecc9f9e161aacb9b83`: install, zero-finding dependency audit, explicit Chromium installation, full lint/types/714 units, isolated harness contracts, synthetic bootstrap, production build and all27drawing workflows passed. One worker, zero retries and automatic page/popup-error assertions remained enabled. The Windows-only batch-runner contract is intentionally platform-specific; no engineering workflow was skipped. The original failed CI run is retained separately above.
+
+Stage1 recovery tag: `drawing-perf-pass-1-stage-1-20260826`, targeting the tested code commit. This verifies the maintained correctness gate, not performance budgets, all historical specifications, cloud readiness or live promotion. Existing Node20 action-runtime deprecation warning remains a documented non-fatal follow-up. Next: Task007 conditional Wire Catalog mounting. No database or live application changes.

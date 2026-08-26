@@ -2,11 +2,15 @@
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
 Task: PLAN-002-TASK-006 — production CI gate
-Status: doing
+Status: done
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: verify and checkpoint the platform-only development-runtime test repair, rerun clean-checkout CI. Stage1/Stage2 remain gated.
+Next action: publish/verify Stage1 annotated tag and documentation checkpoint, then begin007. Stage1 CI passed; do not promote live or merge.
 
 ## Progress snapshot
+
+006 completed14:23 (approx23m). CI32998854844 passed at18:21:04Z for exact c63a0ef5db295103a2d0a9ecc9f9e161aacb9b83: audit/lint/types/714units/harness/bootstrap/build/27production workflows. No retries/page errors. Stage1 tag targets this tested code SHA, not a later documentation commit. Prior failure evidence retained.
+
+Native-path fixture repair c63a0ef5db295103a2d0a9ecc9f9e161aacb9b83 remotely verified.4focused tests/lint pass; secondCI32998854844 in progress. First failure artifacts downloaded into guarded local evidence path. No runtime changes.
 
 CI32998543073 failed:713units pass,1Windows-path fixture assumption fails on Linux. Fix only native fixture/expected path; production resolver untouched. Install/audit/Chromium/lint/types pass. First failure evidence retained; no Stage1 tag.
 
