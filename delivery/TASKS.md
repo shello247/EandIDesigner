@@ -7,6 +7,7 @@ PLAN-002 — [Drawing Performance Improvements](plans/active/PLAN-002-drawing-pe
 ## Queue
 
 - [x] PLAN-002-TASK-001 — Reviewed source recovery and verified GitHub snapshot
+- [ ] PLAN-002-TASK-002A — Authorized dependency-security prerequisite (before resuming Task002)
 - [ ] PLAN-002-TASK-002 — Guarded run configuration and clean isolated baseline
 - [ ] PLAN-002-TASK-003 — Repair standalone test typing
 - [ ] PLAN-002-TASK-004 — Reproduce and fix production hydration mismatch

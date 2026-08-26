@@ -45,24 +45,9 @@ export type AuditEvaluation = {
   nonBlocking: AuditFinding[];
 };
 
-export const DEFAULT_AUDIT_ALLOWLIST: readonly AuditAllowlistEntry[] = [
-  {
-    advisoryId: "GHSA-qx2v-qp2m-jg93",
-    packages: ["postcss", "next"],
-    maximumSeverity: "moderate",
-    expiresOn: "2026-08-20",
-    rationale:
-      "Next uses PostCSS during the controlled build pipeline; EI Designer does not accept and re-embed user-provided CSS."
-  },
-  {
-    advisoryId: "GHSA-w5hq-g745-h8pq",
-    packages: ["uuid", "exceljs"],
-    maximumSeverity: "moderate",
-    expiresOn: "2026-08-20",
-    rationale:
-      "ExcelJS uses uuid.v4; the advisory applies to buffered uuid.v3, v5, and v6 calls and explicitly excludes v4."
-  }
-] as const;
+// The formerly excepted PostCSS and UUID chains are patched. Keep the strict
+// evaluator for future policy review, but do not silently tolerate any findings.
+export const DEFAULT_AUDIT_ALLOWLIST: readonly AuditAllowlistEntry[] = [];
 
 const severityRank: Record<AuditSeverity, number> = {
   info: 0,

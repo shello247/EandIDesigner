@@ -3,10 +3,19 @@ import {
   DEFAULT_AUDIT_ALLOWLIST,
   evaluateAuditReport,
   parseAuditReport,
-  type AuditSeverity
+  type AuditSeverity,
+  type AuditAllowlistEntry
 } from "../dependency-audit-policy";
 
 const evaluationDate = new Date("2026-07-21T12:00:00.000Z");
+
+// Historical fixtures exercise expiry/chain guards independently of live policy.
+const historicalAllowlist: readonly AuditAllowlistEntry[] = [
+  { advisoryId: "GHSA-qx2v-qp2m-jg93", packages: ["postcss", "next"],
+    maximumSeverity: "moderate", expiresOn: "2026-08-20", rationale: "Historical test fixture" },
+  { advisoryId: "GHSA-w5hq-g745-h8pq", packages: ["uuid", "exceljs"],
+    maximumSeverity: "moderate", expiresOn: "2026-08-20", rationale: "Historical test fixture" }
+];
 
 function advisory(advisoryId: string, severity: AuditSeverity = "moderate") {
   return {
@@ -59,10 +68,25 @@ function currentAuditReport(): TestAuditReport {
 }
 
 function evaluate(value: unknown, now = evaluationDate) {
-  return evaluateAuditReport(parseAuditReport(value), { now });
+  return evaluateAuditReport(parseAuditReport(value), { now, allowlist: historicalAllowlist });
 }
 
 describe("dependency audit policy", () => {
+  it("has no production exceptions and accepts a clean report", () => {
+    expect(DEFAULT_AUDIT_ALLOWLIST).toEqual([]);
+    expect(evaluateAuditReport(parseAuditReport({
+      auditReportVersion: 2, vulnerabilities: {}
+    })).passed).toBe(true);
+  });
+
+  it("blocks the previously excepted chains under the current policy", () => {
+    const result = evaluateAuditReport(parseAuditReport(currentAuditReport()));
+    expect(result.passed).toBe(false);
+    expect(result.accepted).toEqual([]);
+    expect(result.blocking.map((finding) => finding.packageName).sort()).toEqual([
+      "exceljs", "next", "postcss", "uuid"
+    ]);
+  });
   it("accepts only the two reviewed advisory chains before expiration", () => {
     const result = evaluate(currentAuditReport());
 
@@ -220,10 +244,10 @@ describe("dependency audit policy", () => {
   it("fails closed on invalid allowlist dates", () => {
     const invalidAllowlist = [
       {
-        ...DEFAULT_AUDIT_ALLOWLIST[0],
+        ...historicalAllowlist[0],
         expiresOn: "not-a-date"
       },
-      DEFAULT_AUDIT_ALLOWLIST[1]
+      historicalAllowlist[1]
     ];
     const report = parseAuditReport(currentAuditReport());
     const result = evaluateAuditReport(report, {

@@ -1,7 +1,7 @@
 # PLAN-002 — Drawing Performance Improvements
 
 Status: active
-Progress: paused at Task002 on existing dependency-security gate; no product optimization applied.
+Progress: Task002A security candidate passes audit/units/lint. Bring Task003 forward because updated build catches39 baseline test-type diagnostics; then finish002A and002. No stage gate passed or performance optimization applied yet.
 Started: 2026-08-26 12:55
 Completed: pending
 Duration: pending
@@ -12,6 +12,8 @@ Timezone: America/Port_of_Spain; evidence timestamps UTC. Calendar-month aggrega
 Approved user execution plan governs this work. Continue automatically when gates pass. Source-only backups to public shello247/EandIDesigner are explicitly authorized. No merge/PR/live promotion authorized. SQLite stays; no new schema/migrations/dependencies/formats/identities. Existing source snapshot contains earlier changes, which are preserved, not introduced as new schema work.
 
 ## A) Feature capsule
+
+Scope amendment (2026-08-26): user authorized the smallest compatible existing-dependency security updates and applicability verification. Do not add new application dependencies, extend exceptions or suppress findings; stop for a major framework upgrade or broader changes. Record before/after audit and compatibility tests separately from performance optimization.
 
 Goal: faster existing engineering drawing workflows with measured, reversible changes. Audience: drawing engineers. Preserve appearance and engineering behavior; only list pagination and necessary lazy-load status/retry states change UI. Surfaces: drawing list/editor/sheets/assets/properties/wiring/schedules/save/preview/print/PDF.
 

@@ -4,12 +4,12 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-002
 Stage: 0
 Priority: P1
-Status: doing
+Status: todo
 Test impact: add
 Started: 2026-08-26 13:00
 Completed: pending
 Duration: pending
-Blocker: existing dependency-security gate fails; scope decision required before progression.
+Prerequisite: Task002A security repair authorized; resume after its gate passes.
 Timezone: America/Port_of_Spain
 
 ## Done when
