@@ -1,14 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-014 — complete pinned render dependency collection
+Task: PLAN-002-TASK-015 — batched exact render bundle and catalogue summaries
 Status: doing
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: publication-review and remotely verify the Task014 source checkpoint; then begin Task015 exact render bundle and catalogue-summary contracts.
+Next action: reproduce the full-catalogue overfetch with query-contract tests, then add exact-version and lightweight summary data/API contracts without migrating consumers yet.
 
 ## Progress snapshot
 
-014 implementation verified16:10 (approx10m): predecessor missed managed-asset and placement/asset module-template references and forwarded11generated pseudo IDs. Candidate returns all10 persisted fixture dependencies only, retains exact missing history with no latest fallback.735units, lint/types/build and6production workflows pass. Checkpoint publication pending.
+014 checkpoint2cd5d670a36b1d9a382c97e96cdb2e7ff00b2f78 publication-reviewed, pushed and exact remote branch SHA verified.015 started16:11. Stage4 remains open; no live promotion.
+
+014 complete16:10 (approx10m): predecessor missed managed-asset and placement/asset module-template references and forwarded11generated pseudo IDs. Candidate returns all10 persisted fixture dependencies only, retains exact missing history with no latest fallback.735units, lint/types/build and6production workflows pass.
 
 Stage3 CI33007739398 passed exacta4c2d8ced508b22bc69a7b212ffd6271d1b52138: audit/lint/types/733units/harness/bootstrap/build/28production workflows. Tag drawing-perf-pass-1-stage-3-20260826 remote verified, peeled exact.014 started16:00. No live promotion.
 

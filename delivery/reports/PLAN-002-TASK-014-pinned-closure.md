@@ -3,7 +3,7 @@
 Start: 2026-08-26 16:00 America/Port_of_Spain
 End: 2026-08-26 16:10 America/Port_of_Spain
 Duration: approximately 10 minutes
-Status: verification complete; recovery checkpoint pending
+Status: complete; recovery checkpoint remotely verified
 
 ## Invariants
 
@@ -98,5 +98,7 @@ silently broadening a prefix rule.
 ## Recovery
 
 Raw build and browser evidence remains under the ignored unique
-`task014-build-v1` and `task014-browser-v1` artifact paths. Publication review,
-source checkpoint SHA and exact remote verification: pending.
+`task014-build-v1` and `task014-browser-v1` artifact paths. Publication review
+scanned the complete 10-file source set with zero findings. Source checkpoint
+`2cd5d670a36b1d9a382c97e96cdb2e7ff00b2f78` was pushed and matched the exact
+remote branch SHA.

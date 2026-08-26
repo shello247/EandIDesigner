@@ -1,7 +1,7 @@
 # PLAN-002 — Drawing Performance Improvements
 
 Status: active
-Progress: Stage0–3 verified. Stage3 checkpointa4c2d8ced508b22bc69a7b212ffd6271d1b52138 is remotely recoverable and tagged. Task014 pinned render-dependency closure is active.
+Progress: Stage0–3 verified. Stage3 checkpointa4c2d8ced508b22bc69a7b212ffd6271d1b52138 is remotely recoverable and tagged. Task014 closure checkpoint2cd5d670a36b1d9a382c97e96cdb2e7ff00b2f78 is remotely verified; Task015 exact render bundle and catalogue summaries is active.
 Started: 2026-08-26 12:55
 Completed: pending
 Duration: pending

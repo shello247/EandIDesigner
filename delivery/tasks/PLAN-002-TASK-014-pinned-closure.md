@@ -4,19 +4,19 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-014
 Stage: 4
 Priority: P1
-Status: doing
+Status: done
 Test impact: add
 Started: 2026-08-26 16:00
-Completed: pending
-Duration: pending
+Completed: 2026-08-26 16:10
+Duration: approximately 10 minutes
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] Assets/placements/components/strip members/module templates included; generated pseudo IDs excluded; no latest fallback.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] Assets/placements/components/strip members/module templates included; generated pseudo IDs excluded; no latest fallback.
+- [x] Focused tests, affected browser checks and necessary broader gates recorded.
+- [x] Compared with verified predecessor; original failures/outliers retained.
+- [x] Source-only checkpoint reviewed, pushed and remote SHA verified.
 
 ## Execution
 
