@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./drawing-test";
 import { createE2eNmt81ToNrf81Drawing } from "./drawing-fixtures";
 
 test.describe.configure({ mode: "serial" });

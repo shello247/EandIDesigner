@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./drawing-test";
 import {
   createE2eConnectedWireScheduleDrawing,
   deleteE2eDrawing,

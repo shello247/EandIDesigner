@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-005 — browser locators
-Status: complete — checkpoint then006
+Task: PLAN-002-TASK-006 — production CI gate
+Status: doing
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: checkpoint005 then establish production CI gate and run full Stage1 verification.
+Next action: publish locally verified006 CI checkpoint, verify remote SHA and GitHub clean-checkout gate before Stage1 tag or Stage2.
 
 ## Progress snapshot
+
+006 local verification:714units/118files,16harness tests,8CI contracts, production build and27/27browser workflows pass. The stronger shared page/popup error guard also passes27/27 and rejects an intentional negative probe. Final types/lint pass after renaming the fixture callback (no rule suppression). GitHub clean-checkout gate remains required. Original source/live3000 unchanged; no3100 listener.
+
+005 checkpointb29ee8fc592efe09b8a61721a0858ecc42b21b37 remotely verified;006 started14:00. CI adds audited24files/27workflows with explicit remaining coverage register.
 
 005 complete13:59: four production workflows pass with all engineering assertions retained. Focused lint/full types pass. No application change. Full Stage1 gate next under006.
 

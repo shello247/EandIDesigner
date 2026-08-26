@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - main
+      - codex/drawing-performance-pass-1
 
 concurrency:
   group: quality-${{ github.workflow }}-${{ github.ref }}
@@ -19,9 +20,9 @@ jobs:
   quality:
     name: quality
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
-      DATABASE_URL: file:./ci.db
+      AUDIT_PHASE: quality-gate
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -38,11 +39,38 @@ jobs:
       - name: Audit dependencies
         run: npm run audit:dependencies
 
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
       - name: Lint
         run: npm run lint
 
+      - name: Type check application and tests
+        run: npm run typecheck
+
       - name: Test
-        run: npm run test
+        run: node scripts/drawing-performance-audit/run-command.mjs units node node_modules/vitest/vitest.mjs run
+
+      - name: Test isolated audit contracts
+        run: node scripts/drawing-performance-audit/run-command.mjs harness node node_modules/vitest/vitest.mjs run --config scripts/drawing-performance-audit/vitest.audit.config.ts
+
+      - name: Bootstrap synthetic drawing database
+        run: node scripts/drawing-performance-audit/run-command.mjs bootstrap node node_modules/tsx/dist/cli.mjs scripts/bootstrap-sqlite.ts
 
       - name: Build
-        run: npm run build
+        run: node scripts/drawing-performance-audit/run-command.mjs build npm run build
+
+      - name: Drawing workflows on production build (one worker, no retries)
+        run: npm run test:drawing
+
+      - name: Retain sanitized synthetic failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drawing-failures-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: ignore
+          path: |
+            artifacts/drawing-performance/ci/**/*.json
+            artifacts/drawing-performance/ci/**/*.log
+            artifacts/drawing-performance/ci/**/correctness-traces/**

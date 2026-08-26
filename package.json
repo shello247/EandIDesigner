@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:drawing": "node scripts/drawing-performance-audit/run-command.mjs drawing-browser node node_modules/@playwright/test/cli.js test --config scripts/drawing-performance-pass/playwright.release.config.ts",
     "test:panel-perf": "tsx scripts/panel-performance.ts",
     "benchmark:bom": "tsx scripts/benchmark-bom-generation.ts",
     "audit:dependencies": "tsx scripts/audit-dependencies.ts",
