@@ -9,7 +9,7 @@ Next action: await the user's separate decision on squash-PR/live promotion or a
 
 ## Progress snapshot
 
-023 complete18:55 (approximately8m): detached exact `d93c29f2f782e2e93a4e9671082b5f04de62e4ae` completed independent npm ci (zero audit findings), fresh guarded SQLite bootstrap, production build and create/save/reload smoke. Original source verification is unchanged/removed empty; live3000 remains PID31720 and3100 is clear. Final assessment/recovery map prepared; final checkpoint publication/tag pending. PLAN-002 implementation is complete; no live promotion.
+023 complete18:55 (approximately8m): detached exact `d93c29f2f782e2e93a4e9671082b5f04de62e4ae` completed independent npm ci (zero audit findings), fresh guarded SQLite bootstrap, production build and create/save/reload smoke. Original source verification is unchanged/removed empty; live3000 remains PID31720 and3100 is clear. Final documentation checkpoint `d2357379dd7e34026699747a8bc35b76eb709432` is remotely verified; Stage7 tag is remotely verified and peels to exact tested candidate `d93c29f…`. PLAN-002 is complete; no live promotion.
 
 022 complete18:47 (approximately11m): five PDFs for each 10/40/120-sheet package pass. Candidate print HTML is byte-identical to baseline; every page text hash, page size and sheet order matches; pages1/4/last are pixel-identical and visually inspected. PDF median fell 3,696.22→2,129.00ms, 7,192.32→4,161.25ms and 16,277.66→9,781.65ms. The unchanged private-use punctuation/literal-ID extraction caveat is retained. Audit fixture reset is now deterministic. Checkpoint publication pending;023 started18:47. No live promotion.
 

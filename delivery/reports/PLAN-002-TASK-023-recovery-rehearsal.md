@@ -30,5 +30,4 @@ The moved Stage 0 synthetic database backup remains only in ignored recovery evi
 
 The final assessment and recovery map record test results, remaining risks, and every verified stage. No PR, squash merge, `main` update, live restart, schema/provider change, or production-data action occurred.
 
-The final source/documentation checkpoint and Stage 7 tag are recorded in the following recovery-map update after remote verification.
-
+Final documentation checkpoint `d2357379dd7e34026699747a8bc35b76eb709432` is publication-reviewed, pushed, and exact remote SHA verified. Annotated tag `drawing-perf-pass-1-stage-7-20260826` is remotely verified and peels to exact tested/recovered candidate `d93c29f2f782e2e93a4e9671082b5f04de62e4ae`.

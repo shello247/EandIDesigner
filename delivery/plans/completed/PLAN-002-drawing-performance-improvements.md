@@ -1,7 +1,7 @@
 # PLAN-002 — Drawing Performance Improvements
 
 Status: complete
-Progress: Stages0–7 and all 23 tasks verified. Final documentation checkpoint and Stage7 tag are recorded in the recovery map after publication.
+Progress: Stages0–7 and all 23 tasks verified. Final documentation checkpoint `d2357379dd7e34026699747a8bc35b76eb709432` and annotated Stage7 tag are remotely verified; the tag peels to tested candidate `d93c29f2f782e2e93a4e9671082b5f04de62e4ae`.
 Started: 2026-08-26 12:55
 Completed: 2026-08-26 18:55
 Duration: approximately 6 hours elapsed, including serial verification and checkpoint waits
@@ -92,7 +92,7 @@ Port3000/live canonical DB untouched. Independent worktree/deps/Prisma/build; gu
 - [x] Stage4 dependency closure, lazy catalogue and all render/export/validation consumers correct. Tag drawing-perf-pass-1-stage-4-20260826 targets verified 25bc359e183329ed07217d946ea127feada3d9c9.
 - [x] Stage5 at most25 document parses/page, exact counts, stable pages and no migration. Tag drawing-perf-pass-1-stage-5-20260826 targets verified b7eb5ca1e527ccdfaa81373d50a87bcac129c9ba.
 - [x] Stage6 consistent compact acknowledgment; save/conflict/in-flight/list/navigation behavior preserved; full response/fan-out measured. Tag drawing-perf-pass-1-stage-6-20260826 targets verified e8b406811a9dffa666a9bb9a10c569ab5d4dfd01.
-- [x] Stage7 complete regression/measurements/export/memory/recovery rehearsal; final checkpoint/tag recorded in the recovery map after publication.
+- [x] Stage7 complete regression/measurements/export/memory/recovery rehearsal. Tag drawing-perf-pass-1-stage-7-20260826 peels to verified d93c29f2f782e2e93a4e9671082b5f04de62e4ae.
 
 Stop for unresolved reproducible correctness regressions, scope expansion, source drift, unavailable verified backup, confidential publication material, or required final performance failures after planned work and confirming reruns. Known baseline budget failures remain visible while earlier stages address them. No falsely green completion.
 

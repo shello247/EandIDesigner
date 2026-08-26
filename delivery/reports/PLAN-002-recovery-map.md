@@ -16,8 +16,8 @@ No commit or tag below authorizes a merge to `main` or live promotion.
 | Stage 6 | `e8b406811a9dffa666a9bb9a10c569ab5d4dfd01` | CI `33017558582`; tag `drawing-perf-pass-1-stage-6-20260826` |
 | Integrated memory-safe product | `11c91e71fd2ae522c2f4cf6d6732c1a9552fb58e` | 771 units, build, 30 browser workflows; product fingerprint `528deaa…` |
 | Export-verified candidate | `d93c29f2f782e2e93a4e9671082b5f04de62e4ae` | CI `33020798725`; PDF/print parity; clean-checkout recovery rehearsal |
+| Final plan documentation | `d2357379dd7e34026699747a8bc35b76eb709432` | Publication-reviewed final assessment, recovery map, and plan closure |
 
-The final Stage 7 tag and final documentation checkpoint are added after publication and remote verification. Raw synthetic evidence remains ignored and local under `artifacts/drawing-performance/pass-1/`; GitHub is source recovery, not a database backup.
+Annotated tag `drawing-perf-pass-1-stage-7-20260826` is remotely verified and peels to exact tested candidate `d93c29f2f782e2e93a4e9671082b5f04de62e4ae`. Raw synthetic evidence remains ignored and local under `artifacts/drawing-performance/pass-1/`; GitHub is source recovery, not a database backup.
 
 Rollback uses a corrective commit or targeted `git revert`; history must not be rewritten. The last verified stage tag is the restoration point appropriate to the scope being recovered.
-
