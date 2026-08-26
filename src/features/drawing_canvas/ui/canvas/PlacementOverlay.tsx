@@ -494,7 +494,7 @@ export function PlacementOverlay({
               onPointerUp={onDragEnd}
               onPointerCancel={onDragCancel}
             >
-              <title>{placement.tag} {isConnectionView ? placement.title : getPanelEnclosureTitle(placement)}</title>
+              <title>{`${placement.tag} ${isConnectionView ? placement.title ?? "" : getPanelEnclosureTitle(placement)}`}</title>
             </rect>
             {[
               { key: "top", x: bounds.x, y: bounds.y, width: bounds.width, height: 2 },

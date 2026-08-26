@@ -2,11 +2,15 @@
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
 Task: PLAN-002-TASK-004 — production hydration mismatch
-Status: next — Stage0 recovery complete; Task003 already complete
+Status: complete — checkpoint then proceed005
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: publish/verify Stage0 tag, reproduce actual hydration markup mismatch and add regression test before fixing cause. No SSR or warning suppression; then005 stale locators.
+Next action: checkpoint004, then005 stale navigation locators, preserving engineering assertions.
 
 ## Progress snapshot
+
+004 complete13:56: one panel SVG title expression fixes demonstrated empty SSR title.2regression cases fail-before/pass-after;16harness tests, full types/lint/build and unchanged production assignment browser pass. No page errors. Original source verified unchanged. Stage1 not yet complete.
+
+Stage0 tag remotely verified13:48: drawing-perf-pass-1-stage-0-20260826 peels to72888c4c554b92862a7ea31f93c606069b47fb0c. Task004 started; diagnostic development runs separated from production acceptance.
 
 Stage0 complete13:47: originala833827 clean recovery install/bootstrap/build and create/save/reload browser pass; pristine Git status retained. Harness14 tests, scoped lint, full types pass. Recovery/candidate servers stopped; only live3000 PID31720 remains. Original source matches at17:46:43Z. Tag: drawing-perf-pass-1-stage-0-20260826 (publish/verify before continuing). Known browser22pass/5fail is not a release pass.
 

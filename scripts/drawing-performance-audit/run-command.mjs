@@ -27,7 +27,7 @@ function snapshot() {
       return [{ path: name, sha256: hash(fs.readFileSync(file)) }];
     });
 }
-if (args.includes('start') && args.some(arg => /(?:next|next[\\/]dist[\\/]bin[\\/]next)$/.test(arg))) {
+if (args.some(arg => arg === 'start' || arg === 'dev') && args.some(arg => /(?:next|next[\\/]dist[\\/]bin[\\/]next)$/.test(arg))) {
   if (!args.includes('3100') || !args.includes('127.0.0.1')) throw new Error('Isolated server must bind 127.0.0.1:3100 explicitly');
   await new Promise((resolve, reject) => {
     const probe = net.createServer();

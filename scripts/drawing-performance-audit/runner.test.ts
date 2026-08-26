@@ -21,6 +21,14 @@ function result(label: string) {
 }
 
 describe("guarded command evidence", () => {
+  it.each(["start", "dev"])("refuses %s without the isolated port and host", (mode) => {
+    const attempt = invoke(`unsafe-${mode}`, process.execPath, [
+      "node_modules/next/dist/bin/next", mode, "--port", "3000"
+    ]);
+    expect(attempt.status).not.toBe(0);
+    expect(attempt.stderr).toContain("Isolated server must bind 127.0.0.1:3100 explicitly");
+  });
+
   it("records successful runs and drains output before completing", () => {
     expect(invoke("success", process.execPath, ["-e", "process.stdout.write('x'.repeat(65536))"]).status).toBe(0);
     expect(result("success")).toMatchObject({ exitCode: 0, sourceDrift: false });
