@@ -4,9 +4,9 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-018
 Stage: 5
 Priority: P1
-Status: todo
+Status: doing
 Test impact: add
-Started: pending
+Started: 2026-08-26 17:07
 Completed: pending
 Duration: pending
 Timezone: America/Port_of_Spain
@@ -39,4 +39,3 @@ Use the guarded runner for focused Vitest/Playwright and lint/type/build checks 
 ## Report
 
 delivery/reports/PLAN-002-TASK-018-drawing-list.md
-

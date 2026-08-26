@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-017 — migrate drawing consumers and save validation
+Task: PLAN-002-TASK-018 — paginate exact drawing summaries without migration
 Status: doing
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: map every drawing full-catalogue consumer, migrate editor/save/preview/print/PDF to dependency bundles plus summaries, and prove the initial full-symbol payload is independent of unused catalogue size.
+Next action: bound drawing-list work to 25 rows per request with deterministic pagination, exact visible-page sheet counts, invalid/out-of-range handling, and no BOM-query change.
 
 ## Progress snapshot
+
+Stage4 CI `33013450318` passed exact `25bc359e183329ed07217d946ea127feada3d9c9`: lint/types/750 units/audit/bootstrap/build/28 production workflows. Tag `drawing-perf-pass-1-stage-4-20260826` is remotely verified and peels to that exact tested source. 017 complete 17:07 (approximately 37m); 018 started 17:07. No live promotion.
+
+017 split every drawing consumer from the full symbol catalogue, added atomic recursive exact dependency closure, and kept unused summary browsing outside graph invalidation. At 1,000 entries the whole initial response is 771,551 bytes with no unused SVGs, versus a separately measured 2,850,875-byte legacy full-catalogue query. 28/28 local and GitHub production workflows pass; first-load and retained negative evidence remain explicit.
 
 016 checkpoint `5899503f4953c7ea9b8cd63fb5399c36a333279c` publication-reviewed, pushed and exact remote branch SHA verified. 017 started 16:30. Stage 4 remains open; no live promotion.
 

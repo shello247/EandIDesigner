@@ -4,19 +4,19 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-017
 Stage: 4
 Priority: P1
-Status: doing
+Status: done
 Test impact: add
 Started: 2026-08-26 16:30
-Completed: pending
-Duration: pending
+Completed: 2026-08-26 17:07
+Duration: approximately 37 minutes
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] All drawing operations work with split data; catalogue scaling does not enlarge initial full-symbol bundle.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] All drawing operations work with split data; catalogue scaling does not enlarge initial full-symbol bundle.
+- [x] Focused tests, affected browser checks and necessary broader gates recorded.
+- [x] Compared with verified predecessor; original failures/outliers retained.
+- [x] Source-only checkpoint reviewed, pushed and remote SHA verified.
 
 ## Execution
 
