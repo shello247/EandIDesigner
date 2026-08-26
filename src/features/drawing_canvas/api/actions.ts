@@ -13,7 +13,8 @@ import type {
   ActionResult,
   ApprovedDrawingSymbol,
   DrawingApprovalOutcome,
-  DrawingDetail
+  DrawingDetail,
+  DrawingSaveAcknowledgment
 } from "../types";
 import {
   listDrawingRenderSymbols
@@ -89,7 +90,7 @@ export async function createDrawingAction(
 
 export async function saveDrawingAction(
   input: SaveDrawingInput
-): Promise<ActionResult<DrawingDetail>> {
+): Promise<ActionResult<DrawingSaveAcknowledgment>> {
   try {
     if (await detailedPanelMutationBlocked(input)) {
       return {
@@ -113,18 +114,14 @@ export async function saveDrawingAction(
         error: componentIssue.message
       };
     }
-    const drawing = await saveDrawing(input);
-
-    if (!drawing) {
-      return { ok: false, error: "Drawing could not be saved." };
-    }
+    const acknowledgment = await saveDrawing(input);
 
     revalidatePath("/drawings");
     // The editor already owns the saved model and consumes the returned
     // updated timestamp. Revalidating its active route here forces a second
     // large server render inside the save transition and can leave webpack
     // development sessions permanently suspended after a successful write.
-    return { ok: true, data: drawing };
+    return { ok: true, data: acknowledgment };
   } catch (error) {
     return toActionError(error);
   }

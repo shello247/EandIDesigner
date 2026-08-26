@@ -37,7 +37,7 @@ describe("production drawing CI gate boundaries", () => {
   });
 
   it("retains every audited workflow as a distinct existing spec", () => {
-    expect(drawingGateSpecs).toHaveLength(25);
+    expect(drawingGateSpecs).toHaveLength(26);
     expect(new Set(drawingGateSpecs).size).toBe(drawingGateSpecs.length);
     for (const spec of drawingGateSpecs) {
       expect(spec).toMatch(/^drawing-[a-z-]+\.spec\.ts$/);

@@ -17,6 +17,7 @@ export const drawingGateSpecs = [
   "drawing-pdf-preview.spec.ts",
   "drawing-placement-labels.spec.ts",
   "drawing-route-alignment.spec.ts",
+  "drawing-save-acknowledgment.spec.ts",
   "drawing-sections.spec.ts",
   "drawing-selection-arrangement.spec.ts",
   "drawing-sheet-management.spec.ts",

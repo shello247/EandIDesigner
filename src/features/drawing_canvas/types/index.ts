@@ -49,6 +49,11 @@ export type DrawingDetail = {
   updatedAt: string;
 };
 
+export type DrawingSaveAcknowledgment = {
+  id: string;
+  updatedAt: string;
+};
+
 export type DrawingApprovalOutcome = {
   drawing: DrawingDetail;
   quality: PackagePanelDrawingQualityReport;

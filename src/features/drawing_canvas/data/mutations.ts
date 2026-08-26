@@ -8,6 +8,7 @@ import {
   type SaveDrawingInput
 } from "./schema";
 import { getDrawingDetail } from "./queries";
+import type { DrawingSaveAcknowledgment } from "../types";
 
 export class DrawingRevisionConflictError extends Error {
   readonly latestUpdatedAt?: string;
@@ -27,27 +28,35 @@ async function updateDrawingRevision({
   drawingId: string;
   expectedUpdatedAt?: string;
   data: { title: string; status: string; modelJson: string };
-}) {
+}): Promise<DrawingSaveAcknowledgment> {
   if (!expectedUpdatedAt) {
-    await prisma.drawing.update({ where: { id: drawingId }, data });
-    return;
+    const row = await prisma.drawing.update({
+      where: { id: drawingId },
+      data,
+      select: { id: true, updatedAt: true }
+    });
+    return { id: row.id, updatedAt: row.updatedAt.toISOString() };
   }
 
-  const result = await prisma.drawing.updateMany({
+  const [row] = await prisma.drawing.updateManyAndReturn({
     where: {
       id: drawingId,
       updatedAt: new Date(expectedUpdatedAt)
     },
-    data
+    data,
+    limit: 1,
+    select: { id: true, updatedAt: true }
   });
 
-  if (result.count === 0) {
+  if (!row) {
     const latest = await prisma.drawing.findUnique({
       where: { id: drawingId },
       select: { updatedAt: true }
     });
     throw new DrawingRevisionConflictError(latest?.updatedAt.toISOString());
   }
+
+  return { id: row.id, updatedAt: row.updatedAt.toISOString() };
 }
 
 function normalizeDrawingKey(value: string): string {
@@ -100,7 +109,7 @@ export async function createDrawing(input: CreateDrawingInput) {
 export async function saveDrawing(input: SaveDrawingInput) {
   const parsed = saveDrawingInputSchema.parse(input);
 
-  await updateDrawingRevision({
+  return updateDrawingRevision({
     drawingId: parsed.drawingId,
     expectedUpdatedAt: parsed.expectedUpdatedAt,
     data: {
@@ -109,8 +118,6 @@ export async function saveDrawing(input: SaveDrawingInput) {
       modelJson: stringifyDrawingModel(parsed.model)
     }
   });
-
-  return getDrawingDetail(parsed.drawingId);
 }
 
 export async function saveDrawingReviewState(

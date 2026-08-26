@@ -62,7 +62,7 @@ try{
   if(!drawing)throw new Error("Missing save fixture");
   await run("save-mutation-mixed40",async()=>{
     const result=await saveDrawing({drawingId:drawing!.id,title:drawing!.title,model:drawing!.model,expectedUpdatedAt:drawing!.updatedAt});
-    if(!result)throw new Error("Save returned no drawing");drawing=result;return result;
+    drawing={...drawing!,updatedAt:result.updatedAt};return result;
   });
   const plans={
     list:await client.$queryRawUnsafe('EXPLAIN QUERY PLAN SELECT id,title,status,modelJson,updatedAt FROM Drawing WHERE NOT status = ? ORDER BY updatedAt DESC, id ASC LIMIT 25 OFFSET 0',"archived"),
