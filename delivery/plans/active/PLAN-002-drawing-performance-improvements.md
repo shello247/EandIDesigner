@@ -1,7 +1,7 @@
 # PLAN-002 — Drawing Performance Improvements
 
 Status: active
-Progress: Stage0–4 verified. Stage4 checkpoint 25bc359e183329ed07217d946ea127feada3d9c9 is remotely recoverable and tagged. Task018 drawing-list pagination is active.
+Progress: Stage0–5 verified. Stage5 checkpoint b7eb5ca1e527ccdfaa81373d50a87bcac129c9ba is remotely recoverable and tagged. Task019 compact save acknowledgment is active.
 Started: 2026-08-26 12:55
 Completed: pending
 Duration: pending
@@ -90,7 +90,7 @@ Port3000/live canonical DB untouched. Independent worktree/deps/Prisma/build; gu
 - [x] Stage2 closed dialog absent and accurate bounded metrics/parity. Tag drawing-perf-pass-1-stage-2-20260826 targets verified ab2dd18969bb4d9f4a18b8561607892cb3d4fec7.
 - [x] Stage3 graph/invalidation/parity/history/requests counts improve without confirmed regression. Tag drawing-perf-pass-1-stage-3-20260826 targets verified a4c2d8ced508b22bc69a7b212ffd6271d1b52138; combined validation+graph p95 108.27 ms remains explicitly visible.
 - [x] Stage4 dependency closure, lazy catalogue and all render/export/validation consumers correct. Tag drawing-perf-pass-1-stage-4-20260826 targets verified 25bc359e183329ed07217d946ea127feada3d9c9.
-- [ ] Stage5 at most25 document parses/page, exact counts, stable pages and no migration.
+- [x] Stage5 at most25 document parses/page, exact counts, stable pages and no migration. Tag drawing-perf-pass-1-stage-5-20260826 targets verified b7eb5ca1e527ccdfaa81373d50a87bcac129c9ba.
 - [ ] Stage6 consistent compact acknowledgment; save/conflict/in-flight/list/navigation behavior preserved; full response/fan-out measured.
 - [ ] Stage7 complete regression/measurements/export/memory/recovery rehearsal and final remote checkpoint.
 

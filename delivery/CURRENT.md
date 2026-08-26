@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-018 — paginate exact drawing summaries without migration
+Task: PLAN-002-TASK-019 — compact revision-consistent save acknowledgment
 Status: doing
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: bound drawing-list work to 25 rows per request with deterministic pagination, exact visible-page sheet counts, invalid/out-of-range handling, and no BOM-query change.
+Next action: trace the guarded save mutation and Server Action result, then return the persisted `{id, updatedAt}` revision without rereading or reparsing the complete drawing while preserving conflict and in-flight dirty behavior.
 
 ## Progress snapshot
+
+Stage5 CI `33015096686` passed exact `b7eb5ca1e527ccdfaa81373d50a87bcac129c9ba`: audit/lint/types/760 units/bootstrap/build/29 production workflows. Tag `drawing-perf-pass-1-stage-5-20260826` is remotely verified and peels to that source. 018 complete 17:27 (approximately 20m); 019 started 17:27. No live promotion.
+
+018 bounds the drawing list to two queries and at most 25 parsed documents. At 500 packages median/p95 fell from 1,352.99/1,879.40ms to 77.37/90.73ms and response bytes from 63,781 to 3,267. Stable ordering, invalid/out-of-range handling, exact counts, last-page deletion, and unchanged BOM access are covered.
 
 Stage4 CI `33013450318` passed exact `25bc359e183329ed07217d946ea127feada3d9c9`: lint/types/750 units/audit/bootstrap/build/28 production workflows. Tag `drawing-perf-pass-1-stage-4-20260826` is remotely verified and peels to that exact tested source. 017 complete 17:07 (approximately 37m); 018 started 17:07. No live promotion.
 

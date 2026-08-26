@@ -4,19 +4,19 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-018
 Stage: 5
 Priority: P1
-Status: doing
+Status: done
 Test impact: add
 Started: 2026-08-26 17:07
-Completed: pending
-Duration: pending
+Completed: 2026-08-26 17:27
+Duration: approximately 20 minutes
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] 25 per page; count + bounded rows; stable updatedAt desc/ID asc; invalid/out-of-range pages handled; BOM options unchanged.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] 25 per page; count + bounded rows; stable updatedAt desc/ID asc; invalid/out-of-range pages handled; BOM options unchanged.
+- [x] Focused tests, affected browser checks and necessary broader gates recorded.
+- [x] Compared with verified predecessor; original failures/outliers retained.
+- [x] Source-only checkpoint reviewed, pushed and remote SHA verified.
 
 ## Execution
 
