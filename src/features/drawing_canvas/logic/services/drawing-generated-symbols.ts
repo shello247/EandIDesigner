@@ -42,21 +42,99 @@ const assetIndexByBundle = new WeakMap<
   DrawingAssetRecord[],
   Map<string, DrawingAssetRecord>
 >();
+const assetBundleRevisionByIdentity = new Map<
+  string,
+  WeakRef<DrawingAssetRecord[]>
+>();
+const assetBundleRevisionCleanup = new FinalizationRegistry<string>(
+  (identity) => {
+    if (!assetBundleRevisionByIdentity.get(identity)?.deref()) {
+      assetBundleRevisionByIdentity.delete(identity);
+    }
+  }
+);
+const assetBundleIdentityByBundle = new WeakMap<DrawingAssetRecord[], string>();
 const structuredSymbolByBundle = new WeakMap<
   ApprovedDrawingSymbol[],
   WeakMap<DrawingAssetRecord, ApprovedDrawingSymbol>
+>();
+const structuredAssetRevisionByBundle = new WeakMap<
+  ApprovedDrawingSymbol[],
+  Map<string, WeakRef<DrawingAssetRecord>>
 >();
 const terminalBlockSymbolByBundle = new WeakMap<
   ApprovedDrawingSymbol[],
   WeakMap<DrawingPlacement, ApprovedDrawingSymbol>
 >();
-const renderableBundleByPlacements = new WeakMap<
-  DrawingPlacement[],
+const terminalBlockPlacementRevisionByBundle = new WeakMap<
+  ApprovedDrawingSymbol[],
+  Map<string, WeakRef<DrawingPlacement>>
+>();
+const renderableBundleByAssets = new WeakMap<
+  DrawingAssetRecord[],
   WeakMap<
     ApprovedDrawingSymbol[],
-    WeakMap<DrawingAssetRecord[], ApprovedDrawingSymbol[]>
+    {
+      byPlacements: WeakMap<DrawingPlacement[], ApprovedDrawingSymbol[]>;
+      placementRevisionByIdentity: Map<
+        string,
+        WeakRef<DrawingPlacement[]>
+      >;
+    }
   >
 >();
+const placementBundleIdentityByBundle = new WeakMap<DrawingPlacement[], string>();
+
+function orderedIdentityKey(ids: string[]): string {
+  return JSON.stringify(ids);
+}
+
+function assetBundleIdentityKey(assets: DrawingAssetRecord[]): string {
+  const existing = assetBundleIdentityByBundle.get(assets);
+  if (existing) return existing;
+  const created = orderedIdentityKey(assets.map((asset) => asset.id));
+  assetBundleIdentityByBundle.set(assets, created);
+  return created;
+}
+
+function placementBundleIdentityKey(placements: DrawingPlacement[]): string {
+  const existing = placementBundleIdentityByBundle.get(placements);
+  if (existing) return existing;
+  const created = orderedIdentityKey(
+    placements.map((placement) => placement.id)
+  );
+  placementBundleIdentityByBundle.set(placements, created);
+  return created;
+}
+
+function registerAssetBundleRevision(assets: DrawingAssetRecord[]): void {
+  const key = assetBundleIdentityKey(assets);
+  const previous = assetBundleRevisionByIdentity.get(key)?.deref();
+  if (previous === assets) return;
+  if (previous && previous !== assets) {
+    // Undo history intentionally retains earlier immutable model revisions. Drop
+    // derived indexes and render bundles for the superseded revision rather
+    // than allowing those values to remain reachable through WeakMap keys.
+    assetIndexByBundle.delete(previous);
+    renderableBundleByAssets.delete(previous);
+  }
+  assetBundleRevisionByIdentity.set(key, new WeakRef(assets));
+  assetBundleRevisionCleanup.register(assets, key);
+}
+
+function registerObjectRevision<T extends object>(
+  revisions: Map<string, WeakRef<T>>,
+  id: string,
+  value: T,
+  cache: WeakMap<T, ApprovedDrawingSymbol>
+): void {
+  const previous = revisions.get(id)?.deref();
+  if (previous === value) return;
+  if (previous && previous !== value) {
+    cache.delete(previous);
+  }
+  revisions.set(id, new WeakRef(value));
+}
 
 function exactSymbolReferenceKey(symbolId: string, versionId: string): string {
   return JSON.stringify([symbolId, versionId]);
@@ -82,6 +160,7 @@ function exactSymbolIndex(
 function assetIndex(
   assets: DrawingAssetRecord[]
 ): Map<string, DrawingAssetRecord> {
+  registerAssetBundleRevision(assets);
   const cached = assetIndexByBundle.get(assets);
   if (cached) return cached;
 
@@ -154,6 +233,12 @@ export function createGeneratedStructuredTerminalStripSymbol(
     return undefined;
   }
   const cache = generatedSymbolCache(structuredSymbolByBundle, symbols);
+  let revisions = structuredAssetRevisionByBundle.get(symbols);
+  if (!revisions) {
+    revisions = new Map();
+    structuredAssetRevisionByBundle.set(symbols, revisions);
+  }
+  registerObjectRevision(revisions, asset.id, asset, cache);
   const cached = cache.get(asset);
   if (cached) return cached;
 
@@ -210,9 +295,43 @@ export function buildRenderableDrawingSymbols({
   approvedSymbols: ApprovedDrawingSymbol[];
   assets?: DrawingAssetRecord[];
 }): ApprovedDrawingSymbol[] {
-  let bySymbols = renderableBundleByPlacements.get(placements);
-  const byAssets = bySymbols?.get(approvedSymbols);
-  const cached = byAssets?.get(assets);
+  registerAssetBundleRevision(assets);
+  let bySymbols = renderableBundleByAssets.get(assets);
+  if (!bySymbols) {
+    bySymbols = new WeakMap();
+    renderableBundleByAssets.set(assets, bySymbols);
+  }
+  let bundleCache = bySymbols.get(approvedSymbols);
+  if (!bundleCache) {
+    bundleCache = {
+      byPlacements: new WeakMap(),
+      placementRevisionByIdentity: new Map()
+    };
+    bySymbols.set(approvedSymbols, bundleCache);
+  }
+
+  const placementIdentity = placementBundleIdentityKey(placements);
+  const previousPlacements = bundleCache.placementRevisionByIdentity
+    .get(placementIdentity)
+    ?.deref();
+  if (previousPlacements && previousPlacements !== placements) {
+    const hasSamePlacementObjects =
+      previousPlacements.length === placements.length &&
+      previousPlacements.every(
+        (placement, index) => placement === placements[index]
+      );
+    const previousResult = bundleCache.byPlacements.get(previousPlacements);
+    bundleCache.byPlacements.delete(previousPlacements);
+    if (hasSamePlacementObjects && previousResult) {
+      bundleCache.byPlacements.set(placements, previousResult);
+    }
+  }
+  bundleCache.placementRevisionByIdentity.set(
+    placementIdentity,
+    new WeakRef(placements)
+  );
+
+  const cached = bundleCache.byPlacements.get(placements);
   if (cached) return cached;
 
   const renderableSymbols = [...approvedSymbols];
@@ -242,16 +361,7 @@ export function buildRenderableDrawingSymbols({
     renderableSymbols.push(generated);
   }
 
-  if (!bySymbols) {
-    bySymbols = new WeakMap();
-    renderableBundleByPlacements.set(placements, bySymbols);
-  }
-  let nextByAssets = bySymbols.get(approvedSymbols);
-  if (!nextByAssets) {
-    nextByAssets = new WeakMap();
-    bySymbols.set(approvedSymbols, nextByAssets);
-  }
-  nextByAssets.set(assets, renderableSymbols);
+  bundleCache.byPlacements.set(placements, renderableSymbols);
   return renderableSymbols;
 }
 
@@ -276,6 +386,12 @@ export function createGeneratedTerminalBlockSymbol(
   }
 
   const cache = generatedSymbolCache(terminalBlockSymbolByBundle, symbols);
+  let revisions = terminalBlockPlacementRevisionByBundle.get(symbols);
+  if (!revisions) {
+    revisions = new Map();
+    terminalBlockPlacementRevisionByBundle.set(symbols, revisions);
+  }
+  registerObjectRevision(revisions, placement.id, placement, cache);
   const cached = cache.get(placement);
   if (cached) return cached;
 

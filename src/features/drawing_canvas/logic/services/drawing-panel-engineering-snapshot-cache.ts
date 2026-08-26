@@ -10,13 +10,17 @@ export type DrawingPanelEngineeringSnapshotCache = {
 
 export function createDrawingPanelEngineeringSnapshotCache():
   DrawingPanelEngineeringSnapshotCache {
-  const snapshots = new WeakMap<PanelWiringSourcePackage, PanelEngineeringSnapshot>();
+  // The current source is the only snapshot that presentation changes need to
+  // reuse. Retaining one entry also prevents undo history from indirectly
+  // retaining a graph for every historical model.
+  let cachedSource: PanelWiringSourcePackage | undefined;
+  let cachedSnapshot: PanelEngineeringSnapshot | undefined;
   return {
     getOrCreate(source, create) {
-      const existing = snapshots.get(source);
-      if (existing) return existing;
+      if (source === cachedSource && cachedSnapshot) return cachedSnapshot;
       const snapshot = create();
-      snapshots.set(source, snapshot);
+      cachedSource = source;
+      cachedSnapshot = snapshot;
       return snapshot;
     }
   };

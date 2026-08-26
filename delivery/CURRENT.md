@@ -1,12 +1,14 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-021 — integrated regression and repeated performance comparison
+Task: PLAN-002-TASK-022 — PDF/print verification and text compatibility check
 Status: doing
-Started: 2026-08-26 18:00 America/Port_of_Spain
-Next action: run the integrated baseline/candidate comparison, twenty repeated UI cycles, fifty-entry history limit, full regression matrix, and record every remaining budget failure without changing product behavior.
+Started: 2026-08-26 18:36 America/Port_of_Spain
+Next action: run five sequential PDFs per representative package size, compare print/PDF page order, labels, wire identities and schedules, and verify the retained text-search/copy caveat without changing export behavior.
 
 ## Progress snapshot
+
+021 complete 18:36 (approximately 36m): 771 units, lint/types/build and 30/30 production drawing workflows pass. Against the frozen baseline, final median/p95 are selection 46.60/54.80ms, sheet switch 94.75/129.60ms, Properties 34.20/35.40ms, nudge 133.80/147.70ms, save 151.00/173.30ms and connection display 183.87/207.88ms. The integrated test caught history-derived cache retention at 135.30MB after 60 edits; final cache ownership keeps isolated forced-GC heap flat at 21.77/22.46/21.96MB after 10/50/60 edits while preserving the exact 50-entry undo/redo contract. Product fingerprint `528deaa754e93b5da5a1873ef3714c4febef4630821465902a2325b1a1eecb02`; checkpoint publication pending. 022 started18:36. No live promotion.
 
 Stage6 CI `33017558582` passed exact `e8b406811a9dffa666a9bb9a10c569ab5d4dfd01`: audit/lint/types/770 units/bootstrap/build/30 production workflows. Tag `drawing-perf-pass-1-stage-6-20260826` is remotely verified and peels to that source. 020 complete 18:00 (approximately 20m); 021 started 18:00. No live promotion.
 

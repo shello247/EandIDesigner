@@ -165,6 +165,28 @@ describe("drawing model preparation", () => {
     expect(createSource).toHaveBeenCalledTimes(1);
   });
 
+  it("retains only the current prepared model instead of every history model", () => {
+    const createSource = vi.fn((model: DrawingModel) =>
+      createPanelWiringSource(model, [symbol])
+    );
+    const cache = createDrawingModelPreparationCache({
+      symbols: [symbol],
+      createSource
+    });
+    const firstModel = createDefaultDrawingModel();
+    const first = cache.prepare(firstModel);
+    const secondModel = {
+      ...firstModel,
+      title: "Second history model"
+    };
+
+    cache.prepare(secondModel);
+    const rebuiltFirst = cache.prepare(firstModel);
+
+    expect(rebuiltFirst).not.toBe(first);
+    expect(createSource).toHaveBeenCalledTimes(3);
+  });
+
   it("rebuilds the source from the final wire-ID-reconciled model", () => {
     const createSource = vi.fn((model: DrawingModel) =>
       createPanelWiringSource(model, [symbol])

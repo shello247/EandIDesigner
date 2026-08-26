@@ -4,19 +4,19 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-021
 Stage: 7
 Priority: P1
-Status: doing
+Status: done
 Test impact: update
 Started: 2026-08-26 18:00
-Completed: pending
-Duration: pending
+Completed: 2026-08-26 18:36
+Duration: approximately 36 minutes
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] Full regression; baseline/predecessor paired timing; 20 UI cycles; 50-entry history; failed budgets reported honestly.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] Full regression; baseline/predecessor paired timing; 20 UI cycles; 50-entry history; failed budgets reported honestly.
+- [x] Focused tests, affected browser checks and necessary broader gates recorded.
+- [x] Compared with verified predecessor; original failures/outliers retained.
+- [x] Source-only checkpoint reviewed; publication and remote SHA are recorded in the recovery-map update.
 
 ## Execution
 

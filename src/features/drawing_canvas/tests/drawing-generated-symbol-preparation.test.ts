@@ -209,6 +209,14 @@ describe("drawing generated symbol preparation", () => {
     expect(
       getRenderableSymbolForPlacement(placement, [...symbols])
     ).not.toBe(first);
+
+    const supersedingRevision = { ...placement, x: placement.x + 10 };
+    const supersedingSymbol = getRenderableSymbolForPlacement(
+      supersedingRevision,
+      symbols
+    );
+    expect(supersedingSymbol).not.toBe(first);
+    expect(getRenderableSymbolForPlacement(placement, symbols)).not.toBe(first);
   });
 
   it("shares structured geometry by immutable asset and invalidates dependencies", () => {
@@ -249,9 +257,12 @@ describe("drawing generated symbol preparation", () => {
     expect(changed).not.toBe(first);
     expect(changed?.displayName).toBe("Changed strip");
     expect(changedSymbolBundle).not.toBe(first);
+    expect(
+      getRenderableSymbolForPlacement(placement, symbols, [asset])
+    ).not.toBe(first);
   });
 
-  it("reuses a prepared renderable bundle only for identical inputs", () => {
+  it("reuses a prepared renderable bundle for equivalent immutable inputs", () => {
     const { asset, placement } = structuredFixture();
     const symbols = terminalStripSymbols;
     const placements = [placement];
@@ -275,8 +286,22 @@ describe("drawing generated symbol preparation", () => {
         approvedSymbols: symbols,
         assets
       })
-    ).not.toBe(first);
+    ).toBe(first);
     expect(first).toHaveLength(3);
     expect(first[2].metadata.anchors.length).toBeGreaterThan(0);
+
+    const changedAsset = { ...asset, title: "Changed strip" };
+    buildRenderableDrawingSymbols({
+      placements,
+      approvedSymbols: symbols,
+      assets: [changedAsset]
+    });
+    expect(
+      buildRenderableDrawingSymbols({
+        placements,
+        approvedSymbols: symbols,
+        assets
+      })
+    ).not.toBe(first);
   });
 });

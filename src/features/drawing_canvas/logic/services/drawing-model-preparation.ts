@@ -50,12 +50,23 @@ export function createDrawingModelPreparationCache({
   symbols: ApprovedDrawingSymbol[];
   createSource?: (model: DrawingModel) => PanelWiringSourcePackage;
 }): DrawingModelPreparationCache {
-  const preparedByModel = new WeakMap<DrawingModel, PreparedDrawingModel>();
+  // Keep only the active input/final pair. Undo history intentionally retains
+  // model identities; a WeakMap keyed by every prepared model therefore also
+  // retained every derived source and engineering graph up to the history
+  // limit. Presentation-only renders still reuse the active pair, while an
+  // undo/redo transition rebuilds once for the newly active model.
+  let cachedInputModel: DrawingModel | undefined;
+  let cachedFinalModel: DrawingModel | undefined;
+  let cachedResult: PreparedDrawingModel | undefined;
 
   return {
     prepare(model) {
-      const existing = preparedByModel.get(model);
-      if (existing) return existing;
+      if (
+        cachedResult &&
+        (model === cachedInputModel || model === cachedFinalModel)
+      ) {
+        return cachedResult;
+      }
 
       const reconciled = reconcileDrawingAssets(
         {
@@ -76,8 +87,9 @@ export function createDrawingModelPreparationCache({
           : reconciledSource
       };
 
-      preparedByModel.set(model, result);
-      preparedByModel.set(finalModel, result);
+      cachedInputModel = model;
+      cachedFinalModel = finalModel;
+      cachedResult = result;
       return result;
     }
   };

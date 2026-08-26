@@ -18,5 +18,8 @@ describe("editor panel engineering snapshot cache", () => {
     const second = cache.getOrCreate(secondSource, () => build(secondSource));
     expect(second).not.toBe(first);
     expect(build).toHaveBeenCalledTimes(2);
+    const rebuiltFirst = cache.getOrCreate(firstSource, () => build(firstSource));
+    expect(rebuiltFirst).not.toBe(first);
+    expect(build).toHaveBeenCalledTimes(3);
   });
 });
