@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-010 — index endpoint and topology resolution
+Task: PLAN-002-TASK-011 — benchmark equivalent reusable numeric ordering
 Status: complete; checkpoint publication in progress
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: review and publish the Task010 checkpoint, verify its exact remote SHA, then start Task011 numeric-ordering equivalence benchmark.
+Next action: review and publish the Task011 checkpoint, verify its exact remote SHA, then start Task012 shared normalized-model/final-source preparation.
 
 ## Progress snapshot
+
+011 complete15:19 (approx6m):12,281real/adversarial identifiers and961pairwise cases prove equivalent reusable numeric ordering. ABBA sorting falls~998ms to~36ms. Source120 electrical network now30.52/35.10ms and repeats31.64/36.94ms, below100ms p95; combined validation+graph p95108.27 remains visible.726units, types/lint/build and4production workflows pass. Checkpoint publication pending.
+
+010 checkpointebca8db7484270f12888cca41f184d708736e19c publication-reviewed, pushed and exact remote branch SHA verified.011 started15:13. Stage3 remains open; no live promotion.
 
 010 complete15:12 (approx14m): first-resolved external endpoint index and direct canonical topology-terminal lookup preserve adversarial semantics. ABBA endpoint lookup drops57.30/54.07ms medians to4.42/4.31ms with identical checksum; complete-stage p95 remains noisy and above100ms.724units, types/lint/build and4production workflows pass. Speculative eager anchor index was measured then removed. Checkpoint publication pending.
 

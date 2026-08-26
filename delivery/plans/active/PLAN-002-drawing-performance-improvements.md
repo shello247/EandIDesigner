@@ -1,7 +1,7 @@
 # PLAN-002 — Drawing Performance Improvements
 
 Status: active
-Progress: Stage0–2 verified. Task009 snapshot reuse is remotely recoverable at5dfadf66d244978c9751712cc2d17ce5aeaadb08. Task010 endpoint/topology indexing passes its local gate; Task011 numeric-ordering benchmark is next after checkpoint publication.
+Progress: Stage0–2 verified. Task010 endpoint/topology indexing is remotely recoverable atebca8db7484270f12888cca41f184d708736e19c. Task011 reusable numeric ordering passes its local gate; Task012 shared normalized-model/final-source preparation is next after checkpoint publication.
 Started: 2026-08-26 12:55
 Completed: pending
 Duration: pending

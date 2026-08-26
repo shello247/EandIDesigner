@@ -23,6 +23,7 @@ import {
   terminalNodeId,
   terminalSideNodeId
 } from "./terminal-resolution";
+import { compareNaturalIdentifiers } from "./natural-ordering";
 
 type NetworkSource = {
   source: PanelWiringSourcePackage;
@@ -50,7 +51,7 @@ export type PanelElectricalNetworkIndex = {
 };
 
 function naturalCompare(first: string, second: string): number {
-  return first.localeCompare(second, undefined, { numeric: true });
+  return compareNaturalIdentifiers(first, second);
 }
 
 function uniqueSorted(values: Iterable<string>): string[] {
