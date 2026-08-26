@@ -20,6 +20,7 @@ import type {
 import {
   resolveOccurrenceTerminalByAnchor,
   sheetPlacementKey,
+  terminalNodeId,
   terminalSideNodeId
 } from "./terminal-resolution";
 
@@ -94,27 +95,57 @@ function topologySignature(
   );
 }
 
+function connectionEndpointKey(
+  sheetId: string,
+  connectionId: string,
+  endpointRole: "from" | "to"
+): string {
+  return `${encodeURIComponent(sheetId)}:${encodeURIComponent(connectionId)}:${endpointRole}`;
+}
+
+type EndpointNodeIndex = {
+  externalNodeIdByConnectionEndpoint: ReadonlyMap<string, string>;
+};
+
+function buildEndpointNodeIndex(source: NetworkSource): EndpointNodeIndex {
+  const externalNodeIdByConnectionEndpoint = new Map<string, string>();
+  for (const termination of source.externalTerminationsById.values()) {
+    if (termination.status !== "resolved" || !termination.target) continue;
+    const key = connectionEndpointKey(
+      termination.source.sheetId,
+      termination.source.connectionId,
+      termination.source.endpointRole
+    );
+    // The previous linear search returned the first resolved candidate.
+    if (!externalNodeIdByConnectionEndpoint.has(key)) {
+      externalNodeIdByConnectionEndpoint.set(
+        key,
+        terminalSideNodeId(termination.target)
+      );
+    }
+  }
+
+  return { externalNodeIdByConnectionEndpoint };
+}
+
 function resolveEndpointNodeId({
   source,
+  endpointNodeIndex,
   sheetId,
   connection,
   endpointRole
 }: {
   source: NetworkSource;
+  endpointNodeIndex: EndpointNodeIndex;
   sheetId: string;
   connection: PanelWiringSourceConnection;
   endpointRole: "from" | "to";
 }): string | undefined {
-  const termination = [...source.externalTerminationsById.values()].find(
-    (candidate) =>
-      candidate.status === "resolved" &&
-      candidate.source.sheetId === sheetId &&
-      candidate.source.connectionId === connection.id &&
-      candidate.source.endpointRole === endpointRole
-  );
-  if (termination?.target) {
-    return terminalSideNodeId(termination.target);
-  }
+  const externalNodeId =
+    endpointNodeIndex.externalNodeIdByConnectionEndpoint.get(
+      connectionEndpointKey(sheetId, connection.id, endpointRole)
+    );
+  if (externalNodeId) return externalNodeId;
 
   const endpoint = connection[endpointRole];
   const occurrence = source.occurrencesBySheetPlacement.get(
@@ -135,12 +166,11 @@ function resolveEndpointNodeId({
       ? terminal.supportedSides[0]
       : undefined);
   if (!side) return undefined;
-  const ref = {
+  const id = terminalSideNodeId({
     assetId: occurrence.assetId,
     terminalKey: terminal.terminalKey,
     side
-  };
-  const id = terminalSideNodeId(ref);
+  });
   return source.terminalSidesById.has(id) ? id : undefined;
 }
 
@@ -196,6 +226,7 @@ export function buildElectricalNetworkIndex(
   source: NetworkSource
 ): PanelElectricalNetworkIndex {
   const findings: PanelConnectivityFinding[] = [];
+  const endpointNodeIndex = buildEndpointNodeIndex(source);
   const electricalNodesById = new Map<string, PanelElectricalNode>();
   for (const side of source.terminalSidesById.values()) {
     electricalNodesById.set(side.id, {
@@ -248,10 +279,8 @@ export function buildElectricalNetworkIndex(
     const topology = occurrences[0]?.electricalTopology;
     for (const group of topology?.permanentContinuityGroups ?? []) {
       const missingKeys = group.terminalKeys.filter((terminalKey) => {
-        const terminal = [...source.terminalsById.values()].find(
-          (candidate) =>
-            candidate.ref.assetId === assetId &&
-            candidate.ref.terminalKey === terminalKey
+        const terminal = source.terminalsById.get(
+          terminalNodeId({ assetId, terminalKey })
         );
         return !terminal;
       });
@@ -266,10 +295,8 @@ export function buildElectricalNetworkIndex(
         continue;
       }
       const nodeIds = group.terminalKeys.flatMap((terminalKey) => {
-        const terminal = [...source.terminalsById.values()].find(
-          (candidate) =>
-            candidate.ref.assetId === assetId &&
-            candidate.ref.terminalKey === terminalKey
+        const terminal = source.terminalsById.get(
+          terminalNodeId({ assetId, terminalKey })
         );
         return terminal
           ? terminal.supportedSides.map((side) =>
@@ -301,12 +328,14 @@ export function buildElectricalNetworkIndex(
       if (connection.panelConnectionId || connection.panelPatternId) continue;
       const fromNodeId = resolveEndpointNodeId({
         source,
+        endpointNodeIndex,
         sheetId: sheet.id,
         connection,
         endpointRole: "from"
       });
       const toNodeId = resolveEndpointNodeId({
         source,
+        endpointNodeIndex,
         sheetId: sheet.id,
         connection,
         endpointRole: "to"

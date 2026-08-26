@@ -1,7 +1,7 @@
 # PLAN-002 — Drawing Performance Improvements
 
 Status: active
-Progress: Stage0–2 verified. CI33001312593 passes719units/build/28production workflows; tag drawing-perf-pass-1-stage-2-20260826 peels to ab2dd18969bb4d9f4a18b8561607892cb3d4fec7. Task009 stable engineering snapshot reuse passes its local gate; Task010 endpoint/topology indexing is next after checkpoint publication.
+Progress: Stage0–2 verified. Task009 snapshot reuse is remotely recoverable at5dfadf66d244978c9751712cc2d17ce5aeaadb08. Task010 endpoint/topology indexing passes its local gate; Task011 numeric-ordering benchmark is next after checkpoint publication.
 Started: 2026-08-26 12:55
 Completed: pending
 Duration: pending

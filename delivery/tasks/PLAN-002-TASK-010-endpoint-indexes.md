@@ -4,19 +4,19 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-010
 Stage: 3
 Priority: P1
-Status: todo
+Status: done
 Test impact: add
-Started: pending
-Completed: pending
-Duration: pending
+Started: 2026-08-26 14:58
+Completed: 2026-08-26 15:12
+Duration: approximately 14 minutes
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] First-match/ambiguity/unresolved semantics preserved; adversarial graph/index parity passes.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] First-match/ambiguity/unresolved semantics preserved; adversarial graph/index parity passes.
+- [x] Focused tests, affected browser checks and necessary broader gates recorded.
+- [x] Compared with verified predecessor; original failures/outliers retained.
+- [x] Source-only checkpoint reviewed for publication; push and remote verification are the task-closing operation.
 
 ## Execution
 
@@ -38,4 +38,3 @@ Use the guarded runner for focused Vitest/Playwright and lint/type/build checks 
 ## Report
 
 delivery/reports/PLAN-002-TASK-010-endpoint-indexes.md
-

@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-009 — reuse engineering snapshots across view changes
+Task: PLAN-002-TASK-010 — index endpoint and topology resolution
 Status: complete; checkpoint publication in progress
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: review and publish the Task009 checkpoint, verify the exact remote SHA, then start Task010 endpoint/topology indexing.
+Next action: review and publish the Task010 checkpoint, verify its exact remote SHA, then start Task011 numeric-ordering equivalence benchmark.
 
 ## Progress snapshot
+
+010 complete15:12 (approx14m): first-resolved external endpoint index and direct canonical topology-terminal lookup preserve adversarial semantics. ABBA endpoint lookup drops57.30/54.07ms medians to4.42/4.31ms with identical checksum; complete-stage p95 remains noisy and above100ms.724units, types/lint/build and4production workflows pass. Speculative eager anchor index was measured then removed. Checkpoint publication pending.
+
+009 checkpoint5dfadf66d244978c9751712cc2d17ce5aeaadb08 publication-reviewed, pushed and exact remote branch SHA verified.010 started14:58. Stage3 remains open; no live promotion.
 
 Stage2 CI33001312593 passed all gates and28production workflows. Tag drawing-perf-pass-1-stage-2-20260826 remote verified, peeled ab2dd18969bb4d9f4a18b8561607892cb3d4fec7.009 started14:48.
 

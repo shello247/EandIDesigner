@@ -10,6 +10,8 @@ import type {
   PanelWiringSourcePackage,
   PanelWiringSourceTerminal
 } from "../data/schema";
+import type { PanelExternalTermination } from "../types";
+import { buildElectricalNetworkIndex } from "../logic/services/electrical-network-index";
 import { terminalSideNodeId } from "../logic/services/terminal-resolution";
 
 function terminal(key: string): PanelWiringSourceTerminal {
@@ -285,6 +287,150 @@ describe("electrical network index", () => {
         code: "unresolved_electrical_network_endpoint",
         panelAssetId: "panel_1",
         assetId: "strip_1"
+      })
+    );
+  });
+
+  it("preserves the first terminal and anchor match for duplicate anchor keys", () => {
+    const input = source();
+    const occurrence = input.sheets[0].occurrences[0];
+    occurrence.terminals[0].anchors.push({
+      anchorKey: "SHARED",
+      anchorKind: "terminal",
+      sideHint: "internal"
+    });
+    occurrence.terminals[1].anchors.push({
+      anchorKey: "SHARED",
+      anchorKind: "terminal",
+      sideHint: "external"
+    });
+    input.sheets[0].connections[0].from.anchorKey = "SHARED";
+
+    const graph = buildPackageConnectivityGraph(input);
+    const relationship = graph.conductiveRelationshipsById.get(
+      "drawing_connection:sheet_1:connection_1"
+    );
+
+    expect(relationship?.nodeIds).toContain(
+      terminalSideNodeId({
+        assetId: "pdb_1",
+        terminalKey: "a",
+        side: "internal"
+      })
+    );
+    expect(relationship?.nodeIds).not.toContain(
+      terminalSideNodeId({
+        assetId: "pdb_1",
+        terminalKey: "b",
+        side: "external"
+      })
+    );
+  });
+
+  it("keeps an unresolved first anchor match from falling through to a duplicate", () => {
+    const input = source();
+    const occurrence = input.sheets[0].occurrences[0];
+    occurrence.terminals[0].anchors.push({
+      anchorKey: "SHARED_UNRESOLVED",
+      anchorKind: "terminal"
+    });
+    occurrence.terminals[1].anchors.push({
+      anchorKey: "SHARED_UNRESOLVED",
+      anchorKind: "terminal",
+      sideHint: "external"
+    });
+    input.sheets[0].connections[0].from.anchorKey = "SHARED_UNRESOLVED";
+
+    const graph = buildPackageConnectivityGraph(input);
+
+    expect(
+      graph.conductiveRelationshipsById.has(
+        "drawing_connection:sheet_1:connection_1"
+      )
+    ).toBe(false);
+    expect(graph.findings).toContainEqual(
+      expect.objectContaining({
+        code: "unresolved_electrical_network_endpoint",
+        source: expect.objectContaining({ endpointRole: "from" })
+      })
+    );
+  });
+
+  it("uses the first resolved external candidate in map encounter order", () => {
+    const graph = buildPackageConnectivityGraph(source());
+    const sourceRef = {
+      sheetId: "sheet_1",
+      connectionId: "connection_1",
+      endpointRole: "from" as const,
+      placementId: "pdb_1_placement",
+      anchorKey: "b_OUT"
+    };
+    const termination = (
+      id: string,
+      target?: PanelExternalTermination["target"]
+    ): PanelExternalTermination => ({
+      id,
+      panelAssetId: "panel_1",
+      status: target ? "resolved" : "unresolved",
+      mappingMode: target ? "manual" : "unmapped",
+      target,
+      sourceAssetId: "pdb_1",
+      sourceAssetTag: "PDB-101",
+      source: sourceRef,
+      sourceSheet: { id: "sheet_1", number: 1, name: "Network" },
+      unresolvedCode: target ? undefined : "unresolved_anchor",
+      unresolvedReason: target ? undefined : "Test unresolved candidate"
+    });
+    const firstTarget = {
+      assetId: "pdb_2",
+      terminalKey: "b",
+      side: "external" as const
+    };
+    const secondTarget = {
+      assetId: "pdb_1",
+      terminalKey: "c",
+      side: "external" as const
+    };
+    const externalTerminations =
+      graph.externalTerminationsById as Map<string, PanelExternalTermination>;
+    externalTerminations.clear();
+    externalTerminations.set(
+      "candidate-unresolved",
+      termination("candidate-unresolved")
+    );
+    externalTerminations.set(
+      "candidate-first",
+      termination("candidate-first", firstTarget)
+    );
+    externalTerminations.set(
+      "candidate-second",
+      termination("candidate-second", secondTarget)
+    );
+
+    const index = buildElectricalNetworkIndex(graph);
+    const relationship = index.conductiveRelationshipsById.get(
+      "drawing_connection:sheet_1:connection_1"
+    );
+
+    expect(relationship?.nodeIds).toContain(
+      terminalSideNodeId(firstTarget)
+    );
+    expect(relationship?.nodeIds).not.toContain(
+      terminalSideNodeId(secondTarget)
+    );
+  });
+
+  it("reports unavailable permanent-topology terminal keys", () => {
+    const input = source();
+    input.sheets[0].occurrences[0].electricalTopology!
+      .permanentContinuityGroups[0].terminalKeys.push("missing");
+
+    const graph = buildPackageConnectivityGraph(input);
+
+    expect(graph.findings).toContainEqual(
+      expect.objectContaining({
+        code: "registry_topology_missing_terminal",
+        assetId: "pdb_1"
       })
     );
   });

@@ -16,7 +16,7 @@ PLAN-002 — [Drawing Performance Improvements](plans/active/PLAN-002-drawing-pe
 - [x] PLAN-002-TASK-007 — Remove closed Wire Catalog mounting overhead
 - [x] PLAN-002-TASK-008 — Accurate bounded action and rendering metrics
 - [x] PLAN-002-TASK-009 — Reuse engineering snapshots across view changes
-- [ ] PLAN-002-TASK-010 — Index endpoint and topology resolution
+- [x] PLAN-002-TASK-010 — Index endpoint and topology resolution
 - [ ] PLAN-002-TASK-011 — Benchmark equivalent reusable numeric ordering
 - [ ] PLAN-002-TASK-012 — Share normalized model and final derived source
 - [ ] PLAN-002-TASK-013 — Reuse exact-version and generated render preparation
