@@ -4,19 +4,19 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-022
 Stage: 7
 Priority: P1
-Status: doing
+Status: done
 Test impact: update
 Started: 2026-08-26 18:36
-Completed: pending
-Duration: pending
+Completed: 2026-08-26 18:47
+Duration: approximately 11 minutes
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] Five PDFs per size; page/order/text/wire/schedule/layout parity; search/copy caveats verified or explicitly retained.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] Five PDFs per size; page/order/text/wire/schedule/layout parity; search/copy caveats verified or explicitly retained.
+- [x] Focused tests, affected browser checks and necessary broader gates recorded.
+- [x] Compared with verified predecessor; original failures/outliers retained.
+- [x] Source-only checkpoint reviewed; publication and remote SHA are recorded in the recovery-map update.
 
 ## Execution
 

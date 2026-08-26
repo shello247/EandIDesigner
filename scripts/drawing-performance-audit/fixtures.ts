@@ -113,7 +113,11 @@ export async function seed(){
   const manifest=[];
   for(const fixture of fixtures){
     const facts=validateFixture(fixture.model);
-    await prisma.drawing.upsert({where:{id:fixture.id},update:{modelJson:stringifyDrawingModel(fixture.model)},create:{id:fixture.id,drawingKey:fixture.id,title:fixture.id,status:"needs_review",modelJson:stringifyDrawingModel(fixture.model)}});
+    await prisma.drawing.upsert({
+      where:{id:fixture.id},
+      update:{drawingKey:fixture.id,title:fixture.id,status:"needs_review",modelJson:stringifyDrawingModel(fixture.model)},
+      create:{id:fixture.id,drawingKey:fixture.id,title:fixture.id,status:"needs_review",modelJson:stringifyDrawingModel(fixture.model)}
+    });
     manifest.push({id:fixture.id,...facts});
     write(fixture.id+".json",fixture.model);
   }

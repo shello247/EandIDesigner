@@ -1,12 +1,14 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-022 — PDF/print verification and text compatibility check
+Task: PLAN-002-TASK-023 — clean-checkout recovery and final verified checkpoint
 Status: doing
-Started: 2026-08-26 18:36 America/Port_of_Spain
-Next action: run five sequential PDFs per representative package size, compare print/PDF page order, labels, wire identities and schedules, and verify the retained text-search/copy caveat without changing export behavior.
+Started: 2026-08-26 18:47 America/Port_of_Spain
+Next action: publish and verify the Task 22 checkpoint, restore it into a disposable worktree, prove clean-checkout install/build/synthetic run, complete the final recovery map and close PLAN-002 without merging or promoting it.
 
 ## Progress snapshot
+
+022 complete18:47 (approximately11m): five PDFs for each 10/40/120-sheet package pass. Candidate print HTML is byte-identical to baseline; every page text hash, page size and sheet order matches; pages1/4/last are pixel-identical and visually inspected. PDF median fell 3,696.22→2,129.00ms, 7,192.32→4,161.25ms and 16,277.66→9,781.65ms. The unchanged private-use punctuation/literal-ID extraction caveat is retained. Audit fixture reset is now deterministic. Checkpoint publication pending;023 started18:47. No live promotion.
 
 021 checkpoint `11c91e71fd2ae522c2f4cf6d6732c1a9552fb58e` is publication-reviewed, pushed and exact remote SHA verified. 771 units, lint/types/build and 30/30 production drawing workflows pass. Against the frozen baseline, final median/p95 are selection 46.60/54.80ms, sheet switch 94.75/129.60ms, Properties 34.20/35.40ms, nudge 133.80/147.70ms, save 151.00/173.30ms and connection display 183.87/207.88ms. The integrated test caught history-derived cache retention at 135.30MB after 60 edits; final cache ownership keeps isolated forced-GC heap flat at 21.77/22.46/21.96MB after 10/50/60 edits while preserving the exact 50-entry undo/redo contract. Product fingerprint `528deaa754e93b5da5a1873ef3714c4febef4630821465902a2325b1a1eecb02`. 021 complete18:36 (approximately36m);022 started18:36. No live promotion.
 

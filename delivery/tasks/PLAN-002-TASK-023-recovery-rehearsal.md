@@ -4,9 +4,9 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-023
 Stage: 7
 Priority: P1
-Status: todo
+Status: doing
 Test impact: none
-Started: pending
+Started: 2026-08-26 18:47
 Completed: pending
 Duration: pending
 Timezone: America/Port_of_Spain
@@ -38,4 +38,3 @@ Use the guarded runner for focused Vitest/Playwright and lint/type/build checks 
 ## Report
 
 delivery/reports/PLAN-002-TASK-023-recovery-rehearsal.md
-
