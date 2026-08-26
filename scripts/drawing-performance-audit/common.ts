@@ -3,17 +3,13 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { z } from "zod";
+import { resolveAuditConfiguration, assertAuditDatabase } from "./run-config.mjs";
 
-export const runId = "20260826-baseline";
-export const root = process.cwd();
-export const output = path.join(root,"artifacts/drawing-performance",runId);
-export const database = path.join(root,"prisma","test-drawing-performance-20260826.db");
+const configuration = resolveAuditConfiguration();
+export const { runId, root, output, database } = configuration;
 export const metricSchema = z.object({name:z.string(),samplesMs:z.array(z.number().finite().nonnegative()),medianMs:z.number(),p95Ms:z.number().nullable(),maxMs:z.number(),iterations:z.number().int()});
 export function guard() {
-  if(path.basename(root)!=="drawing-performance-audit-20260826") throw new Error("Run only in the isolated audit worktree");
-  const expected="file:"+database.replaceAll("\\","/");
-  if(process.env.DATABASE_URL!==expected) throw new Error("Refusing non-audit database; set the exact absolute audit DATABASE_URL");
-  if(!fs.existsSync(path.join(root,".git"))) throw new Error("Missing linked worktree marker");
+  assertAuditDatabase(configuration);
 }
 export function sha(value:string|Buffer) { return createHash("sha256").update(value).digest("hex"); }
 export function freshMetricFile(stem:string) {

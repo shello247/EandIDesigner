@@ -4,11 +4,12 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-002
 Stage: 0
 Priority: P1
-Status: todo
+Status: doing
 Test impact: add
-Started: pending
+Started: 2026-08-26 13:00
 Completed: pending
 Duration: pending
+Blocker: existing dependency-security gate fails; scope decision required before progression.
 Timezone: America/Port_of_Spain
 
 ## Done when
@@ -38,4 +39,3 @@ Use the guarded runner for focused Vitest/Playwright and lint/type/build checks 
 ## Report
 
 delivery/reports/PLAN-002-TASK-002-harness.md
-

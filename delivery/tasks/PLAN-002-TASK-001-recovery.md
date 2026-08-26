@@ -4,19 +4,19 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-001
 Stage: 0
 Priority: P1
-Status: doing
+Status: done
 Test impact: none
 Started: 2026-08-26 12:55
-Completed: pending
-Duration: pending
+Completed: 2026-08-26 13:00
+Duration: approximately 5 minutes
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] Exact audited source reproduced; publication review passes; commit pushed and remote SHA verified.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] Exact audited source reproduced; publication review passes; commit pushed and remote SHA verified.
+- [x] Source/recovery checks recorded; product testing follows in Task002.
+- [x] Compared with audited source; original failures/outliers retained.
+- [x] Source-only checkpoint reviewed, pushed and remote SHA verified.
 
 ## Execution
 
@@ -38,4 +38,3 @@ Use the guarded runner for focused Vitest/Playwright and lint/type/build checks 
 ## Report
 
 delivery/reports/PLAN-002-TASK-001-recovery.md
-

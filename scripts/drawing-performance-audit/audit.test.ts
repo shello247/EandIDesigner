@@ -8,8 +8,17 @@ import { collectPlacementWireContextRequests } from "../../src/features/drawing_
 import { renderDrawingToSvg } from "../../src/features/drawing_canvas/logic/services/drawing-svg-renderer";
 import { toSheetCanvasModel } from "../../src/features/drawing_canvas/logic/commands/drawing-sheet-commands";
 import { createEmptyDrawingHistory, pushDrawingHistoryEntry, undoDrawingHistory, redoDrawingHistory } from "../../src/features/drawing_canvas/logic/services/drawing-model-history";
+import { resolveAuditConfiguration, assertAuditDatabase } from "./run-config.mjs";
 
 describe("audit fixture and measurement contracts",()=>{
+  it("rejects unregistered roots, escaped phases and mismatched database URLs",()=>{
+    expect(()=>resolveAuditConfiguration("C:/outside/drawing-performance-pass-1")).toThrow();
+    expect(()=>resolveAuditConfiguration(process.cwd(),"../escape")).toThrow();
+    const config=resolveAuditConfiguration(process.cwd(),"guard-test");
+    expect(config.output).toContain("guard-test");
+    expect(()=>assertAuditDatabase(config,config.databaseUrl)).not.toThrow();
+    expect(()=>assertAuditDatabase(config,"file:./dev.db")).toThrow();
+  });
   it("keeps engineering output and SVG identical with diagnostics enabled or disabled",()=>{
     const model=mixedModel(10),symbols=[auditSymbol()];
     const host=globalThis as typeof globalThis & {__EI_AUDIT_COUNTS__?:Record<string,{count:number}>};
