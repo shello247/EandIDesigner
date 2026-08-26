@@ -16,7 +16,7 @@ Timezone: America/Port_of_Spain
 - [x] Final model/source agree after wire-ID reconciliation; normal duplicate adaptations eliminated; undo/save invariants pass.
 - [x] Focused tests, affected browser checks and necessary broader gates recorded.
 - [x] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] Source-only checkpoint reviewed, pushed and remote SHA verified.
 
 ## Execution
 

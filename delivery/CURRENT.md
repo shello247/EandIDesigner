@@ -1,14 +1,18 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-012 — share normalized model and final derived source
-Status: complete; checkpoint publication pending
+Task: PLAN-002-TASK-013 — reuse exact-version and generated render preparation
+Status: complete; checkpoint publication and Stage3 CI pending
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: publication-review, push and remote-verify the Task012 checkpoint; then begin Task013 render preparation.
+Next action: publication-review and remote-verify Task013, run the clean-checkout CI gate, then tag Stage3 only if that exact checkpoint passes.
 
 ## Progress snapshot
 
-012 complete15:36 (approx16m): editor-scoped preparation returns one final model/source pair, rebuilds from the final model only when wire-ID reconciliation mutates it, and survives unchanged Server Action prop serialization. Selection/sheet/preview/save record0normalize/source/graph rebuilds; a real mutation records1source/graph/history and0requests.729units, types/lint/build and5production workflows pass. Two diagnostic red runs and one no-server invocation error are retained. Checkpoint publication pending.
+013 complete15:55 (approx18m): exact lookup26.79/36.90ms to final2.17/2.97; generated resolution60.73/81.87ms to final0.10/0.15, identical checksums. Weak-key indexes preserve first-match, delimiter-safe exact identity, placement/asset/symbol invalidation and occurrence isolation.733units, types/lint/build,7targeted and28/28full production workflows pass; final hardening build and3workflow rerun also pass. Stage3 checkpoint/CI/tag pending.
+
+012 checkpointd42fe9cbbdbcb7a1bec4ffb7c3bf5e087ed4b94e publication-reviewed, pushed and exact remote branch SHA verified.013 started15:37. Stage3 remains open; no live promotion.
+
+012 complete15:36 (approx16m): editor-scoped preparation returns one final model/source pair, rebuilds from the final model only when wire-ID reconciliation mutates it, and survives unchanged Server Action prop serialization. Selection/sheet/preview/save record0normalize/source/graph rebuilds; a real mutation records1source/graph/history and0requests.729units, types/lint/build and5production workflows pass. Two diagnostic red runs and one no-server invocation error are retained.
 
 011 checkpoint875686a154444404e176b0e3a4029f4d8d0f07f7 publication-reviewed, pushed and exact remote branch SHA verified.012 started15:20. Stage3 remains open; no live promotion.
 

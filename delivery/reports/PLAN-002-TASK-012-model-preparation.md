@@ -3,7 +3,7 @@
 Start: 2026-08-26 15:20 America/Port_of_Spain
 End: 2026-08-26 15:36 America/Port_of_Spain
 Duration: approximately 16 minutes
-Status: complete; checkpoint publication pending
+Status: complete; checkpoint remotely verified
 
 ## Invariants
 
@@ -64,4 +64,4 @@ The mutation's single preparation measured 40.6 ms, of which its one source buil
 
 Model caches are editor-local and weak-keyed. Symbol dependency-key construction occurs only when the Server Component supplies a new array identity; ordinary client state renders reuse React's memo. The key includes every symbol field used by asset/source normalization except SVG, while the complete render dependency and generated-geometry identity are explicitly left for Task013. Reconciliation remains conservative and rebuilds the source from the final model whenever it changes IDs.
 
-Raw evidence remains in unique ignored `task012-*` and `diagnostic-task012-*` paths. Source checkpoint: commit containing this report; publication review, push and exact remote verification are recorded at task close and in the next Delivery state update.
+Raw evidence remains in unique ignored `task012-*` and `diagnostic-task012-*` paths. Publication review scanned the complete 10-file staged set with zero findings. Source checkpoint `d42fe9cbbdbcb7a1bec4ffb7c3bf5e087ed4b94e` was pushed and matched the exact remote branch SHA.

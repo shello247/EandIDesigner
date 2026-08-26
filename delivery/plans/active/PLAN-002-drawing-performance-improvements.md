@@ -1,7 +1,7 @@
 # PLAN-002 — Drawing Performance Improvements
 
 Status: active
-Progress: Stage0–2 verified. Task011 reusable numeric ordering is remotely recoverable at875686a154444404e176b0e3a4029f4d8d0f07f7. Task012 shared normalized-model/final-source preparation is complete and awaiting checkpoint publication.
+Progress: Stage0–2 verified. Task012 is remotely recoverable atd42fe9cbbdbcb7a1bec4ffb7c3bf5e087ed4b94e. Task013 exact-version/generated render preparation is complete; Stage3 checkpoint/CI/tag remain pending.
 Started: 2026-08-26 12:55
 Completed: pending
 Duration: pending
