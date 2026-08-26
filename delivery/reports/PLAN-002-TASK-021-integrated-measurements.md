@@ -62,5 +62,4 @@ Across twenty UI cycles, forced-GC heap growth improved from 5.89 MB at baseline
 
 Raw evidence is retained under `artifacts/drawing-performance/pass-1/`, including `task021-interactions-v2`, `task021-geometry-v1`, `diagnostic-task021-geometry-v1`, `task021-memory-v1`, `task021-navigation-v1`, all failed memory iterations, `diagnostic-task021-snapshot-v2`, `task021-cache-final-history-v3`, `task021-cache-final-interactions-v1`, and `task021-final-release-v2`.
 
-The source checkpoint and remote verification are recorded in the subsequent recovery-map update. Port 3000, the canonical database, the original worktree, and the Stage 6 recovery tag remain untouched.
-
+Source checkpoint `11c91e71fd2ae522c2f4cf6d6732c1a9552fb58e` was publication-reviewed, pushed, and verified against the remote branch. Port 3000, the canonical database, the original worktree, and the Stage 6 recovery tag remain untouched.
