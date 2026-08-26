@@ -39,9 +39,12 @@ describe("development runtime", () => {
   });
 
   it("builds an absolute Prisma SQLite URL", () => {
-    expect(toPrismaSqliteFileUrl("C:\\Workspace\\prisma\\dev.db")).toBe(
-      "file:C:/Workspace/prisma/dev.db"
-    );
+    // Absolute filesystem paths use the host OS's syntax. Keep the Windows
+    // separator conversion covered locally and a native absolute path on CI.
+    const windows = process.platform === "win32";
+    const databasePath = windows ? "C:\\Workspace\\prisma\\dev.db" : "/workspace/prisma/dev.db";
+    const expected = windows ? "file:C:/Workspace/prisma/dev.db" : "file:/workspace/prisma/dev.db";
+    expect(toPrismaSqliteFileUrl(databasePath)).toBe(expected);
   });
 
   it("uses only the dedicated explicit database override", () => {

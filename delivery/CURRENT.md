@@ -4,9 +4,13 @@ Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvemen
 Task: PLAN-002-TASK-006 — production CI gate
 Status: doing
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: publish locally verified006 CI checkpoint, verify remote SHA and GitHub clean-checkout gate before Stage1 tag or Stage2.
+Next action: verify and checkpoint the platform-only development-runtime test repair, rerun clean-checkout CI. Stage1/Stage2 remain gated.
 
 ## Progress snapshot
+
+CI32998543073 failed:713units pass,1Windows-path fixture assumption fails on Linux. Fix only native fixture/expected path; production resolver untouched. Install/audit/Chromium/lint/types pass. First failure evidence retained; no Stage1 tag.
+
+006 code checkpointe6b4f77673dcd47697c4ad8509626f693c1d5ac2 pushed/remote verified. CI32998543073 is running; install/audit pass. Stage1 remains unverified until the full clean-checkout result.
 
 006 local verification:714units/118files,16harness tests,8CI contracts, production build and27/27browser workflows pass. The stronger shared page/popup error guard also passes27/27 and rejects an intentional negative probe. Final types/lint pass after renaming the fixture callback (no rule suppression). GitHub clean-checkout gate remains required. Original source/live3000 unchanged; no3100 listener.
 
