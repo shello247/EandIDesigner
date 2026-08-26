@@ -1,18 +1,14 @@
 export { PanelDrawingContextEditor } from "./components/panel-drawing-context-editor";
 export { PanelDrawingSummary } from "./components/panel-drawing-summary";
+export { ConnectionDisplaySelect } from "./components/connection-display-select";
 export {
   PanelDiscoveryDialog,
   type PanelDiscoveryTab
 } from "./components/panel-discovery-dialog";
 export { PanelDiscoveryStatusBadge } from "./components/panel-discovery-status";
 export { InternalWireDialog, type InternalWireDialogSubmission } from "./components/internal-wire-dialog";
-export {
-  PanelInternalWireForm,
-  type PanelInternalWireFormResult,
-  type PanelInternalWireFormSubmission
-} from "./components/panel-internal-wire-form";
 export { InternalWireDeleteDialog } from "./components/internal-wire-delete-dialog";
-export { PanelWireSettingsDialog } from "./components/panel-wire-settings-dialog";
+export { LegacyWireIdentityUpgradeDialog } from "./components/legacy-wire-identity-upgrade-dialog";
 export {
   PanelPatternAuthoringPanel,
   type PanelPatternAuthoringStage,

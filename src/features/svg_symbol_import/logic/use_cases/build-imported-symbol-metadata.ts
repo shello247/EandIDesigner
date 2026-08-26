@@ -5,7 +5,7 @@ import type {
 } from "@/features/symbol_registry/data/schema";
 import {
   symbolMetadataSchema,
-  type SymbolCategory,
+  type SymbolTechnicalKind,
   type SymbolLayoutUsage,
   type SymbolPanelCategory,
   type SymbolPanelMountingType,
@@ -50,11 +50,14 @@ export function buildImportedSymbolMetadata(input: {
   displayName: string;
   manufacturer?: string;
   model?: string;
-  category: SymbolCategory;
+  technicalKind?: SymbolTechnicalKind;
+  /** @deprecated Use technicalKind. */
+  category?: SymbolTechnicalKind;
   layoutUsage?: SymbolLayoutUsage;
   physicalWidthMm?: string | number;
   physicalHeightMm?: string | number;
   mountingType?: SymbolPanelMountingType | "";
+  /** @deprecated Managed symbol categories replace panel categories. */
   panelCategory?: SymbolPanelCategory | "";
   resizable?: boolean;
   panelWiringEnabled?: boolean;
@@ -67,7 +70,8 @@ export function buildImportedSymbolMetadata(input: {
   networkProfile?: SvgImportNetworkProfileDraft;
   componentPositions?: SymbolComponentPosition[];
 }): SymbolMetadata {
-  const isNetworkDevice = input.category === "network_device";
+  const technicalKind = input.technicalKind ?? input.category ?? "other";
+  const isNetworkDevice = technicalKind === "network_device";
   const networkProfile =
     isNetworkDevice
       ? input.networkProfile
@@ -80,7 +84,7 @@ export function buildImportedSymbolMetadata(input: {
     displayName: input.displayName.trim(),
     manufacturer: normalizeOptional(input.manufacturer),
     model: normalizeOptional(input.model),
-    category: input.category,
+    category: technicalKind,
     layoutUsage: isNetworkDevice ? "wiring" : input.layoutUsage ?? "wiring",
     physicalWidthMm: isNetworkDevice
       ? undefined
@@ -89,7 +93,6 @@ export function buildImportedSymbolMetadata(input: {
       ? undefined
       : normalizePositiveNumber(input.physicalHeightMm),
     mountingType: isNetworkDevice ? undefined : input.mountingType || undefined,
-    panelCategory: isNetworkDevice ? undefined : input.panelCategory || undefined,
     resizable: isNetworkDevice ? false : input.resizable ?? false,
     networkProfile,
     panelWiring: !isNetworkDevice && input.panelWiringEnabled

@@ -28,16 +28,26 @@ Supported now:
 - Purple placement label handle that moves the tag/title pair together.
 - Active-sheet edit workspace with Fit, 100 percent, zoom in/out, Ctrl+wheel
   zoom, and Sheet Loader navigation for switching sheets.
+- Session-only horizontal and vertical drawing guides. Engineers can drag from
+  the rulers after enabling guides from the sheet toolbar, then snap placement
+  edges and centres while moving equipment. Guides are hidden by default,
+  retained per sheet until browser refresh, and deliberately excluded from
+  drawing data, history, print, PDF, and Package Preview.
 - Ordered drawing-package sections derived from Section Title Page boundaries.
   Section numbers are sequential package-order values and cannot be duplicated.
 - Read-only Package Preview mode for reviewing all sheets in order without
   mounting edit overlays or sidebars.
 - Anchor hover data.
-- Click-click connection authoring between anchors.
+- Click-click connection authoring between anchors with a live orthogonal
+  preview. Blank-canvas clicks pin optional route bends; Backspace removes the
+  latest bend and Escape cancels the runtime-only draft.
 - Grouped connection panel by transition, for example `TT-101 <-> C-101`.
 - Wire IDs, conductor keys, cable placement references, and connection labels.
-- Manual orthogonal route editing with route points, route-point deletion, route
-  label yellow handles, and route reset.
+- Manual orthogonal route editing with route points, route-point deletion,
+  screen-space alignment snapping and guides, draggable horizontal/vertical
+  segments, route label yellow handles, and route reset. Shift constrains point
+  movement to one axis and Alt temporarily bypasses snapping. Route points are
+  drawing controls and remain separate from symbol terminal anchors.
 - Note blocks with editable title/body in the right panel.
 - Optional note leader arrows and draggable note leader target.
 - Arrow-key nudge by 1 mm for selected movable canvas items.
@@ -52,8 +62,6 @@ Supported now:
   tag updates across sheets and non-blocking duplicate tag warnings.
 - Drawing-level Asset Manager dialog for package assets, grouped by engineering
   type with sheet associations and unplaced asset creation/deletion.
-- Duplicate Sheet wizard for one-sheet-at-a-time copies with reviewed asset
-  creation/reference decisions.
 - Generated panel/enclosure placements, including package-wide panel asset
   references such as `PDP-101`.
 - Explicit panel containment for devices and terminal assets shown inside a
@@ -207,6 +215,10 @@ Each sheet stores:
     helpers.
 - `logic/services/connection-route-geometry.ts`
   - route generation and route point manipulation.
+- `logic/services/guided-connection-routing.ts`
+  - runtime waypoint snapping and the shared preview/commit geometry for
+    ordinary guided connections. A direct connection remains automatic;
+    one or more pinned bends produces persisted manual route geometry.
 - `logic/services/connection-route-renderer.ts`
   - route SVG path, labels, route handles, and route label helpers.
 - `logic/services/drawing-annotations.ts`
@@ -221,6 +233,9 @@ Each sheet stores:
   - deterministic sheet SVG renderer used by canvas, print, and PDF.
 - `logic/services/drawing-generated-symbols.ts`
   - placement-aware adapter for generated symbols such as terminal strips.
+- `logic/services/drawing-guides.ts`
+  - pure ruler tick generation and screen-space placement-guide snapping with
+    acquisition/release hysteresis.
 - `logic/services/drawing-backplane-layouts.ts`
   - generated Backplane symbol, backplane creation, layout assignment, physical
     helper sizing, and backplane rendering helpers.
@@ -241,6 +256,10 @@ Each sheet stores:
 - `ui/components/svg-drawing-surface.tsx`
   - active-sheet viewport, active-sheet overlay orchestration, and sheet
     management controls.
+- `ui/components/drawing-guide-rulers.tsx` and
+  `ui/canvas/DrawingGuidesOverlay.tsx`
+  - interactive-only ruler and guide surfaces. They are never passed to the
+    shared SVG renderer used for deliverables.
 - `ui/components/package-preview-surface.tsx`
   - read-only package review surface that lazily renders all sheet SVGs without
     editing overlays.
@@ -281,12 +300,11 @@ Adjacent drawing features:
 - A loaded Detailed Panel Drawing replaces the field symbol library with a panel
   context summary and hides field connection authoring. The right sidebar can
   relink the sheet to another compatible package panel without changing assets.
-- Its Detailed Panel Workflow opens in Guided mode and derives progress for each
-  associated asset through representation, field termination review, terminal
-  mapping, wiring, patterns, review, and deliverables. Physical equipment is
-  defined by the panel layout and referenced here; the Detailed Panel workspace
-  does not create new panel devices.
-  Advanced Workbench preserves the complete technical catalogs and direct actions.
+- Its Panel Engineering Workbench focuses on selecting existing physical
+  equipment for the sheet and exposes direct Equipment, External Terminations,
+  Terminal Map, Internal Wires, and Connection Patterns views. Physical
+  equipment is defined by the panel layout and referenced here; the Detailed
+  Panel workspace does not create new panel devices.
 - Sheet Loader and Package Preview classify context-bearing sheets as
   `Detailed Panel`. Asset Manager includes the context as a sheet association
   and prevents deletion of the referenced panel.
@@ -299,25 +317,27 @@ Adjacent drawing features:
 - Existing field connections remain authoritative and immutable. The panel graph
   derives external terminations with their original sheet, connection, endpoint,
   wire, cable, conductor, placement, and anchor provenance.
-- A represented asset on a Detailed Panel Drawing automatically renders those
-  resolved external terminations as straight, non-editable teal stubs at the
-  canonical external/single terminal anchor. The display is derived only; it does
-  not add or duplicate a sheet connection and is shared by canvas, Package Preview,
-  print, and PDF.
-- A Detailed Panel Drawing exposes a Panel Work Queue derived from the memoized
+- A represented asset on a Detailed Panel Drawing defaults to external
+  connections and renders resolved field terminations as straight, non-editable
+  teal stubs at canonical external/BOTTOM or single-sided anchors. Connection
+  Display can instead show internal/TOP wires, both canonical kinds, or sheet
+  routes only. The linked schedule follows the same occurrence setting. The
+  display is derived only; it does not add or duplicate a sheet connection and
+  is shared by canvas, Package Preview, print, and PDF.
+- A Detailed Panel Drawing exposes a Panel Engineering Workbench derived from the memoized
   connectivity graph. It lists associated physical assets and field terminations
   as available, represented, missing, conflicting, or unsupported records.
-- Placing from the Panel Work Queue reuses the existing physical `assetId` and
+- Adding equipment from the Panel Engineering Workbench reuses the existing physical `assetId` and
   uses a resolved wiring occurrence when available, otherwise a resolved
   asset-backed panel-layout occurrence. Layout sources create a schematic-scale
   representation without backplane layout fields. Placement never creates a
   package asset, allocates a new tag, or copies source connections.
-- New Detailed Panel equipment is positioned from the usable sheet center outward.
-  Guided Step 1 can explicitly center the represented equipment group without
-  moving notes or reference helpers.
+- New Detailed Panel equipment is positioned from the usable sheet center
+  outward. The Equipment view can explicitly center the represented equipment
+  group without moving notes or reference helpers.
 - Removing a Detailed Panel occurrence returns its asset to the work queue.
   Removal is blocked when sheet-local wiring references that occurrence.
-- The Detailed Panel work queue is distinct from the Backplane Associated Panel
+- The Detailed Panel workbench is distinct from the Backplane Associated Panel
   Assets workflow: the former supports electrical-detail drawings; the latter
   supports physical arrangement at real millimetre scale.
 - The public canvas adapter converts `DrawingModel` plus approved/generated symbols
@@ -326,20 +346,27 @@ Adjacent drawing features:
 - Generated terminal anchors such as `T1_TOP` and `T1_BOTTOM` resolve to one
   logical terminal `T1`. Feed-through terminals expose external/internal sides;
   simple approved-symbol terminals expose a single side.
-- The Panel Work Queue also provides a terminal-level map. Automatic field-side
+- The Panel Engineering Workbench also provides a terminal-level map. Automatic field-side
   mappings are derived from source connections, while engineer corrections are
   stored as canonical `{assetId, terminalKey, side}` overrides. Resetting an
   override restores automatic resolution without changing the source connection.
 - Terminal side occupancy includes field terminations and existing panel wiring
   records. Occupied external/single sides, internal sides, out-of-panel terminals,
   and conflicting linked definitions are not valid field-mapping targets.
-- Guided Step 3 creates canonical internal wires from equipment and terminal
-  selectors in the workflow dialog. It uses the same validation, ID allocation,
-  orthogonal routing, history, and renderer as visual `Pick on drawing` mode.
+- Wire mode creates canonical internal wires by selecting terminals directly on
+  the sheet. It uses the same validation, ID allocation, orthogonal routing,
+  history, and renderer as the workbench records.
 
 ## Interaction Notes
 
 - The rendered drawing SVG is generated by `renderDrawingToSvg`.
+- Managed equipment occurrences use one `connectionDisplayMode`: `sheet_only`,
+  `internal_connected`, `external_connected`, or `all_connected`. Normal sheet
+  routes remain authoritative while selected off-sheet canonical rows render as
+  non-interactive terminal stubs. A mode change updates the linked Connected Wire
+  Schedule and every pagination continuation in one history entry. Legacy
+  Detailed Panel occurrences default to external; ordinary occurrences default
+  to sheet routes.
 - Edit mode renders only the active sheet. This keeps drag, zoom, connection
   authoring, and panel-layout interaction focused on one mounted sheet.
 - The Sheet Loader is the edit-mode navigation surface. It groups sheets by
@@ -372,13 +399,12 @@ Adjacent drawing features:
   assets only, not connections, and supports creating/deleting unplaced assets.
 - New asset creation and asset tag edits reject tags already used by another
   physical asset. To reuse a tag on another sheet, reference the existing asset.
-- The Duplicate Sheet wizard is opened from the sheet duplicate button. It
-  duplicates the active sheet only, lets the engineer rename the target sheet,
-  and reviews each asset before creating or referencing it.
-- When a compatible target controller or terminal asset already exists, the
-  wizard can suggest referencing that asset instead of creating another one.
-  This supports Tank 1 to Tank 2 workflows without bulk-copying several sheets
-  at once.
+- Canvas copy/paste is layout-only. It can copy eligible placements and
+  annotations, but it never copies connections, route geometry, cable conductor
+  assignments, patterns, Wire IDs, or occupancy.
+- Complete circuit drawings are created through explicit sheet, asset, cable,
+  and connection commands. The canvas does not infer new wiring from an existing
+  sheet or selection.
 - Generated panels are added from the sheet toolbar. They render as CAD-style
   enclosure boxes behind wiring and symbols, use PDP package tags by default,
   and can be referenced across sheets as the same physical panel asset.
@@ -396,6 +422,11 @@ Adjacent drawing features:
   When selected, the tray also exposes two cyan end handles. Dragging either
   end changes only the longitudinal length, preserves the registered width,
   and keeps the opposite end fixed through orthogonal rotation.
+- Standard TH35 DIN rail is rendered as cut-to-length stock on drawing sheets.
+  Its rail body follows the stored physical length while complete 18 x 9 mm
+  mounting slots remain at a fixed 45 mm pitch and are centred between the cut
+  ends. Resizing adds or removes slots instead of stretching the approved
+  Registry artwork; Registry previews continue to show the authored source SVG.
 - Horizontal and Vertical Dimension are generated non-asset layout helpers.
   Grey witness grips can float or attach to Backplane outer/usable edges and
   layout-item edges. Attached witness feet follow the referenced placement as
@@ -416,16 +447,31 @@ Adjacent drawing features:
   returns the asset to the work queue.
 - Assets that do not yet have a layout-ready symbol or supported generated
   renderer are shown disabled as `Needs layout-ready symbol`.
-- Terminal Block Group is available under Panel Layout. It opens a wizard that
-  creates one physical terminal-block asset on a selected panel-associated
-  backplane, allocates the next TB package tag, and repeats the configured
-  approved feed-through module at physical backplane scale. The singular module
-  remains an internal renderer primitive and cannot be added or pasted.
-- Group count changes update linked generated occurrences together. Reductions
-  are blocked when removed terminals participate in field terminations,
-  mappings, internal wires, bridges, bonds, or connection patterns.
-- Devices and terminal assets can be assigned to a visible panel from the Add
-  Symbol dialog or from the selected placement's Location / Enclosure panel.
+- Terminal Strip is available under Panel Layout. It opens the shared Structured
+  Terminal Strip Builder, creates one managed assembly on the selected
+  panel-associated backplane, and allocates the next package-wide TB tag.
+- Structured strips contain ordered, version-pinned electrical members,
+  brackets, and accessories. Permanent member tokens namespace terminals, and
+  composition edits update every occurrence while preserving canonical wiring.
+- Selected structured strips expose a dedicated **Reuse terminal strip** action.
+  Copy as new creates an independently editable TB asset with no wiring;
+  representation placement shares the existing asset and occupancy and permits
+  mounted reuse only in the same unambiguous physical mount. Generic paste is
+  blocked for structured strips so the engineer must choose the intended
+  identity lifecycle explicitly.
+- Panel-layout sheets also expose **Add → Copy Existing Terminal Strip**. This
+  destination-first entry point lists each valid structured strip once, fixes
+  the active sheet as the destination, preselects its sole backplane when
+  available, and invokes the same copy-as-new command with no wiring or
+  occupancy copied.
+- Legacy count-based terminal groups remain readable and deletable, but have no
+  creation, editing, or reference entry point.
+- Equipment panel membership is established through the Panel Layout workflow:
+  layout items inherit the panel of their parent backplane. Generic add dialogs
+  and drawing Properties do not offer a Location / Enclosure assignment control.
+  Detailed Panel occurrences retain their existing panel association and show
+  the parent panel read-only in Panel Component. Existing saved containment and
+  wiring records remain unchanged; this does not introduce a new sheet kind.
   Cables are not contained in panels in V1.
 - The drawing title is stored on the `Drawing` row; title block fields are
   shared by the drawing package.
@@ -434,9 +480,10 @@ Adjacent drawing features:
 - `Approve` submits the current package once and runs server-side Detailed Panel
   connectivity QC. Blocking panel findings preserve `needs_review`; warnings do
   not block. Packages without Detailed Panel contexts retain manual approval.
-- **Panel Review** opens the active panel's deterministic engineering report with
-  severity/category/sheet filters, direct sheet-object navigation, and explicitly
-  confirmed safe repairs. Findings are derived rather than persisted.
+- The canvas toolbar has no standalone **Panel Review** action; a dedicated
+  approval workflow is deferred. Existing blocked-approval handling still opens
+  the panel's deterministic engineering report with filters, sheet-object
+  navigation, and confirmed safe repairs. Findings are derived, not persisted.
 
 ## Boundaries
 
@@ -481,14 +528,30 @@ drawing-plus-schedules output. Draft schedule pages are marked not for issue.
 Issued downloads require an approved saved drawing and clean package-wide panel
 QC. Unsaved canvas revisions must be saved before any download.
 
+## Schematic Panel Connection References
+
+On ordinary connection drawings, **Panel / enclosure → Reference existing**
+creates a compact schematic frame linked to one authoritative physical
+backplane. It reuses the panel asset identity but deliberately ignores the
+enclosure and backplane dimensions, scale, rails, trays, and physical equipment
+layout. Physical panel-layout occurrences remain the only source of physical
+mount and scale information.
+
+Associated Panel Assets placed inside a connection reference are drawing-space
+representations of their real assets. They share terminal identities and
+occupancy, including structured terminal-strip member tokens, while carrying no
+physical layout dimensions or positions. The first representation fills most of
+the inner frame; later representations are placed without resizing existing
+ones. **Fit contents** is the explicit action that uniformly refits the group.
+
 ## Next Stage Notes
 
 Detailed Panel Drawings now use a strict, capability-driven Panel Component
 Library. Approved symbols opt in through `metadata.panelWiring`, and component
 placement either creates one globally tagged package asset or references an exact
-compatible asset already associated with the active panel. Detailed Panel sheet
-duplication preserves asset identities, while clipboard guards prevent duplicate
-same-sheet or cross-panel representations.
+compatible asset already associated with the active panel. Dedicated
+representation commands preserve asset identities, while clipboard guards
+prevent duplicate same-sheet or cross-panel representations.
 
 Detailed Panel Wire mode creates canonical package-level internal wires and
 sheet-local orthogonal route occurrences. Each route references its physical wire
@@ -511,7 +574,7 @@ changing the canvas foundation:
 
 - Cable schedule page from `buildCableScheduleRows`.
 - Termination schedule page from `buildConnectionScheduleRows`.
-- Standard templates that capture specialist engineering knowledge.
+- Presentation-only layout aids that never recreate canonical wiring.
 - Additional symbol imports for terminal blocks, protection devices, earth bars,
   glands, panels, and standard accessories with explicit electrical domains.
 
@@ -563,7 +626,7 @@ As of the latest restart point:
   and note gestures use transient drafts and create one model/history commit on
   pointer-up. Escape or pointer cancellation restores the start model.
 - Package Preview keeps exact placeholders and mounts at most 12 full-sheet SVGs.
-- Panel Work Queue, Panel Review, Asset Manager, and Deliverables are dynamically
+- Panel Engineering Workbench, Panel Review, Asset Manager, and Deliverables are dynamically
   loaded. Large engineering tables use deferred search and 50/100/250-row pages.
 - `PanelEngineeringSnapshot` shares one validated source and graph. QC is derived
   only for Review, approval, or Deliverables; report rows share one linear

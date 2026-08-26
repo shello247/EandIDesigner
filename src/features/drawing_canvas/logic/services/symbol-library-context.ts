@@ -50,7 +50,9 @@ const WIRING_GROUP_ORDER = [
   "panel_layout"
 ];
 
-function isCircuitProtectionSymbol(symbol: ApprovedDrawingSymbol): boolean {
+function isLegacyCircuitProtectionSymbol(
+  symbol: ApprovedDrawingSymbol
+): boolean {
   const searchable = [
     symbol.symbolKey,
     symbol.displayName,
@@ -68,17 +70,6 @@ function isCircuitProtectionSymbol(symbol: ApprovedDrawingSymbol): boolean {
     /(^|_)mcb(_|$)/.test(searchable)
   );
 }
-
-const PANEL_LAYOUT_CATEGORIES = new Set([
-  "protection",
-  "termination",
-  "controller",
-  "power",
-  "ducting",
-  "rail",
-  "label",
-  "other"
-]);
 
 export function hasPanelLayoutPhysicalDimensions(
   symbol: ApprovedDrawingSymbol | undefined
@@ -100,31 +91,36 @@ export function isPanelLayoutLibrarySymbol(
   }
 
   const usage = symbol.metadata.layoutUsage ?? "wiring";
-  const descriptor = `${symbol.symbolKey} ${symbol.displayName} ${
-    symbol.model ?? ""
-  }`
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_");
-
   return (
     isGeneratedBackplaneSymbolReference(symbol) ||
     isGeneratedWireTraySymbolReference(symbol) ||
     isGeneratedLayoutDimensionSymbolReference(symbol) ||
     isGeneratedTerminalBlockGroupLibrarySymbolReference(symbol) ||
     ((usage === "panel_layout" || usage === "both") &&
-      hasPanelLayoutPhysicalDimensions(symbol) &&
-      (PANEL_LAYOUT_CATEGORIES.has(symbol.metadata.panelCategory ?? "other") ||
-        descriptor.includes("din_rail")))
+      hasPanelLayoutPhysicalDimensions(symbol))
   );
 }
 
 function symbolLibraryGroupKey(symbol: ApprovedDrawingSymbol): string {
-  if (isPanelLayoutLibrarySymbol(symbol)) {
+  if (
+    isGeneratedBackplaneSymbolReference(symbol) ||
+    isGeneratedWireTraySymbolReference(symbol) ||
+    isGeneratedLayoutDimensionSymbolReference(symbol) ||
+    isGeneratedTerminalBlockGroupLibrarySymbolReference(symbol)
+  ) {
     return "panel_layout";
   }
 
-  if (isCircuitProtectionSymbol(symbol)) {
+  if (symbol.managedCategory) {
+    return `managed:${symbol.managedCategory.id}`;
+  }
+
+  if (isLegacyCircuitProtectionSymbol(symbol)) {
     return "circuit_protection";
+  }
+
+  if (isPanelLayoutLibrarySymbol(symbol)) {
+    return "panel_layout";
   }
 
   return symbol.category;
@@ -238,7 +234,9 @@ export function groupSymbolsForLibrary(
   return [...grouped.entries()]
     .map(([key, items]) => ({
       key,
-      label: symbolLibraryGroupLabel(key),
+      label:
+        items.find((item) => item.managedCategory)?.managedCategory?.name ??
+        symbolLibraryGroupLabel(key),
       symbols: items.sort((first, second) =>
         first.displayName.localeCompare(second.displayName)
       )

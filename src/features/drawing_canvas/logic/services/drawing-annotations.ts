@@ -2,6 +2,7 @@ import type {
   DrawingAnnotation,
   DrawingSheetCanvasModel as DrawingModel
 } from "../../data/schema";
+import { isConnectedWireScheduleAnnotation } from "@/features/drawing_connected_wire_schedule/api/public";
 
 export const DEFAULT_NOTE_WIDTH = 70;
 export const DEFAULT_NOTE_HEIGHT = 24;
@@ -13,7 +14,9 @@ export function getAnnotationSize(annotation: DrawingAnnotation): {
 } {
   return {
     width: annotation.width ?? DEFAULT_NOTE_WIDTH,
-    height: annotation.height ?? DEFAULT_NOTE_HEIGHT
+    height: isConnectedWireScheduleAnnotation(annotation)
+      ? DEFAULT_NOTE_HEIGHT
+      : annotation.height ?? DEFAULT_NOTE_HEIGHT
   };
 }
 
@@ -45,6 +48,12 @@ export function getLeaderStartPoint(annotation: DrawingAnnotation): {
   y: number;
 } {
   const size = getAnnotationSize(annotation);
+  if (isConnectedWireScheduleAnnotation(annotation)) {
+    return {
+      x: Number((annotation.x + size.width / 2).toFixed(2)),
+      y: annotation.y + size.height
+    };
+  }
   const target = annotation.leader
     ? { x: annotation.leader.targetX, y: annotation.leader.targetY }
     : { x: annotation.x + size.width + 18, y: annotation.y + size.height / 2 };

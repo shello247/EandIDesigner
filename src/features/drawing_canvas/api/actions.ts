@@ -104,7 +104,10 @@ export async function saveDrawingAction(
     }
 
     revalidatePath("/drawings");
-    revalidatePath(`/drawings/${drawing.id}`);
+    // The editor already owns the saved model and consumes the returned
+    // updated timestamp. Revalidating its active route here forces a second
+    // large server render inside the save transition and can leave webpack
+    // development sessions permanently suspended after a successful write.
     return { ok: true, data: drawing };
   } catch (error) {
     return toActionError(error);

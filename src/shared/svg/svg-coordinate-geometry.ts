@@ -2,6 +2,8 @@ import type { SvgViewBox } from "./svg-inspector";
 
 export const SVG_STAGE_MAX_SIZE_PX = 620;
 export const SVG_MARKER_DIAMETER_PX = 18;
+export const SVG_MARKER_MIN_DIAMETER_PX = 5;
+export const SVG_MARKER_SPACING_RATIO = 0.7;
 export const SVG_MARKER_STROKE_PX = 1.5;
 export const SVG_MARKER_INNER_GLOW_DIAMETER_PX = 28;
 export const SVG_MARKER_OUTER_GLOW_DIAMETER_PX = 40;
@@ -76,6 +78,36 @@ export function getResponsiveSvgStageDimensions(
   };
 }
 
+export function getContainedSvgStageDimensions(
+  viewBox: SvgViewBox,
+  availableSize: SvgRenderedSize,
+  maximumSizePx = SVG_STAGE_MAX_SIZE_PX
+): SvgRenderedSize {
+  const maximum = getMaximumSvgStageDimensions(viewBox, maximumSizePx);
+
+  if (
+    maximum.width <= 0 ||
+    maximum.height <= 0 ||
+    !Number.isFinite(availableSize.width) ||
+    !Number.isFinite(availableSize.height) ||
+    availableSize.width <= 0 ||
+    availableSize.height <= 0
+  ) {
+    return { width: 0, height: 0 };
+  }
+
+  const scale = Math.min(
+    1,
+    availableSize.width / maximum.width,
+    availableSize.height / maximum.height
+  );
+
+  return {
+    width: maximum.width * scale,
+    height: maximum.height * scale
+  };
+}
+
 export function getRenderedPixelsPerUserUnit(
   viewBox: SvgViewBox,
   renderedSize: SvgRenderedSize
@@ -103,6 +135,55 @@ export function svgUserUnitsForPixels(
   }
 
   return pixels / pixelsPerUserUnit;
+}
+
+export function getAdaptiveSvgMarkerDiameterPx<T extends SvgPoint>(
+  anchors: readonly T[],
+  anchorIndex: number,
+  pixelsPerUserUnit: number,
+  preferredDiameterPx = SVG_MARKER_DIAMETER_PX,
+  minimumDiameterPx = SVG_MARKER_MIN_DIAMETER_PX
+): number {
+  if (
+    anchorIndex < 0 ||
+    anchorIndex >= anchors.length ||
+    pixelsPerUserUnit <= 0 ||
+    !Number.isFinite(pixelsPerUserUnit) ||
+    preferredDiameterPx <= 0 ||
+    minimumDiameterPx <= 0
+  ) {
+    return preferredDiameterPx;
+  }
+
+  const anchor = anchors[anchorIndex];
+  let nearestDistanceSquared = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < anchors.length; index += 1) {
+    if (index === anchorIndex) {
+      continue;
+    }
+
+    const candidate = anchors[index];
+    const xDistance = candidate.x - anchor.x;
+    const yDistance = candidate.y - anchor.y;
+    const distanceSquared = xDistance ** 2 + yDistance ** 2;
+
+    if (distanceSquared < nearestDistanceSquared) {
+      nearestDistanceSquared = distanceSquared;
+    }
+  }
+
+  if (!Number.isFinite(nearestDistanceSquared)) {
+    return preferredDiameterPx;
+  }
+
+  const nearestDistancePx =
+    Math.sqrt(nearestDistanceSquared) * pixelsPerUserUnit;
+
+  return Math.max(
+    minimumDiameterPx,
+    Math.min(preferredDiameterPx, nearestDistancePx * SVG_MARKER_SPACING_RATIO)
+  );
 }
 
 export function transformClientPoint(

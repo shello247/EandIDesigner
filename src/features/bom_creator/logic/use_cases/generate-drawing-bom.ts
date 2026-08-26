@@ -18,6 +18,7 @@ import {
   SYMBOL_COMPONENT_MAX_DEPTH,
   type DrawingComponentSelection
 } from "@/features/symbol_components/api/public";
+import { applyStructuredTerminalStripMemberOrders } from "@/features/drawing_terminal_blocks/api/public";
 
 export type BomGenerationSymbol = {
   symbolId: string;
@@ -293,7 +294,68 @@ export function generateDrawingBom({
       }
     };
 
-    if (!symbolId) {
+    if (context.asset.terminalStrip) {
+      const orderedTerminalStrip = applyStructuredTerminalStripMemberOrders(
+        context.asset.terminalStrip
+      );
+      for (const member of orderedTerminalStrip.members) {
+        const memberPath = [
+          member.token,
+          ...(member.designation ? [member.designation] : [])
+        ];
+        const memberSymbol = symbolById.get(member.symbolId);
+        const memberTemplate = templateBySymbolId.get(member.symbolId);
+
+        if (
+          versionAware &&
+          !symbolVersionKeys.has(`${member.symbolId}:${member.versionId}`)
+        ) {
+          assemblyWarnings.push(
+            warning({
+              code: "missing_component_version",
+              assetId: context.asset.id,
+              componentPath: memberPath,
+              message: `${context.asset.tag} member ${member.token} references missing pinned version ${member.versionId}.`
+            })
+          );
+        }
+        if (!memberSymbol) {
+          assemblyWarnings.push(
+            warning({
+              code: "missing_symbol",
+              assetId: context.asset.id,
+              componentPath: memberPath,
+              message: `${context.asset.tag} member ${member.token} references an unavailable symbol.`
+            })
+          );
+        }
+        if (!memberTemplate) {
+          assemblyWarnings.push(
+            warning({
+              code: "missing_template",
+              assetId: context.asset.id,
+              componentPath: memberPath,
+              message: `${context.asset.tag} member ${member.token} does not have a linked BOM template.`
+            })
+          );
+        } else {
+          const built = buildAssemblyLines({
+            context,
+            template: memberTemplate,
+            componentPath: memberPath
+          });
+          lines.push(...built.lines);
+          assemblyWarnings.push(...built.warnings);
+        }
+
+        expandComponents(
+          member.componentSelections,
+          memberPath,
+          [member.symbolId],
+          1
+        );
+      }
+    } else if (!symbolId) {
       assemblyWarnings.push(
         warning({
           code: "generated_symbol",
@@ -339,12 +401,14 @@ export function generateDrawingBom({
         assemblyWarnings.push(...built.warnings);
       }
     }
-    expandComponents(
-      context.asset.componentSelections,
-      [],
-      symbolId ? [symbolId] : [],
-      1
-    );
+    if (!context.asset.terminalStrip) {
+      expandComponents(
+        context.asset.componentSelections,
+        [],
+        symbolId ? [symbolId] : [],
+        1
+      );
+    }
 
     const assembly = {
       assetId: context.asset.id,
@@ -352,7 +416,9 @@ export function generateDrawingBom({
       assetType: context.asset.type,
       title: context.asset.title,
       symbolId,
-      symbolName: symbol?.displayName,
+      symbolName: context.asset.terminalStrip
+        ? "Structured Terminal Strip"
+        : symbol?.displayName,
       sheetRefs: context.sheetRefs,
       lines,
       warnings: uniqueWarnings(assemblyWarnings)

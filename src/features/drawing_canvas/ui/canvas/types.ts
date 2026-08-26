@@ -9,6 +9,13 @@ import type {
   SymbolTerminal
 } from "@/features/symbol_registry/data/schema";
 import type { DimensionAttachmentTarget } from "../../logic/services/drawing-dimension-snapping";
+import type {
+  RouteAlignmentAxis,
+  RouteAlignmentFeedback,
+  RouteSnapState
+} from "../../logic/services/connection-route-alignment";
+import type { GuidedConnectionWaypoint } from "../../logic/services/guided-connection-routing";
+import type { DrawingAnchorAvailability } from "../../logic/services/drawing-anchor-availability";
 
 export type DragState = {
   placementId: string;
@@ -36,6 +43,7 @@ export type PlacementResizeState = {
   handle: ResizeHandle;
   fixedPoint: { x: number; y: number };
   baseSize: { width: number; height: number };
+  physicalScaleFactor?: number;
   center?: { x: number; y: number };
   rotation?: number;
 };
@@ -71,6 +79,22 @@ export type RouteDragState = {
   connectionId: string;
   pointId: string;
   pointerId: number;
+  startRoute: DrawingConnectionRoute;
+  startPointer: { x: number; y: number };
+  startPoint: { x: number; y: number };
+  pixelsPerUnit: { x: number; y: number };
+  activeSnapState: RouteSnapState;
+  axisLock?: RouteAlignmentAxis;
+};
+
+export type RouteSegmentDragState = {
+  connectionId: string;
+  segmentKey: string;
+  pointerId: number;
+  startRoute: DrawingConnectionRoute;
+  startPointer: { x: number; y: number };
+  pixelsPerUnit: { x: number; y: number };
+  activeSnapState: RouteSnapState;
 };
 
 export type RouteLabelDragState = {
@@ -107,12 +131,41 @@ export type AnchorHotspot = {
   symbolModel?: string | null;
   anchor: SymbolAnchor;
   terminal?: SymbolTerminal;
+  memberToken?: string;
+  memberPurpose?: string;
   point: { x: number; y: number };
+};
+
+export type DrawingAnchorInspection = {
+  id: string;
+  endpoint: DrawingEndpoint;
+  placementTag: string;
+  symbolName: string;
+  symbolModel?: string;
+  anchorKey: string;
+  anchorKind: string;
+  terminalKey?: string;
+  terminalLabel?: string;
+  terminalFunction?: string;
+  requiredForWiring?: boolean;
+  memberToken?: string;
+  memberPurpose?: string;
+  availability: DrawingAnchorAvailability;
 };
 
 export type ConnectionDraft = {
   from?: DrawingEndpoint;
   pointer?: { x: number; y: number };
+  hoveredDestination?: DrawingEndpoint;
+  waypoints?: GuidedConnectionWaypoint[];
+  snapState?: RouteSnapState;
+  alignmentFeedback?: RouteAlignmentFeedback[];
+  warning?: string;
+};
+
+export type GuidedConnectionPointerOptions = {
+  pixelsPerUnit: { x: number; y: number };
+  bypassSnapping?: boolean;
 };
 
 export type ConnectionSegment = {

@@ -2,8 +2,10 @@ import { z } from "zod";
 import {
   buildTerminalBlockGroupDefinition,
   getTerminalBlockGroupPhysicalSize,
-  resolveDefaultTerminalBlockModule
+  resolveDefaultTerminalBlockModule,
+  type ResolvedTerminalBlockModule
 } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
+import { formatDrawingMeasurementPair } from "../services/drawing-measurement-units";
 import {
   GENERATED_TERMINAL_BLOCK_SYMBOL_ID,
   GENERATED_TERMINAL_BLOCK_VERSION_ID,
@@ -26,6 +28,7 @@ import {
 import {
   getBackplanePhysicalUsableBounds,
   getLayoutPosition,
+  getParentPanelForBackplane,
   resolveLayoutHelperDisplayPlacement
 } from "../services/drawing-backplane-scale";
 import { isBackplanePlacement } from "../services/drawing-backplane-layouts";
@@ -276,7 +279,11 @@ export function createAndPlaceTerminalBlockGroup({
 
   if (!position) {
     throw new Error(
-      `This ${size.lengthMm} x ${size.widthMm} mm terminal group does not fit in the available backplane space.`
+      `This ${formatDrawingMeasurementPair(
+        size.lengthMm,
+        size.widthMm,
+        model.measurementUnit
+      )} terminal group does not fit in the available backplane space.`
     );
   }
 
@@ -309,7 +316,8 @@ export function createAndPlaceTerminalBlockGroup({
   const displayPlacement = resolveLayoutHelperDisplayPlacement({
     sheet: sheetCanvasDefinition(model, sheet),
     placement: physicalPlacement,
-    backplane
+    backplane,
+    parentPanel: getParentPanelForBackplane(sheet.placements, backplane)
   });
   const placement = {
     ...physicalPlacement,
@@ -463,13 +471,15 @@ export function updateTerminalBlockGroup({
   assetId,
   count,
   name,
-  description
+  description,
+  module
 }: {
   model: DrawingModel;
   assetId: string;
   count?: number;
   name?: string;
   description?: string;
+  module?: ResolvedTerminalBlockModule;
 }): DrawingModel {
   const model = drawingPackageModelSchema.parse(inputModel);
   const asset = model.assets.find((candidate) => candidate.id === assetId);
@@ -495,9 +505,16 @@ export function updateTerminalBlockGroup({
   });
   if (!validation.ok) throw new Error(validation.error);
 
+  const moduleDefinition = module
+    ? buildTerminalBlockGroupDefinition({
+        count: nextCount,
+        module
+      })
+    : current;
   const terminalBlock = normalizeTerminalBlockPlacement({
-    ...current,
-    count: nextCount
+    ...moduleDefinition,
+    count: nextCount,
+    startNumber: current.startNumber
   });
   const size = getTerminalBlockGroupPhysicalSize(terminalBlock);
   const normalizedName = name?.trim();
@@ -576,7 +593,8 @@ export function updateTerminalBlockGroup({
       const display = resolveLayoutHelperDisplayPlacement({
         sheet: canvasSheet,
         placement: physical,
-        backplane
+        backplane,
+        parentPanel: getParentPanelForBackplane(sheet.placements, backplane)
       });
 
       return { ...physical, x: display.x, y: display.y };

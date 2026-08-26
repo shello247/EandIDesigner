@@ -53,28 +53,24 @@ export const listDrawings = cache(async (): Promise<DrawingListItem[]> => {
     where: {
       NOT: { status: "archived" }
     },
-    orderBy: { updatedAt: "desc" }
+    orderBy: { updatedAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      modelJson: true,
+      updatedAt: true
+    }
   });
 
   return rows.map((row) => {
     const model = parseDrawingModelJson(row.modelJson);
-    const placementCount = model.sheets.reduce(
-      (total, sheet) => total + sheet.placements.length,
-      0
-    );
-    const connectionCount = model.sheets.reduce(
-      (total, sheet) => total + sheet.connections.length,
-      0
-    );
 
     return {
       id: row.id,
-      drawingKey: row.drawingKey,
       title: row.title,
       status: drawingStatusSchema.parse(row.status),
       sheetCount: model.sheets.length,
-      placementCount,
-      connectionCount,
       updatedAt: row.updatedAt.toISOString()
     };
   });

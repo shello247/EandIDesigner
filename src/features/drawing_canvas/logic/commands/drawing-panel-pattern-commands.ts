@@ -20,6 +20,7 @@ import {
 import { toSheetCanvasModel } from "./drawing-sheet-commands";
 import { resolvePanelTerminalSideOccurrence } from "./drawing-panel-wire-commands";
 import { generateDefaultOrthogonalRoute } from "../services/connection-route-geometry";
+import { buildRenderableDrawingSymbols } from "../services/drawing-generated-symbols";
 import {
   PANEL_REFERENCE_ANCHOR_KEY,
   createPanelPatternLegendPlacement,
@@ -345,9 +346,15 @@ function buildPatternConnections({
       panelPatternId: pattern.record.id,
       panelPatternSegmentId: segment.id
     };
+    const canvasModel = toSheetCanvasModel(model, sheetId);
+    const renderableSymbols = buildRenderableDrawingSymbols({
+      placements: canvasModel.placements,
+      approvedSymbols: symbols,
+      assets: model.assets
+    });
     const route = generateDefaultOrthogonalRoute({
-      model: toSheetCanvasModel(model, sheetId),
-      symbols,
+      model: canvasModel,
+      symbols: renderableSymbols,
       connection,
       mode: "auto"
     });

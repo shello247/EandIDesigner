@@ -15,8 +15,17 @@ export const symbolCategorySchema = z.enum([
   "terminal_block",
   "cable_assembly",
   "gland",
+  "protection",
+  "termination",
+  "controller",
+  "power",
+  "ducting",
+  "rail",
+  "label",
   "other"
 ]);
+
+export const symbolTechnicalKindSchema = symbolCategorySchema;
 
 export function isDrawingSymbolCategory(category: string): boolean {
   return category !== "network_device";
@@ -164,6 +173,7 @@ export const symbolPanelWiringAssetTypeSchema = z.enum([
   "isolator",
   "converter",
   "io_module",
+  "network_device",
   "earth_bar",
   "other"
 ]);
@@ -179,6 +189,18 @@ export const symbolTerminalBlockModuleSchema = z.object({
   defaultForGeneratedGroups: z.boolean().default(false)
 });
 
+export const symbolTerminalStripMemberRoleSchema = z.enum([
+  "electrical",
+  "end_bracket",
+  "accessory"
+]);
+
+export const symbolTerminalStripCapabilitySchema = z.object({
+  role: symbolTerminalStripMemberRoleSchema,
+  railDatumMm: z.number().nonnegative(),
+  defaultForNewStrips: z.boolean().optional()
+});
+
 export const symbolTerminalSchema = z.object({
   key: z.string().trim().min(1).max(80),
   label: z.string().trim().min(1).max(120),
@@ -189,6 +211,17 @@ export const symbolTerminalSchema = z.object({
   requiredForWiring: z.boolean()
 });
 
+export const symbolPermanentContinuityGroupSchema = z.object({
+  key: z.string().trim().min(1).max(80),
+  label: z.string().trim().min(1).max(160).optional(),
+  terminalKeys: z.array(z.string().trim().min(1).max(80)).min(2)
+});
+
+export const symbolElectricalTopologySchema = z.object({
+  version: z.literal(1),
+  permanentContinuityGroups: z.array(symbolPermanentContinuityGroupSchema)
+});
+
 export const symbolLayoutMetadataSchema = z.object({
   layoutUsage: symbolLayoutUsageSchema.default("wiring"),
   physicalWidthMm: z.number().positive().optional(),
@@ -196,7 +229,8 @@ export const symbolLayoutMetadataSchema = z.object({
   mountingType: symbolPanelMountingTypeSchema.optional(),
   panelCategory: symbolPanelCategorySchema.optional(),
   resizable: z.boolean().default(false),
-  terminalBlockModule: symbolTerminalBlockModuleSchema.optional()
+  terminalBlockModule: symbolTerminalBlockModuleSchema.optional(),
+  terminalStripCapability: symbolTerminalStripCapabilitySchema.optional()
 });
 
 export const symbolNetworkPortSchema = z.object({
@@ -218,6 +252,7 @@ export const symbolMetadataSchema = z
   .object({
     symbolKey: z.string().trim().min(1).max(120),
     displayName: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(400).optional(),
     manufacturer: z.string().trim().max(160).optional(),
     model: z.string().trim().max(160).optional(),
     category: symbolCategorySchema,
@@ -228,7 +263,9 @@ export const symbolMetadataSchema = z
     panelCategory: symbolPanelCategorySchema.optional(),
     resizable: z.boolean().optional(),
     terminalBlockModule: symbolTerminalBlockModuleSchema.optional(),
+    terminalStripCapability: symbolTerminalStripCapabilitySchema.optional(),
     panelWiring: symbolPanelWiringCapabilitySchema.optional(),
+    electricalTopology: symbolElectricalTopologySchema.optional(),
     networkProfile: symbolNetworkProfileSchema.optional(),
     viewBox: viewBoxSchema,
     terminals: z.array(symbolTerminalSchema),
@@ -236,6 +273,136 @@ export const symbolMetadataSchema = z
     componentPositions: symbolComponentPositionsSchema.optional()
   })
   .superRefine((metadata, context) => {
+    if (metadata.electricalTopology) {
+      const logicalTerminalKeys = new Set(
+        metadata.terminals.map((terminal) => terminal.key)
+      );
+      const domainsByTerminalKey = new Map<
+        string,
+        Set<z.infer<typeof symbolElectricalDomainSchema>>
+      >();
+      for (const terminal of metadata.terminals) {
+        const domains = domainsByTerminalKey.get(terminal.key) ?? new Set();
+        for (const domain of terminal.electricalDomains ?? []) {
+          domains.add(domain);
+        }
+        domainsByTerminalKey.set(terminal.key, domains);
+      }
+      const groupKeys = new Set<string>();
+      const assignedTerminalKeys = new Map<string, string>();
+
+      metadata.electricalTopology.permanentContinuityGroups.forEach(
+        (group, groupIndex) => {
+          if (groupKeys.has(group.key)) {
+            context.addIssue({
+              code: "custom",
+              message: `Continuity group key "${group.key}" is duplicated.`,
+              path: ["electricalTopology", "permanentContinuityGroups", groupIndex, "key"]
+            });
+          }
+          groupKeys.add(group.key);
+
+          const uniqueTerminalKeys = new Set<string>();
+          for (const [terminalIndex, terminalKey] of group.terminalKeys.entries()) {
+            if (uniqueTerminalKeys.has(terminalKey)) {
+              context.addIssue({
+                code: "custom",
+                message: `Terminal "${terminalKey}" is duplicated in continuity group "${group.key}".`,
+                path: ["electricalTopology", "permanentContinuityGroups", groupIndex, "terminalKeys", terminalIndex]
+              });
+            }
+            uniqueTerminalKeys.add(terminalKey);
+
+            if (!logicalTerminalKeys.has(terminalKey)) {
+              context.addIssue({
+                code: "custom",
+                message: `Continuity group "${group.key}" references missing terminal "${terminalKey}".`,
+                path: ["electricalTopology", "permanentContinuityGroups", groupIndex, "terminalKeys", terminalIndex]
+              });
+            }
+
+            const previousGroup = assignedTerminalKeys.get(terminalKey);
+            if (previousGroup && previousGroup !== group.key) {
+              context.addIssue({
+                code: "custom",
+                message: `Terminal "${terminalKey}" belongs to both "${previousGroup}" and "${group.key}".`,
+                path: ["electricalTopology", "permanentContinuityGroups", groupIndex, "terminalKeys", terminalIndex]
+              });
+            } else {
+              assignedTerminalKeys.set(terminalKey, group.key);
+            }
+          }
+
+          const explicitDomainSets = [...uniqueTerminalKeys]
+            .map((terminalKey) => domainsByTerminalKey.get(terminalKey) ?? new Set())
+            .filter((domains) => domains.size > 0);
+          if (explicitDomainSets.length > 1) {
+            const sharedDomains = new Set(explicitDomainSets[0]);
+            for (const domains of explicitDomainSets.slice(1)) {
+              for (const domain of [...sharedDomains]) {
+                if (!domains.has(domain)) sharedDomains.delete(domain);
+              }
+            }
+            if (sharedDomains.size === 0) {
+              context.addIssue({
+                code: "custom",
+                message: `Continuity group "${group.key}" joins terminals with incompatible electrical domains.`,
+                path: ["electricalTopology", "permanentContinuityGroups", groupIndex, "terminalKeys"]
+              });
+            }
+          }
+        }
+      );
+    }
+
+    if (metadata.terminalStripCapability) {
+      if (
+        metadata.layoutUsage === "wiring" ||
+        metadata.mountingType !== "din_rail" ||
+        !metadata.physicalWidthMm ||
+        !metadata.physicalHeightMm
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Terminal-strip members require panel-layout use, positive physical dimensions, and DIN-rail mounting.",
+          path: ["terminalStripCapability"]
+        });
+      } else if (
+        metadata.terminalStripCapability.railDatumMm >
+        metadata.physicalHeightMm
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "The DIN-rail datum must fall within the physical height.",
+          path: ["terminalStripCapability", "railDatumMm"]
+        });
+      }
+
+      if (
+        metadata.terminalStripCapability.role === "electrical" &&
+        metadata.terminals.length === 0
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Electrical terminal-strip members require at least one terminal.",
+          path: ["terminalStripCapability", "role"]
+        });
+      }
+
+      if (
+        metadata.terminalStripCapability.role !== "electrical" &&
+        metadata.terminals.length > 0
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "End brackets and terminal-strip accessories cannot expose wiring terminals.",
+          path: ["terminalStripCapability", "role"]
+        });
+      }
+    }
+
     if (metadata.category === "network_device" && !metadata.networkProfile) {
       context.addIssue({
         code: "custom",
@@ -311,37 +478,38 @@ export const symbolSourceAssetInputSchema = z.object({
 export const saveSymbolDraftInputSchema = z.object({
   svg: z.string().trim().min(1),
   metadata: symbolMetadataSchema,
+  categoryId: z.string().trim().min(1).max(120).optional(),
   sourceInputSummary: z.string().trim().max(2000).optional(),
   aiResponseId: z.string().trim().max(200).optional(),
   sourceAsset: symbolSourceAssetInputSchema.optional()
 });
 
-export const terminalMapUpdateInputSchema = z.object({
-  versionId: z.string().trim().min(1),
-  terminals: z.array(symbolTerminalSchema)
-});
-
-export const symbolLayoutMetadataUpdateInputSchema =
-  symbolLayoutMetadataSchema.extend({
-    versionId: z.string().trim().min(1)
-  });
-
-export const updateSymbolNetworkProfileInputSchema = z.object({
-  versionId: z.string().trim().min(1),
-  manufacturer: z.string().trim().max(160).optional(),
-  model: z.string().trim().max(160).optional(),
-  networkProfile: symbolNetworkProfileSchema
+export const saveSymbolMetadataChangesInputSchema = z.object({
+  symbolId: z.string().trim().min(1).max(120),
+  versionId: z.string().trim().min(1).max(120),
+  categoryId: z.string().trim().min(1).max(120).optional(),
+  registryDetails: z.object({
+    displayName: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(400).optional()
+  }),
+  layout: symbolLayoutMetadataSchema,
+  panelWiring: symbolPanelWiringCapabilitySchema.optional(),
+  electricalTopology: symbolElectricalTopologySchema.optional(),
+  terminals: z.array(symbolTerminalSchema),
+  componentPositions: symbolComponentPositionsSchema.optional(),
+  networkProfile: symbolNetworkProfileSchema.optional(),
+  networkIdentity: z
+    .object({
+      manufacturer: z.string().trim().max(160).optional(),
+      model: z.string().trim().max(160).optional()
+    })
+    .optional()
 });
 
 export const approvedNetworkVersionIdsSchema = z
   .array(z.string().trim().min(1).max(120))
   .max(5000)
   .transform((versionIds) => [...new Set(versionIds)]);
-
-export const symbolPanelWiringCapabilityUpdateInputSchema = z.object({
-  versionId: z.string().trim().min(1),
-  panelWiring: symbolPanelWiringCapabilitySchema.optional()
-});
 
 export const terminalMapVerificationIssueSchema = z.object({
   severity: validationIssueSeveritySchema,
@@ -441,6 +609,7 @@ export const terminalMapVerificationJsonSchema = {
 
 export type SymbolStatus = z.infer<typeof symbolStatusSchema>;
 export type SymbolCategory = z.infer<typeof symbolCategorySchema>;
+export type SymbolTechnicalKind = SymbolCategory;
 export type AnchorKind = z.infer<typeof anchorKindSchema>;
 export type NetworkDeviceType = z.infer<typeof networkDeviceTypeSchema>;
 export type NetworkPortMedia = z.infer<typeof networkPortMediaSchema>;
@@ -454,6 +623,18 @@ export type SymbolPanelWiringAssetType = z.infer<
 >;
 export type SymbolPanelWiringCapability = z.infer<
   typeof symbolPanelWiringCapabilitySchema
+>;
+export type SymbolPermanentContinuityGroup = z.infer<
+  typeof symbolPermanentContinuityGroupSchema
+>;
+export type SymbolElectricalTopology = z.infer<
+  typeof symbolElectricalTopologySchema
+>;
+export type SymbolTerminalStripMemberRole = z.infer<
+  typeof symbolTerminalStripMemberRoleSchema
+>;
+export type SymbolTerminalStripCapability = z.infer<
+  typeof symbolTerminalStripCapabilitySchema
 >;
 export type SymbolLayoutMetadata = z.infer<typeof symbolLayoutMetadataSchema>;
 export type SymbolNetworkPort = z.infer<typeof symbolNetworkPortSchema>;
@@ -469,20 +650,11 @@ export type SymbolElectricalDomain = z.infer<
 >;
 export type ValidationIssue = z.infer<typeof validationIssueSchema>;
 export type SaveSymbolDraftInput = z.infer<typeof saveSymbolDraftInputSchema>;
-export type TerminalMapUpdateInput = z.infer<
-  typeof terminalMapUpdateInputSchema
->;
-export type SymbolLayoutMetadataUpdateInput = z.infer<
-  typeof symbolLayoutMetadataUpdateInputSchema
->;
-export type UpdateSymbolNetworkProfileInput = z.infer<
-  typeof updateSymbolNetworkProfileInputSchema
+export type SaveSymbolMetadataChangesInput = z.infer<
+  typeof saveSymbolMetadataChangesInputSchema
 >;
 export type ApprovedNetworkVersionIds = z.infer<
   typeof approvedNetworkVersionIdsSchema
->;
-export type SymbolPanelWiringCapabilityUpdateInput = z.infer<
-  typeof symbolPanelWiringCapabilityUpdateInputSchema
 >;
 export type TerminalMapVerificationIssue = z.infer<
   typeof terminalMapVerificationIssueSchema

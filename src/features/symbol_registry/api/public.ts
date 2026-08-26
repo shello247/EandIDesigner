@@ -24,6 +24,8 @@ export type {
   SymbolLayoutMetadata,
   SymbolLayoutUsage,
   SymbolMetadata,
+  SymbolElectricalTopology,
+  SymbolPermanentContinuityGroup,
   SymbolNetworkPort,
   SymbolNetworkProfile,
   SymbolPanelCategory,
@@ -32,13 +34,17 @@ export type {
   SymbolPanelWiringCapability,
   SymbolTerminal,
   SymbolTerminalPanelSide,
+  SymbolTechnicalKind,
   ValidationIssue
 } from "../data/schema";
 export {
   networkDeviceTypeSchema,
   networkPortMediaSchema,
   symbolCategorySchema,
+  symbolTechnicalKindSchema,
   symbolMetadataSchema,
+  symbolElectricalTopologySchema,
+  symbolPermanentContinuityGroupSchema,
   symbolPanelWiringAssetTypeSchema,
   symbolPanelWiringCapabilitySchema,
   symbolTerminalPanelSideSchema,
@@ -88,3 +94,9 @@ export async function listNetworkSymbolsForMapping(): Promise<
 
 export { listSymbolIdentitiesByIds };
 export type { SymbolIdentity } from "../types";
+export type { SymbolCategorySummary } from "@/features/symbol_categories/api/public";
+export {
+  symbolElectricalTopologySignature,
+  validateSymbolElectricalTopology,
+  type SymbolElectricalTopologyValidation
+} from "../logic/services/symbol-electrical-topology";

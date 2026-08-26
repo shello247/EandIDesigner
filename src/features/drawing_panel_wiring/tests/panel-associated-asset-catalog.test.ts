@@ -26,6 +26,14 @@ describe("panel associated asset catalog", () => {
     );
     expect(rows.every((row) => row.status === "available")).toBe(true);
     expect(rows.every((row) => row.terminalCount === 5)).toBe(true);
+    expect(
+      rows.every(
+        (row) =>
+          row.terminalUsage.used === 3 &&
+          row.terminalUsage.unused === 7 &&
+          row.terminalUsage.total === 10
+      )
+    ).toBe(true);
     expect(rows.every((row) => row.representationSource?.occurrenceKind === "wiring")).toBe(true);
     expect(rows.flatMap((row) => row.sourceOccurrences)).not.toContainEqual(
       expect.objectContaining({ placementId: "layout_rail" })
@@ -48,6 +56,11 @@ describe("panel associated asset catalog", () => {
     expect(index.assetsById.get(targetAssetId)).toMatchObject({
       status: "available",
       terminalCount: 5,
+      terminalUsage: {
+        used: 0,
+        unused: 10,
+        total: 10
+      },
       representationSource: {
         sheetId: "sheet_layout",
         placementId: "layout_strip_1",

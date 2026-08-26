@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { updateManagedAsset } from "@/features/drawing_asset_manager/logic/use_cases/drawing-asset-manager-use-cases";
 import type { SymbolMetadata } from "@/features/symbol_registry/data/schema";
 import type { DrawingModel, DrawingPlacement } from "../data/schema";
 import { createDefaultDrawingModel } from "../data/schema";
@@ -73,7 +74,31 @@ const monitorSymbol: ApprovedDrawingSymbol = {
   versionId: "ver_monitor"
 };
 
-const symbols = [instrumentSymbol, cableSymbol, monitorSymbol];
+const distributionBlockSymbol: ApprovedDrawingSymbol = {
+  ...instrumentSymbol,
+  symbolId: "sym_distribution_block",
+  symbolKey: "ptfix_distribution_block",
+  displayName: "Power Distribution Block",
+  category: "terminal_block",
+  versionId: "ver_distribution_block",
+  metadata: {
+    ...metadata,
+    symbolKey: "ptfix_distribution_block",
+    displayName: "Power Distribution Block",
+    category: "terminal_block",
+    panelWiring: {
+      assetType: "terminal_block",
+      tagPrefix: "PDB"
+    }
+  }
+};
+
+const symbols = [
+  instrumentSymbol,
+  cableSymbol,
+  monitorSymbol,
+  distributionBlockSymbol
+];
 const wireTraySymbol = createGeneratedWireTrayLibrarySymbol();
 
 function placement(
@@ -89,7 +114,8 @@ function placement(
     x: overrides.x ?? 20,
     y: overrides.y ?? 20,
     rotation: overrides.rotation ?? 0,
-    scale: overrides.scale ?? 0.4
+    scale: overrides.scale ?? 0.4,
+    containerAssetId: overrides.containerAssetId
   };
 }
 
@@ -166,6 +192,75 @@ function modelWithTwoSheets(): DrawingModel {
   };
 }
 
+function modelWithPanelDistributionBlocks(
+  placements: Array<Pick<DrawingPlacement, "id" | "assetId" | "tag">> = [
+    { id: "pdb101", assetId: "asset_pdb101", tag: "PDB-101" }
+  ]
+): DrawingModel {
+  const model = createDefaultDrawingModel();
+  const panel = createPanelEnclosurePlacement({
+    model,
+    activeSheet: model.sheets[0],
+    assetId: "asset_panel_1",
+    tag: "PLC-001",
+    x: 20,
+    y: 20,
+    width: 180,
+    height: 140,
+    kind: "power_distribution_panel"
+  });
+  const distributionBlocks = placements.map((item, index) =>
+    placement({
+      ...item,
+      symbolId: distributionBlockSymbol.symbolId,
+      versionId: distributionBlockSymbol.versionId,
+      role: "terminal_block",
+      containerAssetId: "asset_panel_1",
+      x: 50 + index * 30,
+      y: 60
+    })
+  );
+
+  return {
+    ...model,
+    assets: [
+      {
+        id: "asset_pdb101",
+        tag: "PDB-101",
+        type: "terminal_block",
+        title: "110 VAC L1 Power distribution block",
+        description: "Panel power distribution",
+        symbolId: distributionBlockSymbol.symbolId,
+        versionId: distributionBlockSymbol.versionId,
+        componentSelections: [
+          {
+            positionKey: "position-1",
+            componentKey: "fuse",
+            symbolId: "sym_fuse",
+            versionId: "ver_fuse"
+          }
+        ]
+      }
+    ],
+    sheets: [
+      {
+        ...model.sheets[0],
+        id: "sheet_panel",
+        name: "Panel Layout",
+        placements: [panel, ...distributionBlocks]
+      },
+      {
+        id: "sheet_other",
+        name: "Other Sheet",
+        page: { ...model.sheets[0].page },
+        placements: [],
+        connections: [],
+        annotations: []
+      }
+    ]
+  };
+}
+
 describe("drawing canvas selection and clipboard", () => {
   it("toggles and normalizes mixed selections", () => {
     const model = modelWithTwoSheets();
@@ -203,7 +298,7 @@ describe("drawing canvas selection and clipboard", () => {
     });
   });
 
-  it("copies selected objects and only internal connections", () => {
+  it("copies selected layout objects without copying connections", () => {
     const model = modelWithTwoSheets();
     const clipboard = copySelectionToClipboard({
       model,
@@ -215,23 +310,13 @@ describe("drawing canvas selection and clipboard", () => {
     });
 
     expect(clipboard?.placements).toHaveLength(3);
-    expect(clipboard?.connections.map((connection) => connection.id)).toEqual([
-      "conn_1"
-    ]);
     expect(clipboard?.annotations.map((annotation) => annotation.id)).toEqual([
       "note_1"
     ]);
-
-    const partialClipboard = copySelectionToClipboard({
-      model,
-      sheetId: "sheet_1",
-      selection: { placementIds: ["tt101", "tsm101"], annotationIds: [] }
-    });
-
-    expect(partialClipboard?.connections).toHaveLength(0);
+    expect(clipboard).not.toHaveProperty("connections");
   });
 
-  it("pastes with remapped ids, global tags, linked monitor assets, and wire ids", () => {
+  it("pastes layout with remapped ids and global tags but no wiring", () => {
     const model = modelWithTwoSheets();
     const clipboard = copySelectionToClipboard({
       model,
@@ -265,13 +350,7 @@ describe("drawing canvas selection and clipboard", () => {
     expect(pastedSheet.placements[0].assetId).not.toBe("asset_tt101");
     expect(pastedSheet.placements[1].assetId).not.toBe("asset_c101");
     expect(pastedSheet.placements[2].assetId).toBe("asset_tsm101");
-    expect(pastedSheet.connections[0]).toMatchObject({
-      id: "conn_unit_1",
-      from: { placementId: "pl_unit_1" },
-      to: { placementId: "pl_unit_3" },
-      cablePlacementId: "pl_unit_2",
-      wireId: "C-102-WHT"
-    });
+    expect(pastedSheet.connections).toEqual([]);
     expect(pastedSheet.annotations[0].id).toBe("ann_unit_1");
   });
 
@@ -322,12 +401,199 @@ describe("drawing canvas selection and clipboard", () => {
       "TSM-102"
     ]);
     expect(pastedSheet.placements[2].assetId).not.toBe("asset_tsm101");
-    expect(pastedSheet.connections[0].wireId).toBe("C-102-WHT");
+    expect(pastedSheet.connections).toEqual([]);
     expect(
       result.model.assets.find(
         (asset) => asset.id === pastedSheet.placements[2].assetId
       )?.componentSelections
     ).toEqual(model.assets[0].componentSelections);
+  });
+
+  it("creates a new physical asset when equipment is pasted on the same panel", () => {
+    const model = modelWithPanelDistributionBlocks();
+    const clipboard = copySelectionToClipboard({
+      model,
+      sheetId: "sheet_panel",
+      selection: { placementIds: ["pdb101"], annotationIds: [] }
+    });
+
+    const result = pasteClipboardToSheet({
+      model,
+      sheetId: "sheet_panel",
+      clipboard: clipboard!,
+      symbols,
+      idPrefix: "same_panel"
+    });
+    const pasted = result.model.sheets[0].placements.find(
+      (candidate) => candidate.id === "pl_same_panel_1"
+    );
+    const pastedAsset = result.model.assets?.find(
+      (candidate) => candidate.id === pasted?.assetId
+    );
+
+    expect(pasted).toMatchObject({
+      tag: "PDB-102",
+      containerAssetId: "asset_panel_1"
+    });
+    expect(pasted?.assetId).not.toBe("asset_pdb101");
+    expect(pastedAsset).toMatchObject({
+      tag: "PDB-102",
+      title: "110 VAC L1 Power distribution block",
+      description: "Panel power distribution",
+      symbolId: distributionBlockSymbol.symbolId,
+      versionId: distributionBlockSymbol.versionId,
+      componentSelections: [
+        {
+          positionKey: "position-1",
+          componentKey: "fuse",
+          symbolId: "sym_fuse",
+          versionId: "ver_fuse"
+        }
+      ]
+    });
+  });
+
+  it("keeps four repeated same-panel copies independently identifiable", () => {
+    const original = modelWithPanelDistributionBlocks();
+    const clipboard = copySelectionToClipboard({
+      model: original,
+      sheetId: "sheet_panel",
+      selection: { placementIds: ["pdb101"], annotationIds: [] }
+    });
+    let current = original;
+
+    for (let index = 2; index <= 4; index += 1) {
+      current = pasteClipboardToSheet({
+        model: current,
+        sheetId: "sheet_panel",
+        clipboard: clipboard!,
+        symbols,
+        idPrefix: `pdb_copy_${index}`
+      }).model;
+    }
+
+    const distributionBlocks = current.sheets[0].placements.filter(
+      (candidate) => candidate.symbolId === distributionBlockSymbol.symbolId
+    );
+    expect(distributionBlocks.map((candidate) => candidate.tag)).toEqual([
+      "PDB-101",
+      "PDB-102",
+      "PDB-103",
+      "PDB-104"
+    ]);
+    expect(
+      new Set(distributionBlocks.map((candidate) => candidate.assetId)).size
+    ).toBe(4);
+
+    const copiedAssetId = distributionBlocks[1].assetId!;
+    const renamed = updateManagedAsset(
+      current,
+      copiedAssetId,
+      { tag: "PDB-110" },
+      symbols
+    );
+    const renamedBlocks = renamed.sheets[0].placements.filter(
+      (candidate) => candidate.symbolId === distributionBlockSymbol.symbolId
+    );
+
+    expect(renamedBlocks.map((candidate) => candidate.tag)).toEqual([
+      "PDB-101",
+      "PDB-110",
+      "PDB-103",
+      "PDB-104"
+    ]);
+  });
+
+  it("creates one unique asset per same-panel occurrence when linked placements are copied together", () => {
+    const model = modelWithPanelDistributionBlocks([
+      { id: "pdb_a", assetId: "asset_pdb101", tag: "PDB-101" },
+      { id: "pdb_b", assetId: "asset_pdb101", tag: "PDB-101" }
+    ]);
+    const clipboard = copySelectionToClipboard({
+      model,
+      sheetId: "sheet_panel",
+      selection: { placementIds: ["pdb_a", "pdb_b"], annotationIds: [] }
+    });
+
+    const result = pasteClipboardToSheet({
+      model,
+      sheetId: "sheet_panel",
+      clipboard: clipboard!,
+      symbols,
+      idPrefix: "linked_panel"
+    });
+    const pasted = result.model.sheets[0].placements.filter((candidate) =>
+      candidate.id.startsWith("pl_linked_panel_")
+    );
+
+    expect(pasted.map((candidate) => candidate.tag)).toEqual([
+      "PDB-102",
+      "PDB-103"
+    ]);
+    expect(new Set(pasted.map((candidate) => candidate.assetId)).size).toBe(2);
+    expect(
+      pasted.map((candidate) =>
+        result.model.assets?.find((asset) => asset.id === candidate.assetId)?.title
+      )
+    ).toEqual([
+      "110 VAC L1 Power distribution block",
+      "110 VAC L1 Power distribution block"
+    ]);
+  });
+
+  it("retains current linking rules for cross-sheet and uncontained copies", () => {
+    const panelModel = modelWithPanelDistributionBlocks();
+    const panelClipboard = copySelectionToClipboard({
+      model: panelModel,
+      sheetId: "sheet_panel",
+      selection: { placementIds: ["pdb101"], annotationIds: [] }
+    });
+    const crossSheet = pasteClipboardToSheet({
+      model: panelModel,
+      sheetId: "sheet_other",
+      clipboard: panelClipboard!,
+      symbols,
+      idPrefix: "cross_sheet"
+    });
+    const crossSheetPaste = crossSheet.model.sheets[1].placements[0];
+    const uncontainedModel: DrawingModel = {
+      ...panelModel,
+      sheets: [
+        {
+          ...panelModel.sheets[0],
+          placements: panelModel.sheets[0].placements.map((candidate) =>
+            candidate.id === "pdb101"
+              ? { ...candidate, containerAssetId: undefined }
+              : candidate
+          )
+        },
+        panelModel.sheets[1]
+      ]
+    };
+    const uncontainedClipboard = copySelectionToClipboard({
+      model: uncontainedModel,
+      sheetId: "sheet_panel",
+      selection: { placementIds: ["pdb101"], annotationIds: [] }
+    });
+    const uncontained = pasteClipboardToSheet({
+      model: uncontainedModel,
+      sheetId: "sheet_panel",
+      clipboard: uncontainedClipboard!,
+      symbols,
+      idPrefix: "uncontained"
+    });
+    const uncontainedPaste = uncontained.model.sheets[0].placements.find(
+      (candidate) => candidate.id === "pl_uncontained_1"
+    );
+
+    expect(crossSheetPaste).toMatchObject({
+      assetId: "asset_pdb101",
+      tag: "PDB-101"
+    });
+    expect(uncontainedPaste).toMatchObject({
+      assetId: "asset_pdb101",
+      tag: "PDB-101"
+    });
   });
 
   it("pastes generated terminal blocks as new globally numbered assets", () => {

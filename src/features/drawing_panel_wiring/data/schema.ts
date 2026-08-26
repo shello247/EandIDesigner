@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { wireSpecificationSnapshotSchema } from "@/features/wire_catalog/api/public";
 
 const identifierSchema = z.string().trim().min(1);
 
@@ -6,6 +7,13 @@ export const panelTerminalSideSchema = z.enum([
   "external",
   "internal",
   "single"
+]);
+
+export const panelConnectionDisplayModeSchema = z.enum([
+  "sheet_only",
+  "internal_connected",
+  "external_connected",
+  "all_connected"
 ]);
 
 export const panelElectricalDomainSchema = z.enum([
@@ -78,13 +86,19 @@ export const panelWireSettingsSchema = z.object({
 export const panelInternalWireRecordSchema = z.object({
   id: identifierSchema,
   panelAssetId: identifierSchema,
+  wireNumber: z.number().int().positive().optional(),
   wireId: z.string().trim().min(1).max(120),
   from: panelTerminalSideRefSchema,
   to: panelTerminalSideRefSchema,
   domain: panelElectricalDomainSchema.optional(),
   ownerPatternId: identifierSchema.optional(),
+  specification: wireSpecificationSnapshotSchema.optional(),
   attributes: panelWireAttributesSchema.optional(),
   origin: panelRecordOriginSchema
+});
+
+export const panelWireNumberSettingsSchema = z.object({
+  nextNumber: z.number().int().positive().default(1)
 });
 
 export const panelPatternTopologySchema = z.enum([
@@ -209,6 +223,7 @@ export const panelWiringPackageDataSchema = z.object({
   internalWires: z.array(panelInternalWireRecordSchema).default([]),
   bridges: z.array(panelBridgeRecordSchema).default([]),
   bonds: z.array(panelBondRecordSchema).default([]),
+  wireNumberSettings: panelWireNumberSettingsSchema.optional(),
   panelSettings: z.array(panelWireSettingsSchema).optional(),
   patternSettings: z.array(panelPatternSettingsSchema).optional()
 });
@@ -226,6 +241,7 @@ export const panelWiringAssetTypeSchema = z.enum([
   "isolator",
   "converter",
   "io_module",
+  "network_device",
   "earth_bar",
   "cable",
   "other"
@@ -285,7 +301,37 @@ export const panelWiringSourceAssetSchema = z.object({
   type: panelWiringAssetTypeSchema,
   title: z.string().trim().min(1).max(160),
   symbolId: identifierSchema.optional(),
-  versionId: identifierSchema.optional()
+  versionId: identifierSchema.optional(),
+  isStructuredTerminalStrip: z.boolean().optional()
+});
+
+export const panelWiringSourceLayoutGeometrySchema = z.object({
+  layoutKind: z.enum(["backplane", "layout_helper"]),
+  backplanePlacementId: identifierSchema,
+  backplaneSheetX: z.number().finite(),
+  backplaneSheetY: z.number().finite(),
+  xMm: z.number().finite(),
+  yMm: z.number().finite(),
+  widthMm: z.number().positive(),
+  heightMm: z.number().positive(),
+  rotationDeg: z.number().finite(),
+  mountingType: z.string().trim().min(1).max(80).optional(),
+  technicalKind: z.string().trim().min(1).max(80).optional()
+});
+
+export const panelWiringSourcePermanentContinuityGroupSchema = z.object({
+  key: identifierSchema,
+  label: z.string().trim().min(1).max(160).optional(),
+  terminalKeys: z.array(identifierSchema).min(2),
+  symbolId: identifierSchema,
+  versionId: identifierSchema
+});
+
+export const panelWiringSourceElectricalTopologySchema = z.object({
+  version: z.literal(1),
+  permanentContinuityGroups: z.array(
+    panelWiringSourcePermanentContinuityGroupSchema
+  )
 });
 
 export const panelWiringSourceOccurrenceSchema = z.object({
@@ -298,7 +344,9 @@ export const panelWiringSourceOccurrenceSchema = z.object({
   containerAssetId: identifierSchema.optional(),
   symbolId: identifierSchema,
   versionId: identifierSchema,
+  panelLayout: panelWiringSourceLayoutGeometrySchema.optional(),
   availableAnchorKeys: z.array(identifierSchema).optional(),
+  electricalTopology: panelWiringSourceElectricalTopologySchema.optional(),
   terminalResolutionStatus: panelTerminalResolutionStatusSchema,
   terminalResolutionMessage: z.string().trim().max(300).optional(),
   terminals: z.array(panelWiringSourceTerminalSchema)
@@ -315,6 +363,7 @@ export const panelWiringSourceConnectionSchema = z.object({
   from: panelWiringSourceConnectionEndpointSchema,
   to: panelWiringSourceConnectionEndpointSchema,
   wireId: z.string().trim().max(120).optional(),
+  label: z.string().trim().max(160).optional(),
   cablePlacementId: identifierSchema.optional(),
   cableAssetId: identifierSchema.optional(),
   cableTag: z.string().trim().max(120).optional(),
@@ -463,6 +512,10 @@ export const panelWiringMutationSchema = z.discriminatedUnion("kind", [
     settings: panelWireSettingsSchema
   }),
   z.object({
+    kind: z.literal("upsert-wire-number-settings"),
+    settings: panelWireNumberSettingsSchema
+  }),
+  z.object({
     kind: z.literal("upsert-bridge"),
     bridge: panelBridgeRecordSchema
   }),
@@ -485,6 +538,9 @@ export const panelWiringMutationSchema = z.discriminatedUnion("kind", [
 ]);
 
 export type PanelTerminalSide = z.infer<typeof panelTerminalSideSchema>;
+export type PanelConnectionDisplayMode = z.infer<
+  typeof panelConnectionDisplayModeSchema
+>;
 export type PanelElectricalDomain = z.infer<
   typeof panelElectricalDomainSchema
 >;
@@ -503,6 +559,9 @@ export type PanelWireIdPolicy = z.infer<typeof panelWireIdPolicySchema>;
 export type PanelWireSettings = z.infer<typeof panelWireSettingsSchema>;
 export type PanelInternalWireRecord = z.infer<
   typeof panelInternalWireRecordSchema
+>;
+export type PanelWireNumberSettings = z.infer<
+  typeof panelWireNumberSettingsSchema
 >;
 export type PanelPatternTopology = z.infer<typeof panelPatternTopologySchema>;
 export type PanelDistributionBranch = z.infer<
@@ -524,6 +583,15 @@ export type PanelWiringPackageData = z.infer<
 >;
 export type PanelWiringSourceAsset = z.infer<
   typeof panelWiringSourceAssetSchema
+>;
+export type PanelWiringSourceLayoutGeometry = z.infer<
+  typeof panelWiringSourceLayoutGeometrySchema
+>;
+export type PanelWiringSourcePermanentContinuityGroup = z.infer<
+  typeof panelWiringSourcePermanentContinuityGroupSchema
+>;
+export type PanelWiringSourceElectricalTopology = z.infer<
+  typeof panelWiringSourceElectricalTopologySchema
 >;
 export type PanelWiringSourceTerminal = z.infer<
   typeof panelWiringSourceTerminalSchema

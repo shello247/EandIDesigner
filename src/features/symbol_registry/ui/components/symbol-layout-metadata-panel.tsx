@@ -1,14 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import { Save } from "lucide-react";
-import { updateSymbolLayoutMetadataAction } from "../../api/actions";
+import { useState } from "react";
 import type {
   SymbolLayoutUsage,
   SymbolMetadata,
-  SymbolPanelCategory,
-  SymbolPanelMountingType
+  SymbolPanelMountingType,
+  SymbolTerminalStripMemberRole,
+  SymbolTechnicalKind
 } from "../../data/schema";
 
 const layoutUsageOptions: Array<{ value: SymbolLayoutUsage; label: string }> = [
@@ -28,20 +26,6 @@ const mountingTypeOptions: Array<{
   { value: "free", label: "Free placement" }
 ];
 
-const panelCategoryOptions: Array<{
-  value: SymbolPanelCategory;
-  label: string;
-}> = [
-  { value: "protection", label: "Protection" },
-  { value: "termination", label: "Termination" },
-  { value: "controller", label: "Controller" },
-  { value: "power", label: "Power" },
-  { value: "ducting", label: "Ducting" },
-  { value: "rail", label: "Rail" },
-  { value: "label", label: "Label" },
-  { value: "other", label: "Other" }
-];
-
 function numberToInput(value: number | undefined): string {
   return value === undefined ? "" : String(value);
 }
@@ -52,63 +36,31 @@ function parsePositiveInput(value: string): number | undefined {
 }
 
 export function SymbolLayoutMetadataPanel({
-  versionId,
   metadata,
-  readOnly = false
+  technicalKind,
+  readOnly = false,
+  onChange
 }: {
-  versionId: string;
   metadata: SymbolMetadata;
+  technicalKind: SymbolTechnicalKind;
   readOnly?: boolean;
+  onChange: (updater: (current: SymbolMetadata) => SymbolMetadata) => void;
 }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [message, setMessage] = useState<string | null>(null);
-  const [layoutUsage, setLayoutUsage] = useState<SymbolLayoutUsage>(
-    metadata.layoutUsage ?? "wiring"
-  );
   const [physicalWidthMm, setPhysicalWidthMm] = useState(
     numberToInput(metadata.physicalWidthMm)
   );
   const [physicalHeightMm, setPhysicalHeightMm] = useState(
     numberToInput(metadata.physicalHeightMm)
   );
-  const [mountingType, setMountingType] = useState<
-    SymbolPanelMountingType | ""
-  >(metadata.mountingType ?? "");
-  const [panelCategory, setPanelCategory] = useState<SymbolPanelCategory | "">(
-    metadata.panelCategory ?? ""
-  );
-  const [resizable, setResizable] = useState(metadata.resizable ?? false);
-  const [defaultTerminalBlockModule, setDefaultTerminalBlockModule] = useState(
-    metadata.terminalBlockModule?.defaultForGeneratedGroups ?? false
-  );
+  const layoutUsage = metadata.layoutUsage ?? "wiring";
+  const mountingType = metadata.mountingType ?? "";
+  const resizable = metadata.resizable ?? false;
   const panelLayoutEnabled = layoutUsage !== "wiring";
-  const terminalModuleEligible =
-    metadata.category === "terminal_block" && panelCategory === "termination";
-
-  const save = () => {
-    startTransition(async () => {
-      const result = await updateSymbolLayoutMetadataAction({
-        versionId,
-        layoutUsage,
-        physicalWidthMm: parsePositiveInput(physicalWidthMm),
-        physicalHeightMm: parsePositiveInput(physicalHeightMm),
-        mountingType: mountingType || undefined,
-        panelCategory: panelCategory || undefined,
-        resizable,
-        terminalBlockModule:
-          terminalModuleEligible && defaultTerminalBlockModule
-            ? {
-                kind: "feed_through",
-                defaultForGeneratedGroups: true
-              }
-            : undefined
-      });
-
-      setMessage(result.ok ? "Layout metadata saved." : result.error);
-      router.refresh();
-    });
-  };
+  const terminalStripCapability = metadata.terminalStripCapability;
+  const terminalStripEligible =
+    technicalKind === "terminal_block" &&
+    panelLayoutEnabled &&
+    mountingType === "din_rail";
 
   return (
     <section className="tool-panel overflow-hidden">
@@ -127,10 +79,14 @@ export function SymbolLayoutMetadataPanel({
             id="symbol-layout-usage"
             className="field-input"
             value={layoutUsage}
-            disabled={isPending || readOnly}
-            onChange={(event) =>
-              setLayoutUsage(event.currentTarget.value as SymbolLayoutUsage)
-            }
+            disabled={readOnly}
+            onChange={(event) => {
+              const value = event.currentTarget.value as SymbolLayoutUsage;
+              onChange((current) => ({
+                ...current,
+                layoutUsage: value
+              }));
+            }}
           >
             {layoutUsageOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -149,8 +105,15 @@ export function SymbolLayoutMetadataPanel({
               className="field-input"
               inputMode="decimal"
               value={physicalWidthMm}
-              disabled={isPending || readOnly || !panelLayoutEnabled}
-              onChange={(event) => setPhysicalWidthMm(event.currentTarget.value)}
+              disabled={readOnly || !panelLayoutEnabled}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setPhysicalWidthMm(value);
+                onChange((current) => ({
+                  ...current,
+                  physicalWidthMm: parsePositiveInput(value)
+                }));
+              }}
             />
           </div>
           <div>
@@ -162,12 +125,19 @@ export function SymbolLayoutMetadataPanel({
               className="field-input"
               inputMode="decimal"
               value={physicalHeightMm}
-              disabled={isPending || readOnly || !panelLayoutEnabled}
-              onChange={(event) => setPhysicalHeightMm(event.currentTarget.value)}
+              disabled={readOnly || !panelLayoutEnabled}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setPhysicalHeightMm(value);
+                onChange((current) => ({
+                  ...current,
+                  physicalHeightMm: parsePositiveInput(value)
+                }));
+              }}
             />
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div>
           <div>
             <label className="field-label" htmlFor="symbol-mounting-type">
               Mounting type
@@ -176,38 +146,19 @@ export function SymbolLayoutMetadataPanel({
               id="symbol-mounting-type"
               className="field-input"
               value={mountingType}
-              disabled={isPending || readOnly || !panelLayoutEnabled}
-              onChange={(event) =>
-                setMountingType(
-                  event.currentTarget.value as SymbolPanelMountingType
-                )
-              }
+              disabled={readOnly || !panelLayoutEnabled}
+              onChange={(event) => {
+                const value = event.currentTarget.value as
+                  | SymbolPanelMountingType
+                  | "";
+                onChange((current) => ({
+                  ...current,
+                  mountingType: value || undefined
+                }));
+              }}
             >
               <option value="">Select mounting</option>
               {mountingTypeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="field-label" htmlFor="symbol-panel-category">
-              Panel category
-            </label>
-            <select
-              id="symbol-panel-category"
-              className="field-input"
-              value={panelCategory}
-              disabled={isPending || readOnly || !panelLayoutEnabled}
-              onChange={(event) =>
-                setPanelCategory(
-                  event.currentTarget.value as SymbolPanelCategory
-                )
-              }
-            >
-              <option value="">Select category</option>
-              {panelCategoryOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -219,32 +170,138 @@ export function SymbolLayoutMetadataPanel({
           <input
             type="checkbox"
             checked={resizable}
-            disabled={isPending || readOnly || !panelLayoutEnabled}
-            onChange={(event) => setResizable(event.currentTarget.checked)}
+            disabled={readOnly || !panelLayoutEnabled}
+            onChange={(event) => {
+              const checked = event.currentTarget.checked;
+              onChange((current) => ({
+                ...current,
+                resizable: checked
+              }));
+            }}
           />
           Resizable in panel layouts
         </label>
-        {metadata.category === "terminal_block" ? (
-          <label className="flex items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-            <input
-              className="mt-0.5"
-              type="checkbox"
-              checked={defaultTerminalBlockModule}
-              disabled={isPending || !panelLayoutEnabled || !terminalModuleEligible}
-              onChange={(event) =>
-                setDefaultTerminalBlockModule(event.currentTarget.checked)
-              }
-            />
-            <span>
-              <span className="block font-semibold">
-                Default terminal group module
+        {technicalKind === "terminal_block" ? (
+          <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+            <label className="flex items-start gap-2 text-xs text-slate-700">
+              <input
+                className="mt-0.5"
+                type="checkbox"
+                checked={Boolean(terminalStripCapability)}
+                disabled={readOnly || !terminalStripEligible}
+                onChange={(event) => {
+                  const checked = event.currentTarget.checked;
+                  onChange((current) => ({
+                    ...current,
+                    terminalStripCapability: checked
+                      ? {
+                          role: "electrical",
+                          railDatumMm: Number(
+                            ((current.physicalHeightMm ?? 0) / 2).toFixed(2)
+                          )
+                        }
+                      : undefined
+                  }));
+                }}
+              />
+              <span>
+                <span className="block font-semibold">
+                  Enable as terminal-strip member
+                </span>
+                <span className="mt-0.5 block leading-5 text-slate-500">
+                  Explicitly allows this approved DIN-rail symbol in structured
+                  terminal strips.
+                </span>
               </span>
-              <span className="mt-0.5 block leading-5 text-slate-500">
-                Repeat this approved feed-through terminal when building terminal
-                block groups.
-              </span>
-            </span>
-          </label>
+            </label>
+            {terminalStripCapability ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="field-label" htmlFor="terminal-strip-role">
+                      Member role
+                    </label>
+                    <select
+                      id="terminal-strip-role"
+                      className="field-input"
+                      value={terminalStripCapability.role}
+                      disabled={readOnly}
+                      onChange={(event) => {
+                        const role = event.currentTarget
+                          .value as SymbolTerminalStripMemberRole;
+                        onChange((current) => ({
+                          ...current,
+                          terminalStripCapability: current.terminalStripCapability
+                            ? { ...current.terminalStripCapability, role }
+                            : undefined
+                        }));
+                      }}
+                    >
+                      <option value="electrical">Electrical terminal</option>
+                      <option value="end_bracket">End bracket</option>
+                      <option value="accessory">Accessory</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="field-label" htmlFor="terminal-strip-datum">
+                      DIN-rail datum mm
+                    </label>
+                    <input
+                      id="terminal-strip-datum"
+                      className="field-input"
+                      inputMode="decimal"
+                      value={terminalStripCapability.railDatumMm}
+                      disabled={readOnly}
+                      onChange={(event) => {
+                        const value = Number(event.currentTarget.value);
+                        onChange((current) => ({
+                          ...current,
+                          terminalStripCapability:
+                            current.terminalStripCapability &&
+                            Number.isFinite(value) &&
+                            value >= 0
+                              ? {
+                                  ...current.terminalStripCapability,
+                                  railDatumMm: value
+                                }
+                              : current.terminalStripCapability
+                        }));
+                      }}
+                    />
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={
+                      terminalStripCapability.defaultForNewStrips ?? false
+                    }
+                    disabled={readOnly || terminalStripCapability.role === "accessory"}
+                    onChange={(event) => {
+                      const checked = event.currentTarget.checked;
+                      onChange((current) => ({
+                        ...current,
+                        terminalStripCapability: current.terminalStripCapability
+                          ? {
+                              ...current.terminalStripCapability,
+                              defaultForNewStrips: checked || undefined
+                            }
+                          : undefined
+                      }));
+                    }}
+                  />
+                  Default {terminalStripCapability.role === "end_bracket"
+                    ? "end bracket"
+                    : "electrical member"} for new strips
+                </label>
+              </>
+            ) : !terminalStripEligible ? (
+              <p className="text-xs leading-5 text-amber-800">
+                Select panel-layout use and DIN-rail mounting before enabling
+                this capability.
+              </p>
+            ) : null}
+          </div>
         ) : null}
         {panelLayoutEnabled &&
         (!parsePositiveInput(physicalWidthMm) ||
@@ -253,22 +310,6 @@ export function SymbolLayoutMetadataPanel({
             Panel layout symbols need real physical width and height before they
             can be placed on a layout sheet.
           </div>
-        ) : null}
-        {message ? (
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            {message}
-          </div>
-        ) : null}
-        {!readOnly ? (
-          <button
-            type="button"
-            className="icon-button icon-button-primary w-full justify-center"
-            disabled={isPending}
-            onClick={save}
-          >
-            <Save aria-hidden="true" size={14} />
-            Save layout metadata
-          </button>
         ) : null}
       </div>
     </section>

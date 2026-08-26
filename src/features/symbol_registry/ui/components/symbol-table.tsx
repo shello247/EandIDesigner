@@ -1,10 +1,26 @@
+"use client";
+
 import Link from "next/link";
-import { AlertTriangle } from "lucide-react";
+import { useMemo, useState } from "react";
 import type { SymbolListItem } from "../../types";
 import { SymbolDeleteButton } from "./symbol-delete-button";
 import { SymbolStatusBadge } from "./symbol-status-badge";
 
-export function SymbolTable({ symbols }: { symbols: SymbolListItem[] }) {
+type SymbolTableProps = {
+  categories: Array<SymbolListItem["category"]>;
+  symbols: SymbolListItem[];
+};
+
+export function SymbolTable({ categories, symbols }: SymbolTableProps) {
+  const [categoryId, setCategoryId] = useState("all");
+  const filteredSymbols = useMemo(
+    () =>
+      categoryId === "all"
+        ? symbols
+        : symbols.filter((symbol) => symbol.category.id === categoryId),
+    [categoryId, symbols]
+  );
+
   if (symbols.length === 0) {
     return (
       <div className="tool-panel flex min-h-[260px] items-center justify-center p-8 text-center">
@@ -21,50 +37,66 @@ export function SymbolTable({ symbols }: { symbols: SymbolListItem[] }) {
 
   return (
     <div className="tool-panel overflow-hidden">
-      <table className="data-table">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 px-3 py-2">
+        <label className="grid min-w-56 gap-1 text-xs font-semibold text-slate-700">
+          Category
+          <select
+            aria-label="Filter symbols by category"
+            className="field-control h-9 py-1.5"
+            onChange={(event) => setCategoryId(event.target.value)}
+            value={categoryId}
+          >
+            <option value="all">All categories</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="pb-1 text-xs text-slate-500">
+          {filteredSymbols.length}{" "}
+          {filteredSymbols.length === 1 ? "symbol" : "symbols"}
+        </span>
+      </div>
+      <table className="data-table table-fixed [&_td]:!py-1.5 [&_td]:!align-middle [&_th]:!py-1.5">
+        <colgroup>
+          <col className="w-[48%]" />
+          <col className="w-[18%]" />
+          <col className="w-[14%]" />
+          <col className="w-[8%]" />
+          <col className="w-[12%]" />
+        </colgroup>
         <thead>
           <tr>
             <th>Symbol</th>
             <th>Category</th>
             <th>Status</th>
             <th>Version</th>
-            <th>Issues</th>
-            <th>Updated</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {symbols.map((symbol) => (
+          {filteredSymbols.map((symbol) => (
             <tr key={symbol.id} className="hover:bg-slate-50">
               <td>
                 <Link
                   href={`/symbols/${symbol.id}`}
-                  className="font-bold text-slate-950 hover:text-teal-800"
+                  className="font-normal leading-5 text-slate-950 hover:text-teal-800"
                 >
                   {symbol.displayName}
                 </Link>
-                <div className="mt-1 text-xs text-slate-500">
-                  {symbol.symbolKey}
-                  {symbol.model ? ` / ${symbol.model}` : ""}
-                </div>
               </td>
-              <td className="capitalize">{symbol.category.replace("_", " ")}</td>
-              <td>
+              <td className="whitespace-nowrap">
+                {symbol.category.name}
+              </td>
+              <td className="whitespace-nowrap">
                 <SymbolStatusBadge status={symbol.status} />
               </td>
-              <td>{symbol.latestVersionNumber ?? "-"}</td>
-              <td>
-                {symbol.blockingIssueCount > 0 ? (
-                  <span className="inline-flex items-center gap-1 font-bold text-red-700">
-                    <AlertTriangle aria-hidden="true" size={15} />
-                    {symbol.blockingIssueCount}
-                  </span>
-                ) : (
-                  <span className="text-slate-500">0</span>
-                )}
+              <td className="whitespace-nowrap">
+                {symbol.latestVersionNumber ?? "-"}
               </td>
-              <td>{new Date(symbol.updatedAt).toLocaleString()}</td>
-              <td>
+              <td className="whitespace-nowrap">
                 <SymbolDeleteButton
                   displayName={symbol.displayName}
                   symbolId={symbol.id}
@@ -73,6 +105,16 @@ export function SymbolTable({ symbols }: { symbols: SymbolListItem[] }) {
               </td>
             </tr>
           ))}
+          {filteredSymbols.length === 0 ? (
+            <tr>
+              <td
+                className="py-8 text-center text-sm text-slate-500"
+                colSpan={5}
+              >
+                No symbols are assigned to this category.
+              </td>
+            </tr>
+          ) : null}
         </tbody>
       </table>
     </div>

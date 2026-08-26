@@ -229,6 +229,19 @@ svg {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
 
+.icon-button:disabled {
+  cursor: not-allowed;
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #94a3b8;
+  box-shadow: none;
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid #0ea5e9;
+  outline-offset: 2px;
+}
+
 .icon-button-primary {
   border-color: #9fded6;
   background: #e9fbf8;
@@ -306,6 +319,7 @@ svg {
 .drawing-canvas-layout {
   --drawing-symbols-column: 300px;
   --drawing-properties-column: 340px;
+  --drawing-canvas-viewport-height: clamp(520px, calc(100dvh - 220px), 820px);
   display: grid;
   gap: 20px;
 }
@@ -326,6 +340,32 @@ svg {
   .drawing-canvas-layout-properties-collapsed {
     --drawing-properties-column: 56px;
   }
+
+  .drawing-properties-sidebar-expanded {
+    min-height: 0;
+    align-self: start;
+  }
+
+  .drawing-properties-scroll-region {
+    max-height: calc(var(--drawing-canvas-viewport-height) + 96px);
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding-right: 4px;
+    scrollbar-gutter: stable;
+  }
+
+  .drawing-properties-scroll-region:focus-visible {
+    border-radius: 8px;
+    outline: 2px solid #0ea5e9;
+    outline-offset: 2px;
+  }
+
+  .drawing-object-inspector-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #ffffff;
+  }
 }
 
 .drawing-canvas-panel {
@@ -336,7 +376,7 @@ svg {
 .drawing-canvas-toast {
   position: absolute;
   left: 16px;
-  top: 72px;
+  top: 60px;
   z-index: 30;
   display: flex;
   max-width: min(360px, calc(100% - 32px));
@@ -375,11 +415,196 @@ svg {
 .drawing-canvas-header {
   display: flex;
   min-height: 48px;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--line);
   padding: 8px 12px 8px 14px;
+}
+
+.drawing-package-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px 10px 14px;
+}
+
+.drawing-package-toolbar .icon-button,
+.drawing-sheet-toolbar .icon-button,
+.sheet-loader-dialog .icon-button {
+  height: 36px;
+  min-height: 36px;
+}
+
+.drawing-package-toolbar-title {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.drawing-package-toolbar-row,
+.drawing-package-toolbar-utilities,
+.drawing-package-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawing-package-toolbar-row {
+  flex: 0 1 auto;
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.drawing-package-toolbar-actions {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.drawing-status-badge {
+  display: inline-flex;
+  min-height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.drawing-status-badge-approved {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+  color: #0f766e;
+}
+
+.drawing-status-badge-review {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #a16207;
+}
+
+.drawing-status-badge-draft {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.drawing-save-current {
+  border-color: transparent;
+  background: transparent;
+  color: #64748b;
+}
+
+.drawing-preview-menu,
+.sheet-row-action-menu {
+  position: relative;
+}
+
+.drawing-preview-menu-panel,
+.sheet-row-action-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 45;
+  display: grid;
+  min-width: 230px;
+  gap: 3px;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 6px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+}
+
+.drawing-preview-menu-item {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+  padding: 9px;
+  color: #0f172a;
+  text-align: left;
+}
+
+.drawing-preview-menu-item:hover,
+.drawing-preview-menu-item:focus-visible,
+.sheet-row-action-menu-item:hover,
+.sheet-row-action-menu-item:focus-visible {
+  background: #f1f5f9;
+  outline: none;
+}
+
+.drawing-sheet-toolbar {
+  display: flex;
+  min-width: min(100%, 560px);
+  flex: 1 1 640px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+}
+
+.drawing-sheet-toolbar-primary,
+.drawing-sheet-toolbar-group,
+.drawing-sheet-toolbar-viewport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.drawing-toolbar-icon-action {
+  position: relative;
+  width: 36px;
+  overflow: visible;
+  padding: 0;
+}
+
+.drawing-toolbar-icon-action::after {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 7px);
+  z-index: 60;
+  border-radius: 5px;
+  background: #0f172a;
+  padding: 5px 7px;
+  color: #ffffff;
+  content: attr(data-tooltip);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -3px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+  white-space: nowrap;
+}
+
+.drawing-toolbar-icon-action:hover::after,
+.drawing-toolbar-icon-action:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.drawing-sheet-toolbar-primary {
+  justify-content: flex-end;
+}
+
+.drawing-sheet-toolbar-group + .drawing-sheet-toolbar-group,
+.drawing-sheet-toolbar-viewport {
+  border-left: 1px solid #e2e8f0;
+  padding-left: 10px;
 }
 
 .drawing-viewport-toolbar {
@@ -427,6 +652,11 @@ svg {
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
 }
 
+.drawing-canvas-add-menu-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .drawing-canvas-add-menu-trigger:focus-visible,
 .drawing-canvas-add-menu-item:focus-visible {
   outline: 2px solid #0ea5e9;
@@ -467,7 +697,7 @@ svg {
 .drawing-zoom-readout {
   display: inline-flex;
   min-width: 48px;
-  height: 32px;
+  height: 36px;
   align-items: center;
   justify-content: center;
   border: 1px solid #d7dee8;
@@ -479,9 +709,60 @@ svg {
   font-variant-numeric: tabular-nums;
 }
 
+.sheet-row-action-menu-panel {
+  min-width: 210px;
+}
+
+.sheet-row-action-menu-item {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+  padding: 7px 9px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+}
+
+.sheet-row-action-menu-item:disabled {
+  cursor: not-allowed;
+  color: #a8b3c3;
+}
+
+.sheet-row-action-menu-item-danger {
+  color: #b43b31;
+}
+
+@media (max-width: 1100px) {
+  .drawing-package-toolbar-row,
+  .drawing-package-toolbar-actions,
+  .drawing-sheet-toolbar,
+  .drawing-sheet-toolbar-primary {
+    justify-content: flex-start;
+  }
+
+  .drawing-package-toolbar-actions {
+    margin-left: 0;
+  }
+
+  .drawing-package-toolbar-row {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+
+  .drawing-sheet-toolbar {
+    flex-basis: 100%;
+  }
+}
+
 .drawing-canvas-viewport {
   position: relative;
-  height: clamp(520px, calc(100vh - 220px), 820px);
+  height: var(
+    --drawing-canvas-viewport-height,
+    clamp(520px, calc(100dvh - 220px), 820px)
+  );
   min-height: 420px;
   overflow: auto;
   background:
@@ -519,6 +800,81 @@ svg {
   transform-origin: 0 0;
 }
 
+.drawing-guide-ruler {
+  position: absolute;
+  z-index: 24;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  background: rgba(248, 250, 252, 0.98);
+  color: #64748b;
+  user-select: none;
+  touch-action: none;
+}
+
+.drawing-guide-ruler-horizontal {
+  top: -22px;
+  left: 0;
+  width: 100%;
+  height: 20px;
+  cursor: row-resize;
+}
+
+.drawing-guide-ruler-vertical {
+  top: 0;
+  left: -22px;
+  width: 20px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.drawing-guide-ruler-tick {
+  position: absolute;
+  display: block;
+  background: #94a3b8;
+  pointer-events: none;
+}
+
+.drawing-guide-ruler-horizontal .drawing-guide-ruler-tick {
+  bottom: 0;
+  width: 1px;
+  height: 5px;
+}
+
+.drawing-guide-ruler-horizontal .drawing-guide-ruler-tick-major {
+  height: 9px;
+}
+
+.drawing-guide-ruler-vertical .drawing-guide-ruler-tick {
+  right: 0;
+  width: 5px;
+  height: 1px;
+}
+
+.drawing-guide-ruler-vertical .drawing-guide-ruler-tick-major {
+  width: 9px;
+}
+
+.drawing-guide-ruler-label {
+  position: absolute;
+  color: #475569;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.drawing-guide-ruler-horizontal .drawing-guide-ruler-label {
+  bottom: 9px;
+  left: 2px;
+}
+
+.drawing-guide-ruler-vertical .drawing-guide-ruler-label {
+  top: 2px;
+  right: 9px;
+  transform: rotate(-90deg);
+  transform-origin: top right;
+}
+
 .drawing-sheet-frame {
   display: flex;
   max-width: 100%;
@@ -526,6 +882,10 @@ svg {
   align-items: center;
   gap: 10px;
   scroll-margin: 56px;
+}
+
+.drawing-sheet-frame-with-rulers {
+  gap: 28px;
 }
 
 .drawing-sheet-frame[role="button"] {
@@ -567,17 +927,12 @@ svg {
   overflow: hidden;
   border-radius: 2px;
   background: #ffffff;
-  box-shadow:
-    0 0 0 1px rgba(15, 23, 42, 0.12),
-    0 18px 42px rgba(15, 23, 42, 0.16);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.07);
 }
 
 .drawing-sheet-frame-active .drawing-sheet-paper {
   cursor: default;
-  box-shadow:
-    0 0 0 1px rgba(59, 130, 246, 0.16),
-    0 20px 44px rgba(15, 23, 42, 0.16),
-    0 0 34px rgba(59, 130, 246, 0.24);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.09);
 }
 
 .drawing-sheet-rendered,
@@ -719,8 +1074,8 @@ svg {
 
 .dialog-close {
   display: inline-flex;
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
@@ -728,6 +1083,22 @@ svg {
   border-radius: 6px;
   color: #475569;
   background: #ffffff;
+}
+
+.icon-button[aria-label^="close" i] {
+  width: 40px !important;
+  min-width: 40px;
+  height: 40px !important;
+  min-height: 40px !important;
+  flex: 0 0 auto;
+  padding: 0 !important;
+}
+
+.dialog-close svg,
+.icon-button[aria-label^="close" i] svg {
+  width: 22px !important;
+  height: 22px !important;
+  stroke-width: 2.25;
 }
 
 .dialog-close:hover {

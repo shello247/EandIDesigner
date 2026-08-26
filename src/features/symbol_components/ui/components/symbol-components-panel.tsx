@@ -1,34 +1,26 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { Boxes, Save } from "lucide-react";
+import { Boxes } from "lucide-react";
 import type {
   ComponentAlternativeCandidate,
   SymbolComponentPosition
 } from "../../api/public";
-import { updateSymbolComponentsAction } from "../../api/actions";
 
 function formatNumber(value: number) {
   return Number.isInteger(value) ? value.toString() : value.toFixed(2);
 }
 
 export function SymbolComponentsPanel({
-  versionId,
   positions,
   alternatives,
-  readOnly
+  readOnly,
+  onChange
 }: {
-  versionId: string;
   positions: SymbolComponentPosition[];
   alternatives: ComponentAlternativeCandidate[];
   readOnly: boolean;
+  onChange: (positions: SymbolComponentPosition[]) => void;
 }) {
-  const router = useRouter();
-  const [draft, setDraft] = useState(positions);
-  const [message, setMessage] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-
   if (positions.length === 0) {
     return (
       <section className="tool-panel p-5">
@@ -48,8 +40,8 @@ export function SymbolComponentsPanel({
     componentKey: string,
     symbolId: string
   ) => {
-    setDraft((current) =>
-      current.map((position) =>
+    onChange(
+      positions.map((position) =>
         position.key !== positionKey
           ? position
           : {
@@ -73,24 +65,6 @@ export function SymbolComponentsPanel({
     );
   };
 
-  const save = () => {
-    startTransition(async () => {
-      setMessage(null);
-      const result = await updateSymbolComponentsAction({
-        versionId,
-        componentPositions: draft
-      });
-
-      if (!result.ok) {
-        setMessage(result.error);
-        return;
-      }
-
-      setMessage("Component configuration saved.");
-      router.refresh();
-    });
-  };
-
   return (
     <section className="tool-panel overflow-hidden">
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
@@ -104,21 +78,10 @@ export function SymbolComponentsPanel({
             </p>
           </div>
         </div>
-        {!readOnly ? (
-          <button
-            type="button"
-            className="tool-button"
-            disabled={isPending}
-            onClick={save}
-          >
-            <Save aria-hidden="true" size={14} />
-            {isPending ? "Saving…" : "Save"}
-          </button>
-        ) : null}
       </div>
 
       <div className="divide-y divide-slate-200">
-        {draft.map((position) => (
+        {positions.map((position) => (
           <div key={position.key} className="space-y-4 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -133,10 +96,10 @@ export function SymbolComponentsPanel({
                 <input
                   type="checkbox"
                   checked={position.required}
-                  disabled={readOnly || isPending}
+                  disabled={readOnly}
                   onChange={(event) =>
-                    setDraft((current) =>
-                      current.map((item) =>
+                    onChange(
+                      positions.map((item) =>
                         item.key === position.key
                           ? { ...item, required: event.target.checked }
                           : item
@@ -180,7 +143,7 @@ export function SymbolComponentsPanel({
                   </span>
                 </div>
 
-                <fieldset className="mt-3" disabled={readOnly || isPending}>
+                <fieldset className="mt-3" disabled={readOnly}>
                   <legend className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                     Approved alternatives
                   </legend>
@@ -230,11 +193,6 @@ export function SymbolComponentsPanel({
         ))}
       </div>
 
-      {message ? (
-        <div className="border-t border-slate-200 px-4 py-3 text-xs text-slate-700">
-          {message}
-        </div>
-      ) : null}
     </section>
   );
 }

@@ -37,7 +37,8 @@ const printColumns: Record<PanelReportKind, PrintColumn[]> = {
     { key: "patterns", label: "Pattern / Bond", width: 54 }
   ],
   internal_wire_schedule: [
-    { key: "wireId", label: "Wire ID", width: 40 },
+    { key: "wireNumber", label: "Wire #", width: 18 },
+    { key: "wireId", label: "Wire ID", width: 42 },
     { key: "from", label: "From", width: 82 },
     { key: "to", label: "To", width: 82 },
     { key: "domain", label: "Domain", width: 32 },

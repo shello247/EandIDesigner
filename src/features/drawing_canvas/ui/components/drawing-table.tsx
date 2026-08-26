@@ -32,8 +32,6 @@ export function DrawingTable({ drawings }: { drawings: DrawingListItem[] }) {
             <th>Drawing</th>
             <th>Status</th>
             <th>Sheets</th>
-            <th>Placements</th>
-            <th>Connections</th>
             <th>Updated</th>
             <th>Actions</th>
           </tr>
@@ -48,14 +46,9 @@ export function DrawingTable({ drawings }: { drawings: DrawingListItem[] }) {
                 >
                   {drawing.title}
                 </Link>
-                <div className="mt-1 text-xs text-slate-500">
-                  {drawing.drawingKey}
-                </div>
               </td>
               <td>{statusLabels[drawing.status]}</td>
               <td>{drawing.sheetCount}</td>
-              <td>{drawing.placementCount}</td>
-              <td>{drawing.connectionCount}</td>
               <td>{new Date(drawing.updatedAt).toLocaleString()}</td>
               <td>
                 <DrawingDeleteButton

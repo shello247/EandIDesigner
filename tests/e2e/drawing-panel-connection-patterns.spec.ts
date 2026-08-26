@@ -2,12 +2,15 @@ import { expect, test } from "@playwright/test";
 import {
   createE2ePanelComponentPackage,
   deleteE2eDrawing,
-  deleteE2eSymbol
+  deleteE2eSymbol,
 } from "./drawing-fixtures";
-import { openDetailedPanelWorkflow } from "./panel-workflow-helpers";
+import {
+  openPanelEngineeringWorkbench,
+  selectPanelEngineeringView,
+} from "./panel-workflow-helpers";
 
 test("authors, removes, restores, and reloads a structured panel jumper", async ({
-  page
+  page,
 }) => {
   const fixture = await createE2ePanelComponentPackage();
 
@@ -20,14 +23,14 @@ test("authors, removes, restores, and reloads a structured panel jumper", async 
       .getByRole("button", { name: "Load" })
       .click();
 
-    const queue = await openDetailedPanelWorkflow(page, "advanced");
+    const queue = await openPanelEngineeringWorkbench(page);
     await queue
       .getByRole("row", { name: /TB-101/ })
-      .getByRole("button", { name: "Place" })
+      .getByRole("button", { name: "Add", exact: true })
       .click();
     await queue
       .getByRole("row", { name: /MCB-101/ })
-      .getByRole("button", { name: "Place" })
+      .getByRole("button", { name: "Add", exact: true })
       .click();
     await queue.getByRole("button", { name: "Close", exact: true }).click();
 
@@ -41,27 +44,37 @@ test("authors, removes, restores, and reloads a structured panel jumper", async 
     await authoring.getByRole("button", { name: "Review" }).click();
 
     const review = page.getByRole("dialog", {
-      name: "Review connection pattern"
+      name: "Review connection pattern",
     });
     await expect(review).toBeVisible();
     await expect(review.locator("..")).toHaveCSS("position", "fixed");
     await expect(review).toContainText("JMP-001");
     await review.getByRole("button", { name: "Create pattern" }).click();
-    await expect(page.getByTestId("drawing-toast")).toContainText("JMP-001 added");
-    await expect(page.locator('[data-panel-pattern-id="panel_pattern:asset_jb_001:JMP-001"]')).toHaveCount(1);
+    await expect(page.getByTestId("drawing-toast")).toContainText(
+      "JMP-001 added",
+    );
+    await expect(
+      page.locator(
+        '[data-panel-pattern-id="panel_pattern:asset_jb_001:JMP-001"]',
+      ),
+    ).toHaveCount(1);
 
-    const refreshedQueue = await openDetailedPanelWorkflow(page, "advanced");
-    await refreshedQueue.getByRole("tab", { name: /Connection Patterns/ }).click();
+    const refreshedQueue = await openPanelEngineeringWorkbench(page);
+    await selectPanelEngineeringView(refreshedQueue, "Connection Patterns");
     const patternRow = refreshedQueue.getByRole("row", { name: /JMP-001/ });
     await expect(patternRow).toContainText(/terminal jumper/i);
     await patternRow.getByTitle("Remove this sheet representation").click();
     await expect(patternRow).toContainText("Unrepresented");
     await patternRow.getByRole("button", { name: "Add" }).click();
     await expect(patternRow).toContainText("Sheet 2");
-    await refreshedQueue.getByRole("button", { name: "Close", exact: true }).click();
+    await refreshedQueue
+      .getByRole("button", { name: "Close", exact: true })
+      .click();
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByTestId("drawing-toast")).toContainText("Drawing saved.");
+    await expect(page.getByTestId("drawing-toast")).toContainText(
+      "Drawing saved.",
+    );
     await page.reload();
     await page.getByRole("button", { name: "Open sheet loader" }).click();
     await page
@@ -69,10 +82,8 @@ test("authors, removes, restores, and reloads a structured panel jumper", async 
       .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
       .getByRole("button", { name: "Load" })
       .click();
-    const reloadedQueue = await openDetailedPanelWorkflow(page, "advanced");
-    await reloadedQueue
-      .getByRole("tab", { name: /Connection Patterns/ })
-      .click();
+    const reloadedQueue = await openPanelEngineeringWorkbench(page);
+    await selectPanelEngineeringView(reloadedQueue, "Connection Patterns");
     await expect(reloadedQueue).toContainText("JMP-001");
   } finally {
     await deleteE2eDrawing(fixture.drawingId);

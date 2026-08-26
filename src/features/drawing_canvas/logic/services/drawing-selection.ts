@@ -7,15 +7,20 @@ import type { ApprovedDrawingSymbol } from "../../types";
 import { getPlacementBounds } from "./drawing-geometry";
 import { getAnnotationSize } from "./drawing-annotations";
 import {
-  getPanelEnclosureBounds,
+  getPanelEnclosureDisplayBounds,
   isGeneratedPanelEnclosurePlacement
 } from "./drawing-asset-containment";
+import {
+  getPanelConnectionViewBounds,
+  isPanelConnectionViewPlacement
+} from "./drawing-panel-connection-views";
 import {
   isBackplanePlacement,
   isLayoutHelperPlacement
 } from "./drawing-backplane-layouts";
 import {
   getBackplaneDisplayBounds,
+  getParentPanelForBackplane,
   resolveLayoutHelperDisplayPlacement
 } from "./drawing-backplane-scale";
 import { getSymbolForPlacement } from "./drawing-connections";
@@ -169,11 +174,18 @@ function placementRect(
   symbols: ApprovedDrawingSymbol[]
 ): SelectionRect | null {
   if (isGeneratedPanelEnclosurePlacement(placement)) {
-    return getPanelEnclosureBounds(placement);
+    return getPanelEnclosureDisplayBounds(model.sheet, placement);
+  }
+  if (isPanelConnectionViewPlacement(placement)) {
+    return getPanelConnectionViewBounds(placement);
   }
 
   if (isBackplanePlacement(placement)) {
-    return getBackplaneDisplayBounds(model.sheet, placement);
+    return getBackplaneDisplayBounds(
+      model.sheet,
+      placement,
+      getParentPanelForBackplane(model.placements, placement)
+    );
   }
 
   const symbol = getSymbolForPlacement(placement, symbols);
@@ -194,7 +206,11 @@ function placementRect(
     ? resolveLayoutHelperDisplayPlacement({
         sheet: model.sheet,
         placement,
-        backplane: parentBackplane
+        backplane: parentBackplane,
+        parentPanel: getParentPanelForBackplane(
+          model.placements,
+          parentBackplane
+        )
       })
     : placement;
 

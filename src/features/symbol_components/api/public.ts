@@ -5,15 +5,13 @@ export {
   symbolComponentBoxSchema,
   symbolComponentDefinitionSchema,
   symbolComponentPositionSchema,
-  symbolComponentPositionsSchema,
-  updateSymbolComponentsInputSchema
+  symbolComponentPositionsSchema
 } from "../data/schema";
 export type {
   DrawingComponentSelection,
   SymbolComponentBox,
   SymbolComponentDefinition,
-  SymbolComponentPosition,
-  UpdateSymbolComponentsInput
+  SymbolComponentPosition
 } from "../data/schema";
 export { mergeImportedComponentConfiguration } from "../logic/use_cases/configure-symbol-components";
 export {

@@ -1,25 +1,25 @@
 "use client";
 
 import {
-  symbolCategorySchema,
-  type SymbolCategory,
+  symbolTechnicalKindSchema,
   type SymbolLayoutUsage,
-  type SymbolPanelCategory,
   type SymbolPanelMountingType,
+  type SymbolTechnicalKind,
   type SymbolPanelWiringAssetType
 } from "@/features/symbol_registry/data/schema";
+import type { SymbolCategoryRecord } from "@/features/symbol_categories/api/public";
 
 export type SymbolMetadataFormState = {
   symbolKey: string;
   displayName: string;
   manufacturer: string;
   model: string;
-  category: SymbolCategory;
+  categoryId: string;
+  technicalKind: SymbolTechnicalKind;
   layoutUsage: SymbolLayoutUsage;
   physicalWidthMm: string;
   physicalHeightMm: string;
   mountingType: SymbolPanelMountingType | "";
-  panelCategory: SymbolPanelCategory | "";
   resizable: boolean;
   panelWiringEnabled: boolean;
   panelWiringAssetType: SymbolPanelWiringAssetType;
@@ -34,10 +34,12 @@ function optionLabel(value: string): string {
     .join(" ");
 }
 
-const categoryOptions: Array<{ value: SymbolCategory; label: string }> =
-  symbolCategorySchema.options.map((value) => ({
+const technicalKindOptions: Array<{
+  value: SymbolTechnicalKind;
+  label: string;
+}> = symbolTechnicalKindSchema.options.map((value) => ({
     value,
-    label: optionLabel(value)
+    label: value === "other" ? "Standard Equipment" : optionLabel(value)
   }));
 
 const panelWiringAssetTypeOptions: Array<{
@@ -54,6 +56,7 @@ const panelWiringAssetTypeOptions: Array<{
   { value: "isolator", label: "Isolator" },
   { value: "converter", label: "Converter" },
   { value: "io_module", label: "I/O Module" },
+  { value: "network_device", label: "Network Device" },
   { value: "earth_bar", label: "Earth Bar" },
   { value: "other", label: "Other" }
 ];
@@ -75,26 +78,14 @@ const mountingTypeOptions: Array<{
   { value: "free", label: "Free placement" }
 ];
 
-const panelCategoryOptions: Array<{
-  value: SymbolPanelCategory;
-  label: string;
-}> = [
-  { value: "protection", label: "Protection" },
-  { value: "termination", label: "Termination" },
-  { value: "controller", label: "Controller" },
-  { value: "power", label: "Power" },
-  { value: "ducting", label: "Ducting" },
-  { value: "rail", label: "Rail" },
-  { value: "label", label: "Label" },
-  { value: "other", label: "Other" }
-];
-
 export function SymbolMetadataForm({
   form,
+  categories,
   disabled,
   onChange
 }: {
   form: SymbolMetadataFormState;
+  categories: SymbolCategoryRecord[];
   disabled: boolean;
   onChange: (updates: Partial<SymbolMetadataFormState>) => void;
 }) {
@@ -135,15 +126,15 @@ export function SymbolMetadataForm({
           <select
             id="category"
             className="field-input"
-            value={form.category}
+            value={form.categoryId}
             disabled={disabled}
             onChange={(event) =>
-              onChange({ category: event.currentTarget.value as SymbolCategory })
+              onChange({ categoryId: event.currentTarget.value })
             }
           >
-            {categoryOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
               </option>
             ))}
           </select>
@@ -172,7 +163,39 @@ export function SymbolMetadataForm({
             onChange={(event) => onChange({ model: event.currentTarget.value })}
           />
         </div>
-        {form.category !== "network_device" ? (
+        <div className="border-t border-slate-200 pt-4 sm:col-span-2">
+          <h3 className="text-xs font-bold uppercase text-slate-500">
+            Advanced technical function
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Technical function controls capabilities such as networking and
+            terminal-block behavior. It does not organize the library.
+          </p>
+        </div>
+        <div className="sm:col-span-2">
+          <label className="field-label" htmlFor="technical-kind">
+            Symbol function
+          </label>
+          <select
+            id="technical-kind"
+            className="field-input"
+            value={form.technicalKind}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange({
+                technicalKind:
+                  event.currentTarget.value as SymbolTechnicalKind
+              })
+            }
+          >
+            {technicalKindOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        {form.technicalKind !== "network_device" ? (
           <>
         <div className="border-t border-slate-200 pt-4 sm:col-span-2">
           <h3 className="text-xs font-bold uppercase text-slate-500">
@@ -258,29 +281,6 @@ export function SymbolMetadataForm({
               onChange({ physicalHeightMm: event.currentTarget.value })
             }
           />
-        </div>
-        <div>
-          <label className="field-label" htmlFor="panel-category">
-            Panel category
-          </label>
-          <select
-            id="panel-category"
-            className="field-input"
-            value={form.panelCategory}
-            disabled={disabled || form.layoutUsage === "wiring"}
-            onChange={(event) =>
-              onChange({
-                panelCategory: event.currentTarget.value as SymbolPanelCategory
-              })
-            }
-          >
-            <option value="">Select category</option>
-            {panelCategoryOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
         </div>
         <label className="flex items-center gap-2 self-end rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
           <input

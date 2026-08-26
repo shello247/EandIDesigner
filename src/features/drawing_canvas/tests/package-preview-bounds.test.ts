@@ -67,7 +67,7 @@ describe("package preview mounting bounds", () => {
           drawingTitle: "Bounded Preview",
           symbols: [],
           onExitPreview: () => undefined,
-          onPreviewPdf: () => undefined
+          previewPdfHref: "/drawings/test/pdf"
         })
       );
     });

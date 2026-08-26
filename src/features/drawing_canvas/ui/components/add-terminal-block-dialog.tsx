@@ -2,18 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { Hash, Link2, PackagePlus, X } from "lucide-react";
-import type {
-  DrawingModel,
-  DrawingSheetCanvasModel
-} from "../../data/schema";
+import type { DrawingModel } from "../../data/schema";
 import {
   buildTerminalBlockAssetCatalog,
   TERMINAL_BLOCK_TAG_PREFIX
 } from "../../logic/services/drawing-terminal-blocks";
-import {
-  getPanelEnclosureTitle,
-  getVisibleSheetContainers
-} from "../../logic/services/drawing-asset-containment";
 import {
   allocateNextTagFromPrefix,
   createDrawingAssetId
@@ -29,7 +22,6 @@ export type AddTerminalBlockSubmission = {
   assetId: string;
   tag: string;
   terminalBlock: TerminalBlockPlacement;
-  containerAssetId?: string;
 };
 
 type AddMode = "create" | "reference";
@@ -48,12 +40,10 @@ function sheetReferenceSummary(
 
 export function AddTerminalBlockDialog({
   model,
-  activeSheetModel,
   onCancel,
   onPlace
 }: {
   model: DrawingModel;
-  activeSheetModel: DrawingSheetCanvasModel;
   onCancel: () => void;
   onPlace: (submission: AddTerminalBlockSubmission) => void;
 }) {
@@ -62,10 +52,6 @@ export function AddTerminalBlockDialog({
   const existingTerminalBlocks = useMemo(
     () => buildTerminalBlockAssetCatalog(model),
     [model]
-  );
-  const visibleContainers = useMemo(
-    () => getVisibleSheetContainers(activeSheetModel),
-    [activeSheetModel]
   );
   const [mode, setMode] = useState<AddMode>("create");
   const tag = useMemo(
@@ -78,7 +64,6 @@ export function AddTerminalBlockDialog({
   );
   const [count, setCount] = useState(DEFAULT_TERMINAL_BLOCK_COUNT);
   const startNumber = DEFAULT_TERMINAL_BLOCK_START_NUMBER;
-  const [containerAssetId, setContainerAssetId] = useState("");
   const [selectedAssetId, setSelectedAssetId] = useState(
     existingTerminalBlocks[0]?.assetId ?? ""
   );
@@ -106,8 +91,7 @@ export function AddTerminalBlockDialog({
       onPlace({
         assetId: selectedTerminalBlock.assetId,
         tag: selectedTerminalBlock.tag,
-        terminalBlock: selectedTerminalBlock.config,
-        containerAssetId: containerAssetId || undefined
+        terminalBlock: selectedTerminalBlock.config
       });
       return;
     }
@@ -124,8 +108,7 @@ export function AddTerminalBlockDialog({
         count,
         startNumber,
         orientation: "horizontal"
-      }),
-      containerAssetId: containerAssetId || undefined
+      })
     });
   };
 
@@ -263,25 +246,6 @@ export function AddTerminalBlockDialog({
             {displayConfig.startNumber} -{" "}
             {displayConfig.startNumber + displayConfig.count - 1} (
             {displayConfig.count} total)
-          </div>
-
-          <div>
-            <label className="field-label" htmlFor="terminal-block-container">
-              Contained in panel
-            </label>
-            <select
-              id="terminal-block-container"
-              className="field-input"
-              value={containerAssetId}
-              onChange={(event) => setContainerAssetId(event.currentTarget.value)}
-            >
-              <option value="">No panel</option>
-              {visibleContainers.map((container) => (
-                <option key={container.assetId} value={container.assetId}>
-                  {container.placement.tag} / {getPanelEnclosureTitle(container.placement)}
-                </option>
-              ))}
-            </select>
           </div>
 
           {mode === "reference" ? (

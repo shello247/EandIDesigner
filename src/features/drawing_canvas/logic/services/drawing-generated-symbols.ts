@@ -7,8 +7,13 @@ import {
 } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-layout";
 import { renderTerminalBlockSvg } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-renderer";
 import { resolveTerminalBlockModuleForDefinition } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
-import type { DrawingPlacement } from "../../data/schema";
+import type { DrawingAssetRecord, DrawingPlacement } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
+import {
+  composeTerminalStripGeometry,
+  projectStructuredTerminalStripTerminals,
+  renderStructuredTerminalStripSvg
+} from "@/features/drawing_terminal_blocks/api/public";
 import {
   createGeneratedBackplaneLibrarySymbol,
   isBackplanePlacement
@@ -30,6 +35,122 @@ import {
 
 export function packageSymbolKey(symbolId: string, versionId: string): string {
   return `${symbolId}:${versionId}`;
+}
+
+export function structuredTerminalStripSymbolId(assetId: string): string {
+  return `__generated_structured_terminal_strip__:${assetId}`;
+}
+
+export function structuredTerminalStripVersionId(assetId: string): string {
+  return `generated_structured_terminal_strip_v1:${assetId}`;
+}
+
+export function isGeneratedStructuredTerminalStripPlacement(
+  placement: DrawingPlacement | undefined,
+  assets: DrawingAssetRecord[] = []
+): boolean {
+  if (!placement?.assetId) {
+    return false;
+  }
+  const asset = assets.find((candidate) => candidate.id === placement.assetId);
+  return Boolean(
+    asset?.terminalStrip &&
+      placement.symbolId === structuredTerminalStripSymbolId(asset.id) &&
+      placement.versionId === structuredTerminalStripVersionId(asset.id)
+  );
+}
+
+export function createGeneratedStructuredTerminalStripSymbol(
+  placement: DrawingPlacement | undefined,
+  symbols: ApprovedDrawingSymbol[],
+  assets: DrawingAssetRecord[] = []
+): ApprovedDrawingSymbol | undefined {
+  if (!placement?.assetId) {
+    return undefined;
+  }
+  const asset = assets.find((candidate) => candidate.id === placement.assetId);
+  if (!asset?.terminalStrip || !isGeneratedStructuredTerminalStripPlacement(placement, assets)) {
+    return undefined;
+  }
+  const projection = projectStructuredTerminalStripTerminals(
+    asset.terminalStrip,
+    symbols
+  );
+  const geometry = composeTerminalStripGeometry(asset.terminalStrip, symbols);
+
+  return {
+    symbolId: structuredTerminalStripSymbolId(asset.id),
+    symbolKey: `structured_terminal_strip_${asset.id}`,
+    displayName: asset.title,
+    category: "terminal_block",
+    technicalKind: "terminal_block",
+    versionId: structuredTerminalStripVersionId(asset.id),
+    versionNumber: 1,
+    svg: renderStructuredTerminalStripSvg(asset.terminalStrip, symbols),
+    metadata: {
+      symbolKey: `structured_terminal_strip_${asset.id}`,
+      displayName: asset.title,
+      description: asset.description,
+      category: "terminal_block",
+      layoutUsage: "both",
+      physicalWidthMm: geometry.widthMm,
+      physicalHeightMm: geometry.heightMm,
+      mountingType: "din_rail",
+      viewBox: {
+        x: 0,
+        y: 0,
+        width: geometry.widthMm,
+        height: geometry.heightMm
+      },
+      terminals: projection.terminals,
+      anchors: projection.anchors,
+      electricalTopology: projection.electricalTopology,
+      panelWiring: {
+        assetType: "terminal_block",
+        tagPrefix: "TB",
+        schematicScale: 1
+      }
+    }
+  };
+}
+
+export function buildRenderableDrawingSymbols({
+  placements,
+  approvedSymbols,
+  assets = []
+}: {
+  placements: DrawingPlacement[];
+  approvedSymbols: ApprovedDrawingSymbol[];
+  assets?: DrawingAssetRecord[];
+}): ApprovedDrawingSymbol[] {
+  const renderableSymbols = [...approvedSymbols];
+  const symbolKeys = new Set(
+    approvedSymbols.map((symbol) =>
+      packageSymbolKey(symbol.symbolId, symbol.versionId)
+    )
+  );
+
+  for (const placement of placements) {
+    const generated = createGeneratedStructuredTerminalStripSymbol(
+      placement,
+      approvedSymbols,
+      assets
+    );
+
+    if (!generated) {
+      continue;
+    }
+
+    const key = packageSymbolKey(generated.symbolId, generated.versionId);
+    if (symbolKeys.has(key)) {
+      continue;
+    }
+
+    symbolKeys.add(key);
+    renderableSymbols.push(generated);
+  }
+
+  return renderableSymbols;
 }
 
 export function isGeneratedTerminalBlockPlacement(
@@ -69,7 +190,7 @@ export function createGeneratedTerminalBlockSymbol(
       module: resolvedModule,
       instanceId: placement.id
     }),
-    metadata: terminalBlockMetadata(terminalBlock)
+    metadata: terminalBlockMetadata(terminalBlock, resolvedModule)
   };
 }
 
@@ -102,13 +223,15 @@ export function createGeneratedLayoutDimensionSymbol(
 
 export function getRenderableSymbolForPlacement(
   placement: DrawingPlacement | undefined,
-  symbols: ApprovedDrawingSymbol[]
+  symbols: ApprovedDrawingSymbol[],
+  assets: DrawingAssetRecord[] = []
 ): ApprovedDrawingSymbol | undefined {
   if (!placement) {
     return undefined;
   }
 
   return (
+    createGeneratedStructuredTerminalStripSymbol(placement, symbols, assets) ??
     createGeneratedTerminalBlockSymbol(placement, symbols) ??
     createGeneratedBackplaneSymbol(placement) ??
     createGeneratedWireTraySymbol(placement) ??

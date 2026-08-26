@@ -1,5 +1,6 @@
 import type {
-  PanelConnectionPatternRecord
+  PanelConnectionPatternRecord,
+  PanelInternalWireRecord
 } from "@/features/drawing_panel_wiring/api/public";
 import type {
   DrawingConnection,
@@ -8,10 +9,7 @@ import type {
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import { expandedOrthogonalPoints } from "./connection-route-geometry";
-import {
-  getRenderableConnectionRoute,
-  routeLabelBox
-} from "./connection-route-renderer";
+import { getRenderableConnectionRoute } from "./connection-route-renderer";
 
 export type PanelPatternVisualStyle = {
   stroke: string;
@@ -92,7 +90,7 @@ export function getPanelPatternRouteLabel({
   wire
 }: {
   pattern: PanelConnectionPatternRecord;
-  wire?: { id: string; wireId: string };
+  wire?: Pick<PanelInternalWireRecord, "id" | "wireId" | "wireNumber">;
 }): string {
   return (
     wire?.wireId ??
@@ -144,7 +142,7 @@ export function renderPanelConnectionPatternSvg({
   symbols: ApprovedDrawingSymbol[];
   connection: DrawingConnection;
   pattern: PanelConnectionPatternRecord;
-  wire?: { id: string; wireId: string };
+  wire?: Pick<PanelInternalWireRecord, "id" | "wireId" | "wireNumber">;
   escapeXml: (value: string) => string;
 }): string {
   const label = getPanelPatternRouteLabel({ pattern, wire });
@@ -156,13 +154,11 @@ export function renderPanelConnectionPatternSvg({
   if (!rendered) return "";
   const style = getPanelConnectionPatternStyle(pattern);
   const points = expandedOrthogonalPoints(rendered.route);
-  const box = routeLabelBox(label, rendered.labelPoint);
   return `
     <g data-connection-id="${escapeXml(connection.id)}" data-panel-pattern-id="${escapeXml(pattern.record.id)}" data-panel-pattern-segment-id="${escapeXml(connection.panelPatternSegmentId ?? "")}"${wire ? ` data-panel-wire-id="${escapeXml(wire.id)}"` : ""} data-route-style="panel-pattern">
       <path d="${rendered.pathData}" fill="none" stroke="${style.stroke}" stroke-width="${style.strokeWidth}"${style.dashArray ? ` stroke-dasharray="${style.dashArray}"` : ""} stroke-linecap="${style.lineCap}" stroke-linejoin="round"/>
       ${markerSvg(style.marker, points, style.stroke)}
-      <rect x="${format(box.x)}" y="${format(box.y)}" width="${format(box.width)}" height="${format(box.height)}" rx=".8" fill="white" opacity=".88"/>
-      <text x="${format(rendered.labelPoint.x)}" y="${format(rendered.labelPoint.y)}" font-family="Inter, Arial, sans-serif" font-size="2.45" font-weight="600" text-anchor="${rendered.labelPoint.anchor}" fill="#334155">${escapeXml(label)}</text>
+      <text data-connection-label="${escapeXml(connection.id)}" x="${format(rendered.labelPoint.x)}" y="${format(rendered.labelPoint.y)}" font-family="Inter, Arial, sans-serif" font-size="2.45" font-weight="600" text-anchor="${rendered.labelPoint.anchor}" fill="#334155">${escapeXml(label)}</text>
     </g>
   `;
 }

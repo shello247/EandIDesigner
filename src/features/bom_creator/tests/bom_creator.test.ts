@@ -466,6 +466,77 @@ describe("bom creator", () => {
     ).toHaveLength(2);
   });
 
+  it("expands structured terminal-strip members once under the parent tag", () => {
+    const base = createDefaultDrawingModel();
+    const members = ["M01", "M02"].map((token, index) => ({
+      id: `member_${index + 1}`,
+      token,
+      symbolId: cableSymbol.symbolId,
+      versionId: cableSymbol.versionId,
+      role: "electrical" as const,
+      designation: String(index + 1)
+    }));
+    const model: DrawingModel = {
+      ...base,
+      assets: [
+        {
+          id: "asset_tb_101",
+          tag: "TB-101",
+          type: "terminal_block",
+          title: "Structured terminal strip",
+          symbolId: "__generated_structured_terminal_strip__:asset_tb_101",
+          versionId: "generated_structured_terminal_strip_v1:asset_tb_101",
+          terminalStrip: {
+            kind: "structured_terminal_strip",
+            nextMemberNumber: 3,
+            members
+          }
+        }
+      ],
+      sheets: [
+        {
+          ...base.sheets[0],
+          placements: [
+            {
+              id: "placement_tb_101",
+              assetId: "asset_tb_101",
+              symbolId: "__generated_structured_terminal_strip__:asset_tb_101",
+              versionId: "generated_structured_terminal_strip_v1:asset_tb_101",
+              role: "terminal_block",
+              tag: "TB-101",
+              title: "Structured terminal strip",
+              x: 20,
+              y: 20,
+              rotation: 0,
+              scale: 1
+            }
+          ]
+        }
+      ]
+    };
+    const bom = generateDrawingBom({
+      drawingId: "drawing_1",
+      drawingTitle: "Tank Wiring",
+      model,
+      symbols: [cableSymbol],
+      templates: [cableTemplate()]
+    });
+    const assembly = bom.assemblies.find(
+      (candidate) => candidate.assetTag === "TB-101"
+    );
+
+    expect(assembly?.lines).toHaveLength(10);
+    expect(assembly?.lines[0].componentPath).toEqual(["M01", "1"]);
+    expect(assembly?.lines[5].componentPath).toEqual(["M02", "2"]);
+    expect(
+      bom.consolidatedLines.find((line) => line.itemId === cableItem.id)
+        ?.quantity
+    ).toBe(2);
+    expect(
+      bom.warnings.some((entry) => entry.code === "generated_symbol")
+    ).toBe(false);
+  });
+
   it("warns for missing templates, generated symbols, manual quantities, and archived items", () => {
     const bom = generateDrawingBom({
       drawingId: "drawing_1",

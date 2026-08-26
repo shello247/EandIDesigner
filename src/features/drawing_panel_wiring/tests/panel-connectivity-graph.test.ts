@@ -164,6 +164,7 @@ describe("drawing panel wiring connectivity graph", () => {
     expect(snapshot.bonds.map((bond) => bond.id)).toEqual(["bond_1"]);
     expect(snapshot.findings.map((finding) => finding.code).sort()).toEqual([
       "legacy_bond_definition",
+      "legacy_internal_wire_identity",
       "legacy_pattern_definition"
     ]);
   });

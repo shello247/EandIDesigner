@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   SvgCoordinateStage,
+  type SvgCoordinateStageFitMode,
   useSvgCoordinateStageGeometry
 } from "@/shared/svg/svg-coordinate-stage";
 import {
   findNearestAnchorInScreenSpace,
+  getAdaptiveSvgMarkerDiameterPx,
   isUsableSvgViewBox,
   SVG_ANCHOR_SELECTION_RADIUS_PX,
   SVG_MARKER_DIAMETER_PX,
@@ -27,6 +29,7 @@ import {
   findComponentPositionHotspot,
   getComponentPositionHotspots
 } from "@/features/symbol_components/ui/components/component-position-overlay";
+import styles from "./symbol-detail-workspace.module.css";
 
 type SymbolHotspot =
   | {
@@ -201,11 +204,13 @@ export function SvgPreviewPanel({
   svg,
   title = "SVG preview",
   metadata,
+  fitMode = "width",
   componentAlternativeNames = {}
 }: {
   svg: string;
   title?: string;
   metadata?: SymbolMetadata;
+  fitMode?: SvgCoordinateStageFitMode;
   componentAlternativeNames?: Record<string, string>;
 }) {
   const [hoveredHotspotId, setHoveredHotspotId] = useState<string | null>(null);
@@ -219,14 +224,31 @@ export function SvgPreviewPanel({
   const viewBox = metadata?.viewBox;
 
   if (!metadata || !viewBox || !isUsableSvgViewBox(viewBox)) {
+    const fitContainer = fitMode === "container";
+
     return (
-      <section className="tool-panel overflow-hidden">
+      <section
+        className={[
+          "tool-panel overflow-hidden",
+          fitContainer ? styles.previewPanelContainer : ""
+        ].join(" ")}
+      >
         <div className="border-b border-slate-200 px-4 py-3">
           <h2 className="text-sm font-bold">{title}</h2>
         </div>
-        <div className="flex min-h-[320px] items-center justify-center overflow-auto bg-white p-5">
+        <div
+          className={[
+            "flex min-h-[320px] items-center justify-center bg-white p-5",
+            fitContainer
+              ? styles.previewViewportContainer
+              : "overflow-auto"
+          ].join(" ")}
+        >
           <div
-            className="svg-preview-fallback flex max-h-[620px] w-full max-w-[620px] items-center justify-center"
+            className={[
+              "svg-preview-fallback flex max-h-[620px] w-full max-w-[620px] items-center justify-center",
+              fitContainer ? styles.fallbackFit : ""
+            ].join(" ")}
             dangerouslySetInnerHTML={{ __html: svg }}
           />
         </div>
@@ -244,6 +266,7 @@ export function SvgPreviewPanel({
       hoveredHotspotId={hoveredHotspotId}
       pinnedHotspotId={pinnedHotspotId}
       focusedHotspotId={focusedHotspotId}
+      fitMode={fitMode}
       setHoveredHotspotId={setHoveredHotspotId}
       setPinnedHotspotId={setPinnedHotspotId}
       setFocusedHotspotId={setFocusedHotspotId}
@@ -261,6 +284,7 @@ function SvgPreviewPanelWithMetadata({
   hoveredHotspotId,
   pinnedHotspotId,
   focusedHotspotId,
+  fitMode,
   setHoveredHotspotId,
   setPinnedHotspotId,
   setFocusedHotspotId,
@@ -274,6 +298,7 @@ function SvgPreviewPanelWithMetadata({
   hoveredHotspotId: string | null;
   pinnedHotspotId: string | null;
   focusedHotspotId: string | null;
+  fitMode: SvgCoordinateStageFitMode;
   setHoveredHotspotId: (id: string | null) => void;
   setPinnedHotspotId: (
     value: string | null | ((current: string | null) => string | null)
@@ -292,6 +317,33 @@ function SvgPreviewPanelWithMetadata({
         hotspot
       })),
     [hotspots]
+  );
+  const markerGeometryByHotspotId = useMemo(
+    () =>
+      new Map(
+        hotspotPoints.map((point, index) => {
+          const diameterPx = getAdaptiveSvgMarkerDiameterPx(
+            hotspotPoints,
+            index,
+            pixelsPerUserUnit
+          );
+
+          return [
+            point.hotspot.id,
+            {
+              radius: svgUserUnitsForPixels(
+                diameterPx / 2,
+                pixelsPerUserUnit
+              ),
+              strokeWidth: svgUserUnitsForPixels(
+                Math.min(SVG_MARKER_STROKE_PX, diameterPx / 6),
+                pixelsPerUserUnit
+              )
+            }
+          ] as const;
+        })
+      ),
+    [hotspotPoints, pixelsPerUserUnit]
   );
   const findNearestHotspot = useCallback(
     (clientX: number, clientY: number) => {
@@ -336,11 +388,7 @@ function SvgPreviewPanelWithMetadata({
     hotspots.find((hotspot) => hotspot.id === tooltipHotspotId) ?? null;
   const activeComponentHotspot =
     componentHotspots.find((hotspot) => hotspot.id === tooltipHotspotId) ?? null;
-  const hotspotRadius = svgUserUnitsForPixels(
-    SVG_MARKER_DIAMETER_PX / 2,
-    pixelsPerUserUnit
-  );
-  const markerStrokeWidth = svgUserUnitsForPixels(
+  const componentStrokeWidth = svgUserUnitsForPixels(
     SVG_MARKER_STROKE_PX,
     pixelsPerUserUnit
   );
@@ -378,14 +426,27 @@ function SvgPreviewPanelWithMetadata({
   }, [pinnedHotspotId, setPinnedHotspotId]);
 
   return (
-    <section className="tool-panel overflow-hidden">
+    <section
+      className={[
+        "tool-panel overflow-hidden",
+        fitMode === "container" ? styles.previewPanelContainer : ""
+      ].join(" ")}
+    >
       <div className="border-b border-slate-200 px-4 py-3">
         <h2 className="text-sm font-bold">{title}</h2>
       </div>
-      <div className="flex min-h-[320px] items-center justify-center overflow-auto bg-white p-5">
+      <div
+        className={[
+          "flex min-h-[320px] items-center justify-center bg-white p-5",
+          fitMode === "container"
+            ? styles.previewViewportContainer
+            : "overflow-auto"
+        ].join(" ")}
+      >
         <SvgCoordinateStage
           svg={svg}
           viewBox={viewBox}
+          fitMode={fitMode}
           overlayRef={overlayRef}
           overlayLabel={
             metadata.category === "network_device"
@@ -429,7 +490,7 @@ function SvgPreviewPanelWithMetadata({
                   hotspots={componentHotspots}
                   activeId={activeMarkerId}
                   pinnedId={pinnedHotspotId}
-                  strokeWidth={markerStrokeWidth}
+                  strokeWidth={componentStrokeWidth}
                   cornerRadius={componentCornerRadius}
                   dashLength={componentDashLength}
                   dashGap={componentDashGap}
@@ -441,6 +502,17 @@ function SvgPreviewPanelWithMetadata({
                 {hotspots.map((hotspot) => {
                   const isActive = hotspot.id === activeMarkerId;
                   const key = hotspotKey(hotspot);
+                  const markerGeometry = markerGeometryByHotspotId.get(
+                    hotspot.id
+                  );
+                  const hotspotRadius =
+                    markerGeometry?.radius ??
+                    svgUserUnitsForPixels(
+                      SVG_MARKER_DIAMETER_PX / 2,
+                      pixelsPerUserUnit
+                    );
+                  const markerStrokeWidth =
+                    markerGeometry?.strokeWidth ?? componentStrokeWidth;
 
                   return (
                     <g key={hotspot.id}>

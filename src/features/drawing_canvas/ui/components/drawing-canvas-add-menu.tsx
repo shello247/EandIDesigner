@@ -1,17 +1,33 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { ChevronDown, Hash, PackagePlus, Plus } from "lucide-react";
+import {
+  ChevronDown,
+  Copy,
+  Hash,
+  PackagePlus,
+  Plus,
+  StickyNote,
+  Table2
+} from "lucide-react";
 
 export function DrawingCanvasAddMenu({
   onAddPanel,
   onAddTerminalBlock,
-  onAddSheet,
+  onCopyTerminalBlock,
+  onAddNote,
+  onAddConnectedWireSchedule,
+  canAddConnectedWireSchedule,
+  disabled = false,
   showDrawingItems = true
 }: {
   onAddPanel: () => void;
   onAddTerminalBlock: () => void;
-  onAddSheet: () => void;
+  onCopyTerminalBlock: () => void;
+  onAddNote: () => void;
+  onAddConnectedWireSchedule: () => void;
+  canAddConnectedWireSchedule: boolean;
+  disabled?: boolean;
   showDrawingItems?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -61,6 +77,7 @@ export function DrawingCanvasAddMenu({
       <button
         type="button"
         className="drawing-canvas-add-menu-trigger"
+        disabled={disabled}
         aria-label="Add to drawing"
         aria-expanded={isOpen}
         aria-controls={menuId}
@@ -103,9 +120,23 @@ export function DrawingCanvasAddMenu({
         >
           <Hash aria-hidden="true" size={15} />
           <span>
-            <span className="block font-semibold">Terminal block</span>
+            <span className="block font-semibold">Terminal Strip</span>
             <span className="block text-[10px] font-medium text-slate-500">
-              Add a modular TB strip
+              Build a mixed structured terminal strip
+            </span>
+          </span>
+        </button> : null}
+        {showDrawingItems ? <button
+          type="button"
+          className="drawing-canvas-add-menu-item"
+          role="menuitem"
+          onClick={() => runAction(onCopyTerminalBlock)}
+        >
+          <Copy aria-hidden="true" size={15} />
+          <span>
+            <span className="block font-semibold">Copy Existing Terminal Strip</span>
+            <span className="block text-[10px] font-medium text-slate-500">
+              Create independent equipment from an existing strip
             </span>
           </span>
         </button> : null}
@@ -113,13 +144,35 @@ export function DrawingCanvasAddMenu({
           type="button"
           className="drawing-canvas-add-menu-item"
           role="menuitem"
-          onClick={() => runAction(onAddSheet)}
+          onClick={() => runAction(onAddNote)}
         >
-          <Plus aria-hidden="true" size={15} />
+          <StickyNote aria-hidden="true" size={15} />
           <span>
-            <span className="block font-semibold">Sheet</span>
+            <span className="block font-semibold">Note</span>
             <span className="block text-[10px] font-medium text-slate-500">
-              Add drawing, section, or panel page
+              Add a drawing annotation
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className="drawing-canvas-add-menu-item disabled:cursor-not-allowed disabled:opacity-50"
+          role="menuitem"
+          disabled={!canAddConnectedWireSchedule}
+          title={
+            canAddConnectedWireSchedule
+              ? "Add a schedule for the selected equipment"
+              : "Select one managed electrical symbol first"
+          }
+          onClick={() => runAction(onAddConnectedWireSchedule)}
+        >
+          <Table2 aria-hidden="true" size={15} />
+          <span>
+            <span className="block font-semibold">Connected Wire Schedule</span>
+            <span className="block text-[10px] font-medium text-slate-500">
+              {canAddConnectedWireSchedule
+                ? "List canonical wires for the selected equipment"
+                : "Select one electrical symbol first"}
             </span>
           </span>
         </button>

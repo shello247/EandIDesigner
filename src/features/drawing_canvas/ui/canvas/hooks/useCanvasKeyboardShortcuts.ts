@@ -16,12 +16,15 @@ export function useCanvasKeyboardShortcuts({
   selection,
   canDeleteSelectedRoutePoint,
   hasSelectedConnection,
+  guidedConnectionDraftActive,
+  hasGuidedConnectionWaypoints,
   onConnectionCancel,
   onGestureCancel,
   onClearSelection,
   onCopySelection,
   onDeleteSelectedRoutePoint,
   onDeleteSelectedConnection,
+  onRemoveLastConnectionWaypoint,
   onDeleteSelection,
   onNudgeSelected,
   onPasteSelection,
@@ -32,12 +35,15 @@ export function useCanvasKeyboardShortcuts({
   selection: DrawingCanvasSelection;
   canDeleteSelectedRoutePoint: boolean;
   hasSelectedConnection: boolean;
+  guidedConnectionDraftActive: boolean;
+  hasGuidedConnectionWaypoints: boolean;
   onConnectionCancel: () => void;
   onGestureCancel: () => void;
   onClearSelection: () => void;
   onCopySelection: () => void;
   onDeleteSelectedRoutePoint: () => void;
   onDeleteSelectedConnection: () => void;
+  onRemoveLastConnectionWaypoint: () => void;
   onDeleteSelection: () => void;
   onNudgeSelected: (direction: "up" | "down" | "left" | "right") => void;
   onPasteSelection: () => void;
@@ -110,6 +116,18 @@ export function useCanvasKeyboardShortcuts({
       }
 
       if (
+        connectionMode === "connecting" &&
+        guidedConnectionDraftActive &&
+        event.key === "Backspace"
+      ) {
+        event.preventDefault();
+        if (hasGuidedConnectionWaypoints) {
+          onRemoveLastConnectionWaypoint();
+        }
+        return;
+      }
+
+      if (
         canDeleteSelectedRoutePoint &&
         (event.key === "Delete" || event.key === "Backspace")
       ) {
@@ -138,6 +156,8 @@ export function useCanvasKeyboardShortcuts({
     [
       canDeleteSelectedRoutePoint,
       connectionMode,
+      guidedConnectionDraftActive,
+      hasGuidedConnectionWaypoints,
       hasSelectedConnection,
       onClearSelection,
       onConnectionCancel,
@@ -149,6 +169,7 @@ export function useCanvasKeyboardShortcuts({
       onNudgeSelected,
       onPasteSelection,
       onRedo,
+      onRemoveLastConnectionWaypoint,
       onUndo,
       selection.annotationIds.length,
       selection.placementIds.length

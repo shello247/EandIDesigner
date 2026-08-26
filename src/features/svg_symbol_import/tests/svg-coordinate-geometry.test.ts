@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   clampPointToViewBox,
   findNearestAnchorInScreenSpace,
+  getAdaptiveSvgMarkerDiameterPx,
+  getContainedSvgStageDimensions,
   getMaximumSvgStageDimensions,
   getRenderedPixelsPerUserUnit,
   getResponsiveSvgStageDimensions,
@@ -46,6 +48,63 @@ describe("SVG coordinate-stage geometry", () => {
     );
   });
 
+  it.each([
+    [
+      "portrait",
+      { x: 0, y: 0, width: 169, height: 511 },
+      { width: 500, height: 360 },
+      (360 * 169) / 511,
+      360
+    ],
+    [
+      "landscape",
+      { x: 0, y: 0, width: 160, height: 100 },
+      { width: 320, height: 500 },
+      320,
+      200
+    ],
+    [
+      "square",
+      { x: 0, y: 0, width: 100, height: 100 },
+      { width: 900, height: 900 },
+      620,
+      620
+    ],
+    [
+      "non-zero origin",
+      { x: -30, y: 45, width: 200, height: 100 },
+      { width: 250, height: 90 },
+      180,
+      90
+    ]
+  ] as const)(
+    "fits the %s viewBox inside both container dimensions",
+    (_name, viewBox, available, expectedWidth, expectedHeight) => {
+      const dimensions = getContainedSvgStageDimensions(viewBox, available);
+
+      expect(dimensions.width).toBeCloseTo(expectedWidth);
+      expect(dimensions.height).toBeCloseTo(expectedHeight);
+      expect(dimensions.width).toBeLessThanOrEqual(available.width);
+      expect(dimensions.height).toBeLessThanOrEqual(available.height);
+      expect(dimensions.width).toBeLessThanOrEqual(620);
+      expect(dimensions.height).toBeLessThanOrEqual(620);
+    }
+  );
+
+  it("rejects invalid container sizes", () => {
+    const viewBox = { x: 0, y: 0, width: 42, height: 143 };
+
+    expect(
+      getContainedSvgStageDimensions(viewBox, { width: 0, height: 300 })
+    ).toEqual({ width: 0, height: 0 });
+    expect(
+      getContainedSvgStageDimensions(viewBox, {
+        width: Number.NaN,
+        height: 300
+      })
+    ).toEqual({ width: 0, height: 0 });
+  });
+
   it("rejects malformed legacy viewBoxes so callers can use the fallback renderer", () => {
     expect(
       isUsableSvgViewBox({ x: Number.NaN, y: 0, width: 42, height: 143 })
@@ -71,6 +130,33 @@ describe("SVG coordinate-stage geometry", () => {
       expect(radiusInUserUnits * 2 * scale).toBeCloseTo(18);
     }
   );
+
+  it("retains the preferred marker diameter for normally spaced anchors", () => {
+    const anchors = [
+      { x: 10, y: 10 },
+      { x: 30, y: 10 }
+    ];
+
+    expect(getAdaptiveSvgMarkerDiameterPx(anchors, 0, 2)).toBe(18);
+  });
+
+  it("shrinks dense cable markers to preserve visible separation", () => {
+    const anchors = Array.from({ length: 13 }, (_, index) => ({
+      x: 20 + index * 4,
+      y: 10
+    }));
+
+    expect(getAdaptiveSvgMarkerDiameterPx(anchors, 6, 2)).toBeCloseTo(5.6);
+  });
+
+  it("keeps coincident marker geometry visible at the minimum diameter", () => {
+    const anchors = [
+      { x: 10, y: 10 },
+      { x: 10, y: 10 }
+    ];
+
+    expect(getAdaptiveSvgMarkerDiameterPx(anchors, 0, 4)).toBe(5);
+  });
 });
 
 describe("nearest SVG anchor selection", () => {

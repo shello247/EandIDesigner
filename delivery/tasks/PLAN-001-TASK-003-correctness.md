@@ -1,0 +1,34 @@
+# PLAN-001-TASK-003 — Drawing correctness baseline
+
+PlanId: PLAN-001
+TaskId: PLAN-001-TASK-003
+Priority: P1
+Status: complete (evidence and limitations recorded)
+Test impact: none — audit existing behaviour; record results, not product fixes
+
+## Done when
+
+- [x] Run focused drawing unit and active-workflow browser tests; preserve failures.
+- [x] Evidence includes source fingerprint, fixture, command, environment and limitations.
+- [x] No product optimization or canonical-data mutation occurred.
+
+## Execution
+
+1. Verify isolation and source identity.
+2. Execute this work package from the approved plan in serial batches.
+3. Preserve measurements and failures under the run artifact directory.
+4. Record conclusions and verification in the task report.
+
+## Files expected
+
+- scripts/drawing-performance-audit/
+- delivery/reports/PLAN-001-TASK-003-correctness.md
+- artifacts/drawing-performance/20260826-baseline/
+
+## Verification
+
+Source fingerprint check, workload-specific test/harness output and engineering-identity checks as applicable.
+
+## Report
+
+delivery/reports/PLAN-001-TASK-003-correctness.md

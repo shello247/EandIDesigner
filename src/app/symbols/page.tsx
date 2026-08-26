@@ -1,12 +1,17 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
+import { listSymbolCategories } from "@/features/symbol_categories/data/queries";
+import { SymbolCategoryManager } from "@/features/symbol_categories/ui/components/symbol-category-manager";
 import { listSymbols } from "@/features/symbol_registry/data/queries";
 import { SymbolTable } from "@/features/symbol_registry/ui/components/symbol-table";
 
 export const dynamic = "force-dynamic";
 
 export default async function SymbolsPage() {
-  const symbols = await listSymbols();
+  const [symbols, categories] = await Promise.all([
+    listSymbols(),
+    listSymbolCategories()
+  ]);
 
   return (
     <div className="space-y-5">
@@ -18,13 +23,19 @@ export default async function SymbolsPage() {
             future engineering drawing generation.
           </p>
         </div>
-        <Link href="/symbols/new" className="icon-button icon-button-primary">
-          <Plus aria-hidden="true" size={18} />
-          Create symbol
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <SymbolCategoryManager initialCategories={categories} />
+          <Link href="/symbols/new" className="icon-button icon-button-primary">
+            <Plus aria-hidden="true" size={18} />
+            Create symbol
+          </Link>
+        </div>
       </div>
 
-      <SymbolTable symbols={symbols} />
+      <SymbolTable
+        categories={categories.map(({ id, name }) => ({ id, name }))}
+        symbols={symbols}
+      />
     </div>
   );
 }

@@ -25,6 +25,79 @@ export type TerminalBlockTerminal = {
   bottomAnchorKey: string;
 };
 
+export type TerminalBlockModuleAnchorGeometry = {
+  viewBox: SymbolMetadata["viewBox"];
+  terminalAnchors: SymbolAnchor[];
+};
+
+function resolveModuleTerminalPoints(
+  normalized: TerminalBlockPlacement,
+  module: TerminalBlockModuleAnchorGeometry | undefined
+): {
+  top: { x: number; y: number };
+  bottom: { x: number; y: number };
+} {
+  if (
+    !module ||
+    module.viewBox.width <= 0 ||
+    module.viewBox.height <= 0
+  ) {
+    return {
+      top: { x: normalized.moduleWidth / 2, y: 1 },
+      bottom: {
+        x: normalized.moduleWidth / 2,
+        y: normalized.moduleHeight - 1
+      }
+    };
+  }
+
+  const ordered = module.terminalAnchors
+    .filter(
+      (anchor) =>
+        anchor.kind === "terminal" &&
+        Number.isFinite(anchor.x) &&
+        Number.isFinite(anchor.y)
+    )
+    .map((anchor, index) => ({ anchor, index }))
+    .sort(
+      (left, right) =>
+        left.anchor.y - right.anchor.y || left.index - right.index
+    );
+
+  const top = ordered[0]?.anchor;
+  const bottom = ordered.at(-1)?.anchor;
+
+  if (!top || !bottom || top === bottom) {
+    return {
+      top: { x: normalized.moduleWidth / 2, y: 1 },
+      bottom: {
+        x: normalized.moduleWidth / 2,
+        y: normalized.moduleHeight - 1
+      }
+    };
+  }
+
+  const scalePoint = (point: SymbolAnchor) => ({
+    x: Number(
+      (
+        ((point.x - module.viewBox.x) / module.viewBox.width) *
+        normalized.moduleWidth
+      ).toFixed(4)
+    ),
+    y: Number(
+      (
+        ((point.y - module.viewBox.y) / module.viewBox.height) *
+        normalized.moduleHeight
+      ).toFixed(4)
+    )
+  });
+
+  return {
+    top: scalePoint(top),
+    bottom: scalePoint(bottom)
+  };
+}
+
 export function isGeneratedTerminalBlockReference(input: {
   symbolId: string;
   versionId: string;
@@ -106,24 +179,26 @@ export function terminalBlockTerminals(
 }
 
 export function terminalBlockAnchors(
-  config: TerminalBlockPlacement
+  config: TerminalBlockPlacement,
+  module?: TerminalBlockModuleAnchorGeometry
 ): SymbolAnchor[] {
   const normalized = normalizeTerminalBlockPlacement(config);
+  const terminalPoints = resolveModuleTerminalPoints(normalized, module);
 
   return terminalBlockTerminals(normalized).flatMap((terminal, index) => {
-    const x = index * normalized.modulePitch + normalized.moduleWidth / 2;
+    const moduleX = index * normalized.modulePitch;
 
     return [
       {
         key: terminal.topAnchorKey,
-        x,
-        y: 1,
+        x: moduleX + terminalPoints.top.x,
+        y: terminalPoints.top.y,
         kind: "terminal" as const
       },
       {
         key: terminal.bottomAnchorKey,
-        x,
-        y: normalized.moduleHeight - 1,
+        x: moduleX + terminalPoints.bottom.x,
+        y: terminalPoints.bottom.y,
         kind: "terminal" as const
       }
     ];
@@ -154,7 +229,8 @@ export function terminalBlockSymbolTerminals(
 }
 
 export function terminalBlockMetadata(
-  config: TerminalBlockPlacement
+  config: TerminalBlockPlacement,
+  module?: TerminalBlockModuleAnchorGeometry
 ): SymbolMetadata {
   const normalized = normalizeTerminalBlockPlacement(config);
   const physicalWidth = normalized.moduleTemplate
@@ -172,7 +248,7 @@ export function terminalBlockMetadata(
     panelCategory: normalized.moduleTemplate ? "termination" : undefined,
     resizable: false,
     viewBox: terminalBlockViewBox(normalized),
-    anchors: terminalBlockAnchors(normalized),
+    anchors: terminalBlockAnchors(normalized, module),
     terminals: terminalBlockSymbolTerminals(normalized)
   };
 }

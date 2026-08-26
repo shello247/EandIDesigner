@@ -17,10 +17,15 @@ import {
 import { moveLayoutHelperByDisplayDelta } from "./drawing-backplane-scale";
 import { containedPlacementIdsForPanels } from "./drawing-asset-containment";
 import {
+  getParentPanelForBackplane,
+  resolveBackplaneLayoutScale
+} from "./drawing-backplane-scale";
+import {
   isLayoutDimensionPlacement,
   moveLayoutDimensionByDisplayDelta
 } from "./drawing-layout-dimensions";
 import type { DrawingCanvasSelection } from "./drawing-selection";
+import { isConnectedWireScheduleAnnotation } from "@/features/drawing_connected_wire_schedule/api/public";
 
 type Point = { x: number; y: number };
 
@@ -45,7 +50,10 @@ export function movePlacementWithAttachedLabel(
     y: round(placement.y + delta.y),
     labelPosition: placement.labelPosition
       ? translatePoint(placement.labelPosition, delta)
-      : placement.labelPosition
+      : placement.labelPosition,
+    deviceTitlePosition: placement.deviceTitlePosition
+      ? translatePoint(placement.deviceTitlePosition, delta)
+      : placement.deviceTitlePosition
   };
 }
 
@@ -79,6 +87,10 @@ function moveAnnotation(
     translatePoint(annotation, delta),
     sheet
   );
+
+  if (isConnectedWireScheduleAnnotation(annotation)) {
+    return { ...annotation, ...position };
+  }
 
   return {
     ...annotation,
@@ -142,7 +154,7 @@ function clampRoutePointToSheet(
   };
 }
 
-function moveConnectionRouteWithinSheet(
+export function moveConnectionRouteWithinSheet(
   route: DrawingConnectionRoute,
   delta: Point,
   sheet: DrawingSheetCanvasModel["sheet"]
@@ -220,6 +232,44 @@ export function moveCanvasSelection({
         isLayoutHelperPlacement(placement) && placement.layoutParentId
           ? placementById.get(placement.layoutParentId)
           : undefined;
+      const parentPanel = parentBackplane
+        ? getParentPanelForBackplane(model.placements, parentBackplane)
+        : isBackplanePlacement(placement)
+          ? getParentPanelForBackplane(model.placements, placement)
+          : undefined;
+
+      if (
+        isBackplanePlacement(placement) &&
+        parentPanel &&
+        explicitPlacementIds.has(placement.id) &&
+        !explicitPlacementIds.has(parentPanel.id)
+      ) {
+        const scale = resolveBackplaneLayoutScale(
+          model.sheet,
+          placement,
+          parentPanel
+        );
+        const layoutPosition = placement.layoutPosition ?? {
+          xMm: placement.x - parentPanel.x,
+          yMm: placement.y - parentPanel.y
+        };
+        const moved = movePlacementWithAttachedLabel(
+          placement,
+          constrainedDelta
+        );
+
+        return {
+          ...moved,
+          layoutPosition: {
+            xMm: round(
+              layoutPosition.xMm + constrainedDelta.x / scale.factor
+            ),
+            yMm: round(
+              layoutPosition.yMm + constrainedDelta.y / scale.factor
+            )
+          }
+        };
+      }
 
       if (
         parentBackplane &&
@@ -241,7 +291,8 @@ export function moveCanvasSelection({
           sheet: model.sheet,
           placement,
           backplane: parentBackplane,
-          delta: constrainedDelta
+          delta: constrainedDelta,
+          parentPanel
         });
       }
 

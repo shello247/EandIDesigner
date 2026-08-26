@@ -18,6 +18,12 @@ import {
 } from "../../api/panel-wiring-contracts";
 import { toSheetCanvasModel } from "./drawing-sheet-commands";
 import { generateDefaultOrthogonalRoute } from "../services/connection-route-geometry";
+import { buildRenderableDrawingSymbols } from "../services/drawing-generated-symbols";
+import {
+  buildGuidedConnectionRoute,
+  type GuidedConnectionWaypoint
+} from "../services/guided-connection-routing";
+import type { WireSpecificationSnapshot } from "@/features/wire_catalog/api/public";
 
 export type PanelWireOccurrenceEndpoint = {
   terminal: PanelTerminalSideRef;
@@ -86,12 +92,14 @@ export function buildPanelWireRoute({
   model,
   symbols,
   sheetId,
-  wire
+  wire,
+  routeWaypoints
 }: {
   model: DrawingModel;
   symbols: ApprovedDrawingSymbol[];
   sheetId: string;
   wire: PanelInternalWireRecord;
+  routeWaypoints?: GuidedConnectionWaypoint[];
 }): DrawingConnection {
   if (wire.ownerPatternId) {
     throw new Error("Represent this wire through its owning connection pattern.");
@@ -111,12 +119,30 @@ export function buildPanelWireRoute({
     to: { placementId: to.placementId, anchorKey: to.anchorKey },
     panelConnectionId: wire.id
   };
-  const route = generateDefaultOrthogonalRoute({
-    model: toSheetCanvasModel(model, sheetId),
-    symbols,
-    connection,
-    mode: "auto"
+  const canvasModel = toSheetCanvasModel(model, sheetId);
+  const renderableSymbols = buildRenderableDrawingSymbols({
+    placements: canvasModel.placements,
+    approvedSymbols: symbols,
+    assets: model.assets
   });
+  const route = routeWaypoints
+    ? buildGuidedConnectionRoute({
+        model: canvasModel,
+        symbols: renderableSymbols,
+        connection,
+        waypoints: routeWaypoints
+      })
+    : generateDefaultOrthogonalRoute({
+        model: canvasModel,
+        symbols: renderableSymbols,
+        connection,
+        mode: "auto"
+      });
+  if (routeWaypoints && !route) {
+    throw new Error(
+      "The guided route cannot be completed inside the printable sheet. Adjust a bend and try again."
+    );
+  }
   return route ? { ...connection, route } : connection;
 }
 
@@ -138,7 +164,9 @@ export function createInternalPanelWireRoute({
   from,
   to,
   wireId,
-  attributes
+  specification,
+  attributes,
+  routeWaypoints
 }: {
   model: DrawingModel;
   symbols: ApprovedDrawingSymbol[];
@@ -146,7 +174,9 @@ export function createInternalPanelWireRoute({
   from: PanelTerminalSideRef;
   to: PanelTerminalSideRef;
   wireId?: string;
+  specification?: WireSpecificationSnapshot;
   attributes?: PanelWireAttributes;
+  routeWaypoints?: GuidedConnectionWaypoint[];
 }): { model: DrawingModel; wire: PanelInternalWireRecord; connection: DrawingConnection } {
   const sheet = detailedSheet(model, sheetId);
   const result = createInternalPanelWire(createPanelWiringSource(model, symbols), {
@@ -154,13 +184,20 @@ export function createInternalPanelWireRoute({
     from,
     to,
     wireId,
+    specification,
     attributes
   });
   if (!result.wire || result.warnings.some((finding) => finding.severity === "error")) {
     throw new Error(result.warnings[0]?.message ?? "The internal wire is invalid.");
   }
   const withWire = applyPanelWiringMutations(model, result.mutations);
-  const connection = buildPanelWireRoute({ model: withWire, symbols, sheetId, wire: result.wire });
+  const connection = buildPanelWireRoute({
+    model: withWire,
+    symbols,
+    sheetId,
+    wire: result.wire,
+    routeWaypoints
+  });
   return { model: addRoute(withWire, sheetId, connection), wire: result.wire, connection };
 }
 
@@ -186,15 +223,22 @@ export function updateInternalPanelWireCommand({
   symbols,
   id,
   wireId,
+  specification,
   attributes
 }: {
   model: DrawingModel;
   symbols: ApprovedDrawingSymbol[];
   id: string;
-  wireId: string;
+  wireId?: string;
+  specification?: WireSpecificationSnapshot;
   attributes?: PanelWireAttributes;
 }): DrawingModel {
-  const result = updateInternalPanelWire(createPanelWiringSource(model, symbols), { id, wireId, attributes });
+  const result = updateInternalPanelWire(createPanelWiringSource(model, symbols), {
+    id,
+    wireId,
+    specification,
+    attributes
+  });
   return applyPanelWiringMutations(model, result.mutations);
 }
 

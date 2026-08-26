@@ -1,4 +1,8 @@
-import type { SymbolCategory, SymbolMetadata } from "@/features/symbol_registry/data/schema";
+import type {
+  SymbolMetadata,
+  SymbolTechnicalKind
+} from "@/features/symbol_registry/data/schema";
+import type { SymbolCategorySummary } from "@/features/symbol_categories/api/public";
 import type { DrawingModel, DrawingStatus } from "../data/schema";
 import type { PackagePanelDrawingQualityReport } from "@/features/drawing_panel_wiring/api/contracts";
 
@@ -8,7 +12,10 @@ export type ApprovedDrawingSymbol = {
   displayName: string;
   manufacturer?: string | null;
   model?: string | null;
-  category: SymbolCategory;
+  /** @deprecated Technical compatibility field; use managedCategory for grouping. */
+  category: SymbolTechnicalKind;
+  technicalKind?: SymbolTechnicalKind;
+  managedCategory?: SymbolCategorySummary;
   versionId: string;
   versionNumber: number;
   svg: string;
@@ -18,12 +25,9 @@ export type ApprovedDrawingSymbol = {
 
 export type DrawingListItem = {
   id: string;
-  drawingKey: string;
   title: string;
   status: DrawingStatus;
   sheetCount: number;
-  placementCount: number;
-  connectionCount: number;
   updatedAt: string;
 };
 

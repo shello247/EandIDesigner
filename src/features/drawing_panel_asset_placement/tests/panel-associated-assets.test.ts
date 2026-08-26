@@ -7,7 +7,12 @@ import {
 } from "@/features/drawing_canvas/data/schema";
 import { createPanelEnclosurePlacement } from "@/features/drawing_canvas/logic/services/drawing-asset-containment";
 import { createBackplanePlacement } from "@/features/drawing_canvas/logic/services/drawing-backplane-layouts";
+import {
+  structuredTerminalStripSymbolId,
+  structuredTerminalStripVersionId
+} from "@/features/drawing_canvas/logic/services/drawing-generated-symbols";
 import { getBackplaneDisplayUsableBounds } from "@/features/drawing_canvas/logic/services/drawing-backplane-scale";
+import { createPanelConnectionView } from "@/features/drawing_canvas/logic/services/drawing-panel-connection-views";
 import { buildManagedAssetCatalog } from "@/features/drawing_asset_manager/logic/use_cases/drawing-asset-manager-use-cases";
 import { getComponentCompositionBounds } from "@/features/symbol_components/api/public";
 import {
@@ -18,6 +23,7 @@ import type { ApprovedDrawingSymbol } from "@/features/drawing_canvas/types";
 import {
   buildAssociatedPanelAssetCatalog,
   placeAssociatedPanelAssetOnBackplane,
+  placeAssociatedPanelAssetOnConnectionView,
   removePanelAssetLayoutOccurrence
 } from "../logic/services/panel-associated-assets";
 
@@ -40,6 +46,25 @@ const terminalBlockLayoutSymbol: ApprovedDrawingSymbol = {
     physicalWidthMm: 5.2,
     physicalHeightMm: 50,
     viewBox: { x: 0, y: 0, width: 20, height: 178 },
+    anchors: [],
+    terminals: []
+  }
+};
+
+const wiringOnlySymbol: ApprovedDrawingSymbol = {
+  symbolId: "sym_wiring_only",
+  symbolKey: "wiring_only",
+  displayName: "Wiring-only Device",
+  category: "other",
+  versionId: "sym_wiring_only_v1",
+  versionNumber: 1,
+  svg: '<svg viewBox="0 0 80 40" xmlns="http://www.w3.org/2000/svg"><rect width="80" height="40"/></svg>',
+  metadata: {
+    symbolKey: "wiring_only",
+    displayName: "Wiring-only Device",
+    category: "other",
+    layoutUsage: "wiring",
+    viewBox: { x: 0, y: 0, width: 80, height: 40 },
     anchors: [],
     terminals: []
   }
@@ -220,6 +245,126 @@ function modelWithJbTerminalAssets(): {
 }
 
 describe("associated panel assets", () => {
+  it("offers and places a structured terminal strip from its physical panel occurrence", () => {
+    const fixture = modelWithJbTerminalAssets();
+    const sourceLayout = fixture.model.sheets.find(
+      (sheet) => sheet.id === "sheet_layout"
+    )!;
+    const targetSheet = {
+      ...sourceLayout,
+      id: "sheet_connection",
+      name: "Panel Connection",
+      placements: sourceLayout.placements.filter(
+        (placement) => placement.role === "enclosure"
+      )
+    };
+    const targetPanel = targetSheet.placements[0];
+    const targetBackplane = createBackplanePlacement({
+      panelPlacement: targetPanel,
+      sheet: {
+        ...targetSheet.page,
+        titleBlock: fixture.model.titleBlock
+      },
+      id: "connection_backplane"
+    });
+    const stripAsset: DrawingAssetRecord = {
+      id: "asset_tb_101",
+      tag: "TB-101",
+      type: "terminal_block",
+      title: "PLC Terminal Strip",
+      symbolId: structuredTerminalStripSymbolId("asset_tb_101"),
+      versionId: structuredTerminalStripVersionId("asset_tb_101"),
+      terminalStrip: {
+        kind: "structured_terminal_strip",
+        nextMemberNumber: 2,
+        members: [
+          {
+            id: "member_1",
+            token: "M01",
+            symbolId: terminalBlockLayoutSymbol.symbolId,
+            versionId: terminalBlockLayoutSymbol.versionId,
+            role: "electrical",
+            designation: "1"
+          }
+        ]
+      }
+    };
+    const stripSource: DrawingPlacement = {
+      id: "strip_source",
+      assetId: stripAsset.id,
+      containerAssetId: "asset_jb_001",
+      layoutParentId: fixture.backplaneId,
+      layoutKind: "layout_helper",
+      layoutPosition: { xMm: 12, yMm: 20 },
+      layoutDimensions: { lengthMm: 5.2, widthMm: 50 },
+      symbolId: stripAsset.symbolId,
+      versionId: stripAsset.versionId,
+      role: "terminal_block",
+      tag: stripAsset.tag,
+      title: stripAsset.title,
+      x: 30,
+      y: 40,
+      rotation: 0,
+      scale: 1
+    };
+    const terminalMemberSymbol: ApprovedDrawingSymbol = {
+      ...terminalBlockLayoutSymbol,
+      metadata: {
+        ...terminalBlockLayoutSymbol.metadata,
+        terminalStripCapability: {
+          role: "electrical",
+          railDatumMm: 25
+        }
+      }
+    };
+    const model: DrawingModel = {
+      ...fixture.model,
+      assets: [...fixture.model.assets, stripAsset],
+      sheets: [
+        ...fixture.model.sheets.map((sheet) =>
+          sheet.id === sourceLayout.id
+            ? { ...sheet, placements: [...sheet.placements, stripSource] }
+            : sheet
+        ),
+        { ...targetSheet, placements: [targetPanel, targetBackplane] }
+      ]
+    };
+    const catalog = buildAssociatedPanelAssetCatalog(
+      model,
+      [terminalMemberSymbol],
+      "asset_jb_001",
+      targetBackplane.id
+    );
+
+    expect(catalog.find((item) => item.assetId === stripAsset.id)).toMatchObject({
+      tag: "TB-101",
+      type: "terminal_block",
+      status: "available"
+    });
+
+    const placed = placeAssociatedPanelAssetOnBackplane({
+      model,
+      sheetId: targetSheet.id,
+      backplaneId: targetBackplane.id,
+      assetId: stripAsset.id,
+      symbols: [terminalMemberSymbol],
+      placementId: "strip_reference"
+    });
+
+    expect(placed.placement).toMatchObject({
+      id: "strip_reference",
+      assetId: stripAsset.id,
+      containerAssetId: "asset_jb_001",
+      layoutParentId: targetBackplane.id,
+      layoutKind: "layout_helper",
+      symbolId: structuredTerminalStripSymbolId(stripAsset.id),
+      versionId: structuredTerminalStripVersionId(stripAsset.id),
+      tag: "TB-101",
+      layoutDimensions: { lengthMm: 5.2, widthMm: 50 }
+    });
+    expect(placed.model.assets).toHaveLength(model.assets.length);
+  });
+
   it("lists existing terminal blocks associated with a junction box", () => {
     const { model, backplaneId } = modelWithJbTerminalAssets();
     const catalog = buildAssociatedPanelAssetCatalog(
@@ -460,5 +605,121 @@ describe("associated panel assets", () => {
       "JB001 Panel Layout"
     ]);
     expect(rail).toBeUndefined();
+  });
+
+  it("places associated assets as schematic occurrences inside a connection view", () => {
+    const fixture = modelWithJbTerminalAssets();
+    const targetSheet = fixture.model.sheets.find(
+      (sheet) => sheet.id === "sheet_wiring"
+    )!;
+    const view = createPanelConnectionView({
+      model: fixture.model,
+      activeSheet: targetSheet,
+      assetId: "asset_jb_001",
+      tag: "JB001",
+      title: "Junction Box 1",
+      sourceBackplanePlacementId: fixture.backplaneId,
+      preferredPosition: { x: 20, y: 20 }
+    });
+    const withView: DrawingModel = {
+      ...fixture.model,
+      sheets: fixture.model.sheets.map((sheet) =>
+        sheet.id === targetSheet.id
+          ? { ...sheet, placements: [...sheet.placements, view] }
+          : sheet
+      )
+    };
+    const result = placeAssociatedPanelAssetOnConnectionView({
+      model: withView,
+      sheetId: targetSheet.id,
+      connectionViewId: view.id,
+      assetId: "asset_tb_104",
+      symbols: [terminalBlockLayoutSymbol],
+      placementId: "schematic_tb_104"
+    });
+
+    expect(result.placement).toMatchObject({
+      id: "schematic_tb_104",
+      assetId: "asset_tb_104",
+      containerAssetId: "asset_jb_001",
+      layoutParentId: view.id,
+      role: "terminal_block"
+    });
+    expect(result.placement.layoutKind).toBeUndefined();
+    expect(result.placement.layoutDimensions).toBeUndefined();
+    expect(result.placement.layoutPosition).toBeUndefined();
+    expect(result.placement.scale).toBeGreaterThan(0);
+  });
+
+  it("accepts a wiring-only symbol in a schematic connection view", () => {
+    const fixture = modelWithJbTerminalAssets();
+    const targetSheet = fixture.model.sheets.find(
+      (sheet) => sheet.id === "sheet_wiring"
+    )!;
+    const wiringAsset: DrawingAssetRecord = {
+      id: "asset_wiring_only",
+      tag: "W-101",
+      type: "other",
+      title: "Wiring-only Device",
+      symbolId: wiringOnlySymbol.symbolId,
+      versionId: wiringOnlySymbol.versionId
+    };
+    const sourcePlacement: DrawingPlacement = {
+      id: "wiring_only_source",
+      assetId: wiringAsset.id,
+      containerAssetId: "asset_jb_001",
+      symbolId: wiringOnlySymbol.symbolId,
+      versionId: wiringOnlySymbol.versionId,
+      role: "device",
+      tag: wiringAsset.tag,
+      title: wiringAsset.title,
+      x: 20,
+      y: 20,
+      rotation: 0,
+      scale: 1
+    };
+    const withSource: DrawingModel = {
+      ...fixture.model,
+      assets: [...fixture.model.assets, wiringAsset],
+      sheets: fixture.model.sheets.map((sheet) =>
+        sheet.id === targetSheet.id
+          ? { ...sheet, placements: [...sheet.placements, sourcePlacement] }
+          : sheet
+      )
+    };
+    const view = createPanelConnectionView({
+      model: withSource,
+      activeSheet: targetSheet,
+      assetId: "asset_jb_001",
+      tag: "JB001",
+      title: "Junction Box 1",
+      sourceBackplanePlacementId: fixture.backplaneId
+    });
+    const withView: DrawingModel = {
+      ...withSource,
+      sheets: withSource.sheets.map((sheet) =>
+        sheet.id === targetSheet.id
+          ? { ...sheet, placements: [...sheet.placements, view] }
+          : sheet
+      )
+    };
+
+    const result = placeAssociatedPanelAssetOnConnectionView({
+      model: withView,
+      sheetId: targetSheet.id,
+      connectionViewId: view.id,
+      assetId: wiringAsset.id,
+      symbols: [terminalBlockLayoutSymbol, wiringOnlySymbol],
+      placementId: "schematic_wiring_only"
+    });
+
+    expect(result.placement).toMatchObject({
+      id: "schematic_wiring_only",
+      assetId: wiringAsset.id,
+      symbolId: wiringOnlySymbol.symbolId,
+      versionId: wiringOnlySymbol.versionId,
+      layoutParentId: view.id
+    });
+    expect(result.placement.layoutDimensions).toBeUndefined();
   });
 });

@@ -6,6 +6,25 @@ export type WorldPoint = {
   y: number;
 };
 
+export type PlacementBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type RotatedPlacementBounds = PlacementBounds & {
+  right: number;
+  bottom: number;
+  centerX: number;
+  centerY: number;
+};
+
+function round(value: number): number {
+  const rounded = Number(value.toFixed(2));
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
 export function getPlacementScaleFactors(
   placement: DrawingPlacement,
   metadata: SymbolMetadata
@@ -69,11 +88,52 @@ export function getAnchorWorldPoint(
 export function getPlacementBounds(
   placement: DrawingPlacement,
   metadata: SymbolMetadata
-) {
+): PlacementBounds {
   return {
     x: placement.x,
     y: placement.y,
     width: metadata.viewBox.width * getPlacementScaleFactors(placement, metadata).x,
     height: metadata.viewBox.height * getPlacementScaleFactors(placement, metadata).y
+  };
+}
+
+export function getRotatedPlacementBounds(
+  placement: DrawingPlacement,
+  metadata: SymbolMetadata
+): RotatedPlacementBounds {
+  const bounds = getPlacementBounds(placement, metadata);
+  const radians = (placement.rotation * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const centerX = bounds.x + bounds.width / 2;
+  const centerY = bounds.y + bounds.height / 2;
+  const corners = [
+    { x: bounds.x, y: bounds.y },
+    { x: bounds.x + bounds.width, y: bounds.y },
+    { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
+    { x: bounds.x, y: bounds.y + bounds.height }
+  ].map((corner) => {
+    const dx = corner.x - centerX;
+    const dy = corner.y - centerY;
+
+    return {
+      x: centerX + dx * cos - dy * sin,
+      y: centerY + dx * sin + dy * cos
+    };
+  });
+  const left = Math.min(...corners.map((corner) => corner.x));
+  const top = Math.min(...corners.map((corner) => corner.y));
+  const right = Math.max(...corners.map((corner) => corner.x));
+  const bottom = Math.max(...corners.map((corner) => corner.y));
+
+  return {
+    x: round(left),
+    y: round(top),
+    width: round(right - left),
+    height: round(bottom - top),
+    right: round(right),
+    bottom: round(bottom),
+    centerX: round((left + right) / 2),
+    centerY: round((top + bottom) / 2)
   };
 }

@@ -38,6 +38,7 @@ export type ResolvedTerminalBlockModule = {
   displayName: string;
   svg: string;
   viewBox: SymbolMetadata["viewBox"];
+  terminalAnchors: SymbolMetadata["anchors"];
   pitchMm: number;
   heightMm: number;
   source: "configured" | "legacy_default";
@@ -61,8 +62,8 @@ function hasPhysicalModuleSize(
   };
 } {
   return Boolean(
-    symbol.metadata.category === "terminal_block" &&
-      symbol.metadata.panelCategory === "termination" &&
+    (symbol.metadata.category === "terminal_block" ||
+      symbol.metadata.terminalBlockModule?.kind === "feed_through") &&
       typeof symbol.metadata.physicalWidthMm === "number" &&
       symbol.metadata.physicalWidthMm > 0 &&
       typeof symbol.metadata.physicalHeightMm === "number" &&
@@ -91,6 +92,9 @@ function resolvedModule(
     displayName: symbol.displayName,
     svg: symbol.svg,
     viewBox: symbol.metadata.viewBox,
+    terminalAnchors: symbol.metadata.anchors.filter(
+      (anchor) => anchor.kind === "terminal"
+    ),
     pitchMm: symbol.metadata.physicalWidthMm!,
     heightMm: symbol.metadata.physicalHeightMm!,
     source

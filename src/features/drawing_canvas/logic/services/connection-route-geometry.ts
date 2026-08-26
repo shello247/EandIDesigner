@@ -19,8 +19,10 @@ import {
 } from "./drawing-backplane-layouts";
 import {
   getBackplaneDisplayBounds,
+  getParentPanelForBackplane,
   resolveLayoutHelperDisplayPlacement
 } from "./drawing-backplane-scale";
+import { insertRouteControlPointOnSegment } from "./connection-route-alignment";
 
 export type RouteSegment = {
   from: DrawingRoutePoint;
@@ -38,10 +40,11 @@ export type PlacementObstacle = {
 const DEFAULT_STUB_LENGTH = 12;
 const OBSTACLE_CLEARANCE = 4;
 const PARALLEL_ROUTE_SPACING = 3.2;
+const ROUTE_CONTROL_POINT_SHEET_INSET = 2.5;
 
-type EndpointSide = "top" | "right" | "bottom" | "left";
+export type EndpointSide = "top" | "right" | "bottom" | "left";
 
-type EndpointContext = {
+export type EndpointRoutingContext = {
   point: { x: number; y: number };
   side: EndpointSide;
   isCableEndpoint: boolean;
@@ -64,7 +67,11 @@ function resolvePlacementForRouting(
     ? resolveLayoutHelperDisplayPlacement({
         sheet: model.sheet,
         placement,
-        backplane: parentBackplane
+        backplane: parentBackplane,
+        parentPanel: getParentPanelForBackplane(
+          model.placements,
+          parentBackplane
+        )
       })
     : placement;
 }
@@ -122,11 +129,11 @@ export function getEndpointWorldPoint(
   );
 }
 
-function getEndpointContext(
+export function getEndpointRoutingContext(
   model: DrawingModel,
   symbols: ApprovedDrawingSymbol[],
   endpoint: DrawingEndpoint
-): EndpointContext | null {
+): EndpointRoutingContext | null {
   const resolved = getAnchorForEndpoint(model, symbols, endpoint);
 
   if (!resolved) {
@@ -163,7 +170,9 @@ function getEndpointContext(
   };
 }
 
-function stubFromEndpoint(context: EndpointContext): { x: number; y: number } {
+export function getEndpointStubPoint(
+  context: EndpointRoutingContext
+): { x: number; y: number } {
   const length = context.isCableEndpoint
     ? DEFAULT_STUB_LENGTH * 0.72
     : DEFAULT_STUB_LENGTH;
@@ -231,18 +240,100 @@ function offsetControlPoints(input: {
   });
 }
 
+function clampRouteControlCoordinate(value: number, maximum: number): number {
+  const inset = routeControlPointInset(maximum);
+  return Number(
+    Math.max(inset, Math.min(maximum - inset, value)).toFixed(2)
+  );
+}
+
+function routeControlPointInset(maximum: number): number {
+  return Math.min(ROUTE_CONTROL_POINT_SHEET_INSET, maximum / 2);
+}
+
+function routeControlPointIsOutsideSheet(
+  point: { x: number; y: number },
+  sheet: DrawingModel["sheet"]
+): boolean {
+  const xInset = routeControlPointInset(sheet.width);
+  const yInset = routeControlPointInset(sheet.height);
+  return (
+    point.x < xInset ||
+    point.x > sheet.width - xInset ||
+    point.y < yInset ||
+    point.y > sheet.height - yInset
+  );
+}
+
+export function hasConnectionRouteOutsideSheet(
+  route: DrawingConnectionRoute,
+  sheet: DrawingModel["sheet"]
+): boolean {
+  return (
+    route.points.some(
+      (point) =>
+        point.kind !== "endpoint" && routeControlPointIsOutsideSheet(point, sheet)
+    ) ||
+    Boolean(
+      route.labelPosition &&
+        (route.labelPosition.x < 0 ||
+          route.labelPosition.x > sheet.width ||
+          route.labelPosition.y < 0 ||
+          route.labelPosition.y > sheet.height)
+    )
+  );
+}
+
+export function bringConnectionRouteOntoSheet(input: {
+  route: DrawingConnectionRoute;
+  sheet: DrawingModel["sheet"];
+}): DrawingConnectionRoute {
+  const recoveredRoute: DrawingConnectionRoute = {
+    ...input.route,
+    points: input.route.points.map((point) =>
+      point.kind === "endpoint"
+        ? point
+        : {
+            ...point,
+            x: clampRouteControlCoordinate(point.x, input.sheet.width),
+            y: clampRouteControlCoordinate(point.y, input.sheet.height)
+          }
+    )
+  };
+
+  return input.route.labelPosition
+    ? {
+        ...recoveredRoute,
+        labelPosition: {
+          x: Number(
+            Math.max(
+              0,
+              Math.min(input.sheet.width, input.route.labelPosition.x)
+            ).toFixed(2)
+          ),
+          y: Number(
+            Math.max(
+              0,
+              Math.min(input.sheet.height, input.route.labelPosition.y)
+            ).toFixed(2)
+          )
+        }
+      }
+    : recoveredRoute;
+}
+
 export function generateDefaultOrthogonalRoute(input: {
   model: DrawingModel;
   symbols: ApprovedDrawingSymbol[];
   connection: DrawingConnection;
   mode?: "manual" | "auto";
 }): DrawingConnectionRoute | null {
-  const fromContext = getEndpointContext(
+  const fromContext = getEndpointRoutingContext(
     input.model,
     input.symbols,
     input.connection.from
   );
-  const toContext = getEndpointContext(
+  const toContext = getEndpointRoutingContext(
     input.model,
     input.symbols,
     input.connection.to
@@ -254,8 +345,8 @@ export function generateDefaultOrthogonalRoute(input: {
 
   const fromPoint = fromContext.point;
   const toPoint = toContext.point;
-  const fromStub = stubFromEndpoint(fromContext);
-  const toStub = stubFromEndpoint(toContext);
+  const fromStub = getEndpointStubPoint(fromContext);
+  const toStub = getEndpointStubPoint(toContext);
   const horizontalDominant =
     Math.abs(toPoint.x - fromPoint.x) >= Math.abs(toPoint.y - fromPoint.y);
   const midpointX = Number(((fromStub.x + toStub.x) / 2).toFixed(2));
@@ -285,11 +376,14 @@ export function generateDefaultOrthogonalRoute(input: {
     horizontalDominant
   });
 
-  return {
-    mode: input.mode ?? "auto",
-    style: "orthogonal",
-    points
-  };
+  return bringConnectionRouteOntoSheet({
+    route: {
+      mode: input.mode ?? "auto",
+      style: "orthogonal",
+      points
+    },
+    sheet: input.model.sheet
+  });
 }
 
 export function normalizeConnectionRoute(input: {
@@ -430,21 +524,7 @@ export function addRouteControlPoint(input: {
   point: { x: number; y: number };
   sheet: DrawingModel["sheet"];
 }): DrawingConnectionRoute {
-  const point: DrawingRoutePoint = {
-    id: routePointId(input.connectionId, `control_${Date.now()}`),
-    kind: "control",
-    x: Number(Math.max(0, Math.min(input.sheet.width, input.point.x)).toFixed(2)),
-    y: Number(Math.max(0, Math.min(input.sheet.height, input.point.y)).toFixed(2))
-  };
-  const endpoint = input.route.points.at(-1);
-
-  return {
-    ...input.route,
-    mode: "manual",
-    points: endpoint
-      ? [...input.route.points.slice(0, -1), point, endpoint]
-      : [...input.route.points, point]
-  };
+  return insertRouteControlPointOnSegment(input);
 }
 
 export function removeRouteControlPoint(
@@ -473,7 +553,11 @@ export function getPlacementObstacles(
 
     const routePlacement = resolvePlacementForRouting(model, placement);
     const bounds = isBackplanePlacement(placement)
-      ? getBackplaneDisplayBounds(model.sheet, placement)
+      ? getBackplaneDisplayBounds(
+          model.sheet,
+          placement,
+          getParentPanelForBackplane(model.placements, placement)
+        )
       : getPlacementBounds(routePlacement, symbol.metadata);
 
     return [

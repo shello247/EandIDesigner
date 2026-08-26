@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
   approvedNetworkVersionIdsSchema,
   parseMetadataJson,
-  symbolCategorySchema,
+  symbolTechnicalKindSchema,
   symbolStatusSchema,
   type ValidationIssue
 } from "./schema";
@@ -21,6 +21,19 @@ import type {
   SymbolListItem,
   SymbolVersionSummary
 } from "../types";
+import type { SymbolCategorySummary } from "@/features/symbol_categories/api/public";
+
+function requireManagedCategory(
+  category: { id: string; name: string } | null
+): SymbolCategorySummary {
+  if (!category) {
+    throw new Error(
+      "A symbol is missing its managed category. Run the database setup before continuing."
+    );
+  }
+
+  return category;
+}
 
 export const listSymbolIdentitiesByIds = cache(
   async (symbolIds: string[]): Promise<SymbolIdentity[]> => {
@@ -154,6 +167,9 @@ export const listSymbols = cache(async (): Promise<SymbolListItem[]> => {
       validationIssues: {
         where: { severity: "blocking" },
         select: { id: true, versionId: true }
+      },
+      managedCategory: {
+        select: { id: true, name: true }
       }
     },
     orderBy: { updatedAt: "desc" }
@@ -168,7 +184,8 @@ export const listSymbols = cache(async (): Promise<SymbolListItem[]> => {
       displayName: row.displayName,
       manufacturer: row.manufacturer,
       model: row.model,
-      category: symbolCategorySchema.parse(row.category),
+      category: requireManagedCategory(row.managedCategory),
+      technicalKind: symbolTechnicalKindSchema.parse(row.category),
       status: symbolStatusSchema.parse(row.status),
       latestVersionNumber: latestVersion?.versionNumber,
       blockingIssueCount: latestVersion
@@ -208,6 +225,9 @@ export const getSymbolDetail = cache(
             createdAt: true,
             updatedAt: true
           }
+        },
+        managedCategory: {
+          select: { id: true, name: true }
         }
       }
     });
@@ -226,7 +246,8 @@ export const getSymbolDetail = cache(
       displayName: row.displayName,
       manufacturer: row.manufacturer,
       model: row.model,
-      category: symbolCategorySchema.parse(row.category),
+      category: requireManagedCategory(row.managedCategory),
+      technicalKind: symbolTechnicalKindSchema.parse(row.category),
       status: symbolStatusSchema.parse(row.status),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
@@ -283,9 +304,12 @@ export async function listDrawingSymbolVersions(
         where: { status: "approved" },
         orderBy: { versionNumber: "desc" },
         take: 1
+      },
+      managedCategory: {
+        select: { id: true, name: true }
       }
     },
-    orderBy: [{ category: "asc" }, { displayName: "asc" }]
+    orderBy: [{ managedCategory: { name: "asc" } }, { displayName: "asc" }]
   });
 
   const selectableVersions = rows.flatMap((symbol) => {
@@ -302,7 +326,9 @@ export async function listDrawingSymbolVersions(
         displayName: symbol.displayName,
         manufacturer: symbol.manufacturer,
         model: symbol.model,
-        category: symbolCategorySchema.parse(symbol.category),
+        category: symbolTechnicalKindSchema.parse(symbol.category),
+        technicalKind: symbolTechnicalKindSchema.parse(symbol.category),
+        managedCategory: requireManagedCategory(symbol.managedCategory),
         versionId: version.id,
         versionNumber: version.versionNumber,
         svg: version.svg,
@@ -325,7 +351,15 @@ export async function listDrawingSymbolVersions(
             id: { in: pinnedIds },
             symbol: { category: { not: "network_device" } }
           },
-          include: { symbol: true }
+          include: {
+            symbol: {
+              include: {
+                managedCategory: {
+                  select: { id: true, name: true }
+                }
+              }
+            }
+          }
         });
 
   return [
@@ -336,7 +370,13 @@ export async function listDrawingSymbolVersions(
       displayName: version.symbol.displayName,
       manufacturer: version.symbol.manufacturer,
       model: version.symbol.model,
-      category: symbolCategorySchema.parse(version.symbol.category),
+      category: symbolTechnicalKindSchema.parse(version.symbol.category),
+      technicalKind: symbolTechnicalKindSchema.parse(
+        version.symbol.category
+      ),
+      managedCategory: requireManagedCategory(
+        version.symbol.managedCategory
+      ),
       versionId: version.id,
       versionNumber: version.versionNumber,
       svg: version.svg,

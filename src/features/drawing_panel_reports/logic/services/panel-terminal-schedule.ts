@@ -49,6 +49,7 @@ function enrichOccupant({
     kind: occupant.kind,
     channel: occupant.channel,
     label: occupant.label,
+    wireNumber: occupant.wireNumber,
     wireId: occupant.wireId,
     cableTag: occupant.cableTag,
     conductorKey: occupant.conductorKey,

@@ -1,8 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import {
-  createE2eNmt81ToNrf81Drawing,
-  deleteE2eDrawing
-} from "./drawing-fixtures";
+import { createE2eNmt81ToNrf81Drawing } from "./drawing-fixtures";
 
 test.describe.configure({ mode: "serial" });
 
@@ -11,6 +8,12 @@ async function addSymbolFromLibrary(
   categoryName: RegExp,
   symbolName: string
 ) {
+  const libraryToggle = page.getByRole("button", {
+    name: "Expand Symbol Library"
+  });
+  if (await libraryToggle.count()) {
+    await libraryToggle.click();
+  }
   const category = page.getByRole("button", { name: categoryName });
 
   if ((await category.getAttribute("aria-expanded")) !== "true") {
@@ -21,16 +24,33 @@ async function addSymbolFromLibrary(
 }
 
 async function addCableFromLibrary(page: Page) {
-  await addSymbolFromLibrary(page, /Cable Assemblies 1/, "CLX Cable 1 Pair");
+  await addSymbolFromLibrary(page, /Cable Assembly 1/, "CLX Cable 1 Pair");
 }
 
 async function activateSheet(page: Page, sheetName: string) {
   await page.getByRole("button", { name: "Open sheet loader" }).click();
   const dialog = page.getByRole("dialog", { name: "Sheet Loader" });
+  const expandSection = dialog.getByRole("button", { name: /^Expand / }).first();
+  if (await expandSection.count()) {
+    await expandSection.click();
+  }
   const row = dialog
     .getByRole("cell", { name: sheetName, exact: true })
     .locator("..");
   await row.getByRole("button", { name: "Load", exact: true }).click();
+}
+
+async function addNoteFromCanvas(page: Page) {
+  await page.getByRole("button", { name: "Add to drawing" }).click();
+  await page.getByRole("menuitem", { name: /Note/ }).click();
+}
+
+async function expandInspectorSection(page: Page, name: RegExp) {
+  const section = page.getByRole("button", { name });
+  await expect(section).toBeVisible();
+  if ((await section.getAttribute("aria-expanded")) !== "true") {
+    await section.click();
+  }
 }
 
 test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", async ({
@@ -47,22 +67,120 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(
     page.getByRole("heading", { name: "NMT81 to NRF81 Wiring" })
   ).toBeVisible();
-  await expect(page.getByTestId("drawing-connection-card")).toHaveCount(4);
-  await expect(page.getByTestId("drawing-connection-group")).toHaveCount(2);
-  await expect(page.getByText("TT-101 ↔ C-101")).toBeVisible();
-  await expect(page.getByText("C-101 ↔ TSM-101")).toBeVisible();
-  await expect(page.getByRole("button", { name: /C-101-BLK/ })).toHaveCount(0);
-  await page.getByRole("button", { name: "TT-101 ↔ C-101" }).click();
-  await expect(page.getByRole("button", { name: /C-101-BLK/ })).toBeVisible();
-  await page.getByRole("button", { name: "TT-101 ↔ C-101" }).click();
-  await expect(page.getByRole("button", { name: /C-101-BLK/ })).toHaveCount(0);
+  await expect(
+    page.getByRole("group", { name: "Drawing measurement units" })
+  ).toHaveCount(0);
+  await page
+    .locator(
+      'svg[aria-label="Interactive drawing overlay"] rect[data-placement-id="nmt81"]'
+    )
+    .click({ force: true });
+  const assetIdentitySection = page.getByRole("button", {
+    name: /Asset Identity/
+  });
+  await expect(assetIdentitySection).toBeVisible();
+  if ((await assetIdentitySection.getAttribute("aria-expanded")) !== "true") {
+    await assetIdentitySection.click();
+  }
+  await expect(page.getByLabel("Tag / ID")).toHaveValue("TT-101");
+  await page.getByLabel("Title", { exact: true }).fill("Tank Temperature Probe");
+  await page.getByLabel("Title", { exact: true }).press("Enter");
+  if ((await assetIdentitySection.getAttribute("aria-expanded")) !== "true") {
+    await assetIdentitySection.click();
+  }
+  await page
+    .getByLabel("General description", { exact: true })
+    .fill("Average tank temperature measurement");
+  await page
+    .getByLabel("General description", { exact: true })
+    .press("Control+Enter");
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue(
+    "Tank Temperature Probe"
+  );
+  await expect(page.getByLabel("General description", { exact: true })).toHaveValue(
+    "Average tank temperature measurement"
+  );
+  const engineeringAttributes = page.getByRole("button", {
+    name: /Engineering Attributes/
+  });
+  await engineeringAttributes.click();
+  await page.getByRole("button", { name: "Add attribute" }).click();
+  let attributeDialog = page.getByRole("dialog", {
+    name: "Add engineering attribute"
+  });
+  await attributeDialog
+    .getByLabel("Add engineering attribute")
+    .selectOption("engineering_purpose");
+  await attributeDialog
+    .getByLabel("Purpose / Description", { exact: true })
+    .fill("Measure the tank's average temperature");
+  await attributeDialog.getByRole("button", { name: "Add attribute" }).click();
+  await page.getByRole("button", { name: "Add attribute" }).click();
+  attributeDialog = page.getByRole("dialog", {
+    name: "Add engineering attribute"
+  });
+  await attributeDialog
+    .getByLabel("Add engineering attribute")
+    .selectOption("nominal_voltage");
+  await attributeDialog
+    .getByLabel("Nominal voltage", { exact: true })
+    .fill("24");
+  await attributeDialog.getByRole("button", { name: "Add attribute" }).click();
+  await expect(engineeringAttributes).toContainText("2 recorded");
+
+  await page.getByRole("button", { name: "Asset Manager" }).click();
+  const assetManager = page.getByRole("dialog", { name: "Asset Manager" });
+  const instrumentCategory = assetManager
+    .getByRole("group", { name: "Asset categories" })
+    .getByRole("button", {
+      name: /Level Devices \/ Instruments.*1 asset/
+    });
+  await instrumentCategory.click();
+  await expect(
+    assetManager.getByRole("heading", { name: "TT-101", exact: true })
+  ).toBeVisible();
+  const managerAttributes = assetManager.getByRole("button", {
+    name: /Engineering Attributes/
+  });
+  await managerAttributes.click();
+  const managerAttributeList = assetManager.locator(
+    "[data-engineering-attributes]"
+  );
+  await expect(managerAttributeList).toContainText(
+    "Measure the tank's average temperature"
+  );
+  await expect(managerAttributeList).toContainText("24 V");
+  await assetManager
+    .getByRole("button", { name: "Close asset manager" })
+    .click();
+
+  await page.getByRole("button", { name: "Browse connections" }).click();
+  const connectionsDialog = page.getByRole("dialog", { name: "Connections" });
+  await expect(connectionsDialog).toBeVisible();
+  await expect(connectionsDialog.getByTestId("drawing-connection-card")).toHaveCount(4);
+  await expect(connectionsDialog.getByTestId("drawing-connection-group")).toHaveCount(2);
+  await expect(connectionsDialog.getByText("TT-101 ↔ C-101")).toBeVisible();
+  await expect(connectionsDialog.getByText("C-101 ↔ TSM-101")).toBeVisible();
+  await connectionsDialog
+    .getByTestId("drawing-connection-card")
+    .first()
+    .click();
+  await expect(connectionsDialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Connection / })).toHaveAttribute(
+    "aria-expanded",
+    "false"
+  );
   await expect(page.getByRole("heading", { name: "Selected Placement" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Auto-route all" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Show route handles" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Archive" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Export SVG" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Export PDF" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Preview PDF" })).toBeVisible();
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(
+    page.getByRole("menuitem", { name: /Preview PDF/ })
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
   const pdfResponse = await page.request.get(`/drawings/${drawingId}/pdf`);
   expect(pdfResponse.ok()).toBeTruthy();
   expect(pdfResponse.headers()["content-type"]).toContain("application/pdf");
@@ -79,15 +197,34 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(page.getByRole("heading", { name: "Validation" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Fit drawing" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Bundle view" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Title Block/ })).toBeVisible();
-  await expect(page.getByLabel("Client")).toBeHidden();
-  await page.getByRole("button", { name: /Title Block/ }).click();
-  await expect(page.getByLabel("Client")).toBeVisible();
-  await page.getByLabel("Client").fill("Enermach");
-  await page.getByLabel("Project / process").fill("Tank Automation");
-  await page.getByLabel("Drawing number").fill("EI-001");
-  await page.getByRole("button", { name: "Add note" }).click();
-  await expect(page.getByRole("button", { name: /Selected Note/ })).toBeVisible();
+  await page.getByRole("button", { name: "Drawing Settings" }).click();
+  const drawingSettings = page.getByRole("dialog", {
+    name: "Drawing Settings"
+  });
+  await drawingSettings
+    .getByRole("group", { name: "Drawing settings measurement units" })
+    .getByRole("button", { name: "in", exact: true })
+    .click();
+  await expect(
+    drawingSettings
+      .getByRole("group", { name: "Drawing settings measurement units" })
+      .getByRole("button", { name: "in", exact: true })
+  ).toHaveAttribute("aria-pressed", "true");
+  await drawingSettings.getByLabel("Client").fill("Enermach");
+  await drawingSettings
+    .getByLabel("Project / process")
+    .fill("Tank Automation");
+  await drawingSettings.getByLabel("Drawing number").fill("EI-001");
+  await drawingSettings.getByRole("button", { name: "Apply" }).click();
+  await expect(drawingSettings).toHaveCount(0);
+  await addNoteFromCanvas(page);
+  const selectedNoteSection = page.getByRole("button", {
+    name: /Selected Note/
+  });
+  await expect(selectedNoteSection).toBeVisible();
+  if ((await selectedNoteSection.getAttribute("aria-expanded")) !== "true") {
+    await selectedNoteSection.click();
+  }
   await page.getByLabel("Note title").fill("Installation Instructions");
   await page.getByLabel("Note text").fill("Class I seal fitting required");
   await page.getByLabel("Leader arrow").check();
@@ -280,7 +417,7 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     "true"
   );
   await page.locator('[data-anchor-hotspot="nmt81:2"]').click();
-  await expect(page.getByText("Select a destination anchor.")).toBeVisible();
+  await expect(page.getByTestId("drawing-toast")).toHaveCount(0);
   const destinationAnchor = page.locator('[data-anchor-hotspot="clx1p:CH2_T2"]');
   const destinationBox = await destinationAnchor.boundingBox();
 
@@ -295,8 +432,8 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(page.getByTestId("canvas-connection-preview")).toBeVisible();
   await destinationAnchor.click({ force: true });
   await expect(page.getByText("Connection added.")).toBeVisible();
-  await expect(page.getByTestId("drawing-connection-card")).toHaveCount(5);
 
+  await page.getByRole("button", { name: /^Connection / }).click();
   const labelInput = page.getByRole("textbox", { name: "Label" });
   await labelInput.fill("Direct HART");
   await page.getByLabel("Cable assembly").selectOption({ label: "C-101" });
@@ -305,22 +442,32 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(page.getByRole("textbox", { name: "Wire ID" })).toHaveValue(
     "C-101-DIRECT-HART"
   );
-  const directHartConnection = page.getByRole("button", {
-    name: /C-101-DIRECT-HART/
-  });
-  await expect(
-    directHartConnection
-  ).toBeVisible();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toHaveAttribute(
     "aria-pressed",
     "false"
   );
-  if (!(await directHartConnection.isVisible())) {
-    await page.getByRole("button", { name: "TT-101 ↔ C-101" }).click();
-  }
+  await page.getByRole("button", { name: "Browse connections" }).click();
+  const updatedConnectionsDialog = page.getByRole("dialog", {
+    name: "Connections"
+  });
+  await expect(
+    updatedConnectionsDialog.getByTestId("drawing-connection-card")
+  ).toHaveCount(5);
+  const directHartConnection = updatedConnectionsDialog.getByRole("button", {
+    name: /C-101-DIRECT-HART/
+  });
   await expect(directHartConnection).toBeVisible();
   await directHartConnection.click();
+  await expect(updatedConnectionsDialog).toHaveCount(0);
+  const directHartConnectionSection = page.getByRole("button", {
+    name: /^Connection /
+  });
+  await expect(directHartConnectionSection).toHaveAttribute(
+    "aria-expanded",
+    "false"
+  );
+  await directHartConnectionSection.click();
   await expect(page.getByTestId("canvas-connection-line").first()).toHaveAttribute(
     "d",
     /M/
@@ -377,9 +524,6 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   expect(await page.getByTestId("canvas-route-point").count()).toBeLessThan(
     routePointCountBeforeDelete
   );
-  if (!(await page.getByRole("button", { name: "Reset route" }).isVisible())) {
-    await directHartConnection.click();
-  }
   await page.getByRole("button", { name: "Reset route" }).click();
   await expect(page.getByText("auto / orthogonal")).toBeVisible();
   await expect(page.getByTestId("canvas-connection-bundle")).toHaveCount(0);
@@ -473,7 +617,7 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   );
 
   await noteHit.click({ modifiers: ["Control"] });
-  await expect(page.getByRole("heading", { name: "Selection" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Selection/ })).toBeVisible();
   const placementHitboxes = page.locator(
     'svg[aria-label="Interactive drawing overlay"] rect[data-placement-id]'
   );
@@ -522,6 +666,20 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(page.getByText("Installation Instructions")).toBeVisible();
   await expect(page.getByText("Class I seal fitting required")).toBeVisible();
   await expect(page.getByTestId("canvas-note-hit")).toHaveCount(1);
+  await page
+    .locator(
+      'svg[aria-label="Interactive drawing overlay"] rect[data-placement-id="nmt81"]'
+    )
+    .click({ force: true });
+  const reloadedAttributes = page.getByRole("button", {
+    name: /Engineering Attributes/
+  });
+  await reloadedAttributes.click();
+  const reloadedAttributeList = page.locator("[data-engineering-attributes]");
+  await expect(reloadedAttributeList).toContainText(
+    "Measure the tank's average temperature"
+  );
+  await expect(reloadedAttributeList).toContainText("24 V");
   await page.getByRole("button", { name: "Fit drawing" }).click();
   const reloadedSpareCablePlacement = page.locator(
     `svg[aria-label="Interactive drawing overlay"] rect[data-placement-id="${spareCableId}"]`
@@ -549,19 +707,49 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
 
   await page.reload();
   await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible();
-  await page.getByRole("button", { name: "TT-101 ↔ C-101" }).click();
-  const reloadedDirectHartConnection = page.getByRole("button", {
+  await page.getByRole("button", { name: "Drawing Settings" }).click();
+  const reloadedDrawingSettings = page.getByRole("dialog", {
+    name: "Drawing Settings"
+  });
+  await expect(
+    reloadedDrawingSettings
+      .getByRole("group", { name: "Drawing settings measurement units" })
+      .getByRole("button", { name: "in", exact: true })
+  ).toHaveAttribute("aria-pressed", "true");
+  await reloadedDrawingSettings
+    .getByRole("button", { name: "Cancel" })
+    .click();
+  await page.getByRole("button", { name: "Browse connections" }).click();
+  const reloadedConnectionsDialog = page.getByRole("dialog", {
+    name: "Connections"
+  });
+  const reloadedDirectHartConnection = reloadedConnectionsDialog.getByRole("button", {
     name: /C-101-DIRECT-HART/
   });
   await expect(reloadedDirectHartConnection).toBeVisible();
   await reloadedDirectHartConnection.click();
+  await page.getByRole("button", { name: /^Connection / }).click();
   await page.getByRole("button", { name: "Delete connection" }).click();
-  await expect(reloadedDirectHartConnection).toHaveCount(0);
+  await page.getByRole("button", { name: "Browse connections" }).click();
+  const connectionsAfterDelete = page.getByRole("dialog", {
+    name: "Connections"
+  });
+  await expect(
+    connectionsAfterDelete.getByRole("button", {
+      name: /C-101-DIRECT-HART/
+    })
+  ).toHaveCount(0);
+  await connectionsAfterDelete
+    .getByRole("button", { name: "Close connections" })
+    .click();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Drawing saved.")).toBeVisible();
 
-  await page.getByRole("button", { name: "Add to drawing" }).click();
-  await page.getByRole("menuitem", { name: /Sheet/ }).click();
+  await page.getByRole("button", { name: "Open sheet loader" }).click();
+  await page
+    .getByRole("dialog", { name: "Sheet Loader" })
+    .getByRole("button", { name: "Add Sheet" })
+    .click();
   await page.getByRole("dialog", { name: "Add Sheet" }).getByRole("button", {
     name: "Add sheet",
     exact: true
@@ -570,18 +758,21 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
     "Sheet 2 of 2"
   );
-  await expect(page.getByLabel("Sheet name")).toHaveValue("Sheet 2");
-  await page.getByLabel("Sheet name").fill("Instrumentation");
-  await page
+  await page.getByRole("button", { name: "Edit active sheet" }).click();
+  const sheetSettings = page.getByRole("dialog", {
+    name: "Edit Active Sheet"
+  });
+  await expect(sheetSettings.getByLabel("Sheet name")).toHaveValue("Sheet 2");
+  await sheetSettings.getByLabel("Sheet name").fill("Instrumentation");
+  await sheetSettings
     .getByLabel("Description")
     .fill("Instrument detail and sheet 2 notes");
+  await sheetSettings.getByRole("button", { name: "Apply" }).click();
+  await expect(sheetSettings).toHaveCount(0);
   await expect(
     page.getByTestId("active-sheet-readout")
   ).toContainText("Instrumentation");
   await expect(page.getByTestId("drawing-sheet-frame")).toBeVisible();
-  await expect(page.getByLabel("Description")).toHaveValue(
-    "Instrument detail and sheet 2 notes"
-  );
 
   const sheetFrames = page.getByTestId("drawing-sheet-frame");
   await expect(
@@ -614,11 +805,12 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(page.getByRole("dialog", { name: "Add Symbol" })).toBeVisible();
   await expect(page.getByLabel("Asset tag")).toHaveValue("C-103");
   await page.getByRole("button", { name: "Place symbol" }).click();
+  await expandInspectorSection(page, /Asset Identity/);
   await expect(page.getByRole("textbox", { name: "Tag" })).toHaveValue("C-103");
 
   await addSymbolFromLibrary(
     page,
-    /Controllers 1/,
+    /Monitor 1/,
     "NRF81 Tank Side Monitor"
   );
   const referenceDialog = page.getByRole("dialog", { name: "Add Symbol" });
@@ -628,10 +820,12 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     .click();
   await expect(referenceDialog.getByText("TSM-101")).toBeVisible();
   await page.getByRole("button", { name: "Place symbol" }).click();
+  await expandInspectorSection(page, /Asset Identity/);
   await expect(page.getByRole("textbox", { name: "Tag" })).toHaveValue(
     "TSM-101"
   );
-  await page.getByRole("button", { name: "Add note" }).click();
+  await addNoteFromCanvas(page);
+  await expandInspectorSection(page, /Selected Note/);
   await page.getByLabel("Note title").fill("Sheet 2 Note");
   await page.getByLabel("Note text").fill("Sheet 2 isolated content");
   await expect(
@@ -660,9 +854,16 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     "Sheet 1 of 2"
   );
   await activateSheet(page, "Instrumentation");
-  await expect(page.getByLabel("Description")).toHaveValue(
+  await page.getByRole("button", { name: "Edit active sheet" }).click();
+  const reloadedSheetSettings = page.getByRole("dialog", {
+    name: "Edit Active Sheet"
+  });
+  await expect(reloadedSheetSettings.getByLabel("Description")).toHaveValue(
     "Instrument detail and sheet 2 notes"
   );
+  await reloadedSheetSettings
+    .getByRole("button", { name: "Cancel" })
+    .click();
   await expect(
     sheetStage.getByText("Sheet 2 isolated content")
   ).toBeVisible();
@@ -689,6 +890,9 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(
     page.getByRole("heading", { name: "Symbol Library" })
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Expand Symbol Library" })
+  ).toHaveAttribute("aria-expanded", "false");
 
   await page
     .getByRole("button", { name: "Collapse drawing properties panel" })
@@ -701,7 +905,7 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     .getByRole("button", { name: "Expand drawing properties panel" })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Drawing Properties" })
+    page.getByRole("heading", { name: "Properties" })
   ).toBeVisible();
 
   await page.goto("/drawings");
@@ -715,81 +919,4 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(page.getByText("This action cannot be undone.")).toBeVisible();
   await page.getByRole("button", { name: "Delete drawing", exact: true }).click();
   await expect(drawingLink).toHaveCount(0);
-});
-
-test("saves and imports a drawing sheet template with asset resolution", async ({
-  page
-}) => {
-  test.setTimeout(90000);
-
-  const drawingId = await createE2eNmt81ToNrf81Drawing();
-  await page.goto(`/drawings/${drawingId}`);
-  await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible({
-    timeout: 15000
-  });
-
-  const templateName = `Tank Wiring Template ${Date.now()}`;
-
-  await page.getByRole("button", { name: "Save active sheet as template" }).click();
-  await expect(
-    page.getByRole("dialog", { name: "Save Sheet as Template" })
-  ).toBeVisible();
-  await page.getByLabel("Template name").fill(templateName);
-  const saveTemplateDialog = page.getByRole("dialog", {
-    name: "Save Sheet as Template"
-  });
-
-  await saveTemplateDialog
-    .getByLabel("Description")
-    .fill("Reusable NMT81 to NRF81 wiring sheet");
-  await page.getByLabel("Keywords").fill("tank, wiring, template");
-  await saveTemplateDialog
-    .getByRole("button", { name: "Save template", exact: true })
-    .click();
-  await expect(page.getByText("Sheet template saved.")).toBeVisible();
-
-  await page.getByRole("button", { name: "Add sheet from template" }).click();
-  await expect(
-    page.getByRole("dialog", { name: "Add Sheet from Template" })
-  ).toBeVisible();
-  await page.getByRole("button", { name: `Use template ${templateName}` }).click();
-  await expect(page.getByText("Resolve template assets")).toBeVisible();
-  await expect(page.getByLabel("New tag for C-101")).toHaveValue("C-102");
-  await expect(page.getByLabel("Resolution for TSM-101")).toHaveValue(
-    "reference"
-  );
-  await expect(page.getByLabel("Existing asset for TSM-101")).toContainText(
-    "TSM-101"
-  );
-  await page.getByRole("button", { name: "Import template" }).click();
-  await expect(page.getByTestId("active-sheet-readout")).toContainText(
-    "Sheet 2 of 2"
-  );
-  await expect(
-    page.getByTestId("drawing-sheet-frame").getByText("C-102").first()
-  ).toBeVisible();
-  await expect(
-    page.getByTestId("drawing-sheet-frame").getByText("TSM-101").first()
-  ).toBeVisible();
-
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText("Drawing saved.")).toBeVisible();
-  await page.reload();
-  await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible();
-  await activateSheet(page, "Wiring 2");
-  await expect(page.getByTestId("active-sheet-readout")).toContainText(
-    "Sheet 2 of 2"
-  );
-  await expect(
-    page.getByTestId("drawing-sheet-frame").getByText("C-102").first()
-  ).toBeVisible();
-
-  const printResponse = await page.request.get(`/drawings/${drawingId}/print`);
-  expect(printResponse.ok()).toBeTruthy();
-  const printHtml = await printResponse.text();
-  expect(printHtml.match(/class="drawing-page"/g)).toHaveLength(2);
-  expect(printHtml).toContain("1 OF 2");
-  expect(printHtml).toContain("2 OF 2");
-
-  await deleteE2eDrawing(drawingId);
 });

@@ -5,10 +5,8 @@ import {
   stringifyDrawingModel,
   type DrawingModel
 } from "../data/schema";
-import { duplicateSheet } from "../logic/commands/drawing-sheet-commands";
 import {
   allocateNextPackageTag,
-  buildDrawingAssetCatalog,
   defaultPlacementScale,
   detectDuplicatePlacementTags,
   getCompatibleReferenceAssets,
@@ -444,80 +442,4 @@ describe("drawing asset identity", () => {
     });
   });
 
-  it("duplicates sheets with new cable/instrument assets and linked monitor assets by default", () => {
-    const result = duplicateSheet(packageModel(), "sheet_1", symbols);
-    const duplicate = result.model.sheets[1];
-    const duplicatedTemperature = duplicate.placements.find(
-      (placement) => placement.symbolId === temperatureSymbol.symbolId
-    );
-    const duplicatedCable = duplicate.placements.find(
-      (placement) => placement.symbolId === cableSymbol.symbolId
-    );
-    const duplicatedMonitor = duplicate.placements.find(
-      (placement) => placement.symbolId === monitorSymbol.symbolId
-    );
-
-    expect(duplicatedTemperature).toMatchObject({
-      tag: "TT-102"
-    });
-    expect(duplicatedTemperature?.assetId).not.toBe("asset_tt_101");
-    expect(duplicatedCable).toMatchObject({
-      tag: "C-102"
-    });
-    expect(duplicatedCable?.assetId).not.toBe("asset_c_101");
-    expect(duplicatedMonitor).toMatchObject({
-      assetId: "asset_tsm_101",
-      tag: "TSM-101"
-    });
-    expect(duplicate.connections[0].wireId).toBe("C-102-WHT");
-
-    const catalog = buildDrawingAssetCatalog(result.model, symbols);
-    expect(catalog.find((asset) => asset.assetId === "asset_tsm_101"))
-      .toMatchObject({
-        tag: "TSM-101",
-        placementRefs: expect.arrayContaining([
-          expect.objectContaining({ sheetNumber: 1 }),
-          expect.objectContaining({ sheetNumber: 2 })
-        ])
-      });
-  });
-
-  it("duplicates sheets as a new system with new monitor assets", () => {
-    const model = packageModel();
-    model.assets = [
-      {
-        id: "asset_tsm_101",
-        tag: "TSM-101",
-        type: "controller",
-        title: "Tank monitor",
-        symbolId: monitorSymbol.symbolId,
-        versionId: monitorSymbol.versionId,
-        componentSelections: [
-          {
-            positionKey: "position-1",
-            componentKey: "relay",
-            symbolId: "relay_symbol",
-            versionId: "relay_version"
-          }
-        ]
-      }
-    ];
-    const result = duplicateSheet(model, "sheet_1", symbols, {
-      duplicateMode: "new-system"
-    });
-    const duplicate = result.model.sheets[1];
-    const duplicatedMonitor = duplicate.placements.find(
-      (placement) => placement.symbolId === monitorSymbol.symbolId
-    );
-
-    expect(duplicatedMonitor).toMatchObject({
-      tag: "TSM-102"
-    });
-    expect(duplicatedMonitor?.assetId).not.toBe("asset_tsm_101");
-    expect(duplicate.connections[0].wireId).toBe("C-102-WHT");
-    expect(
-      result.model.assets.find((asset) => asset.id === duplicatedMonitor?.assetId)
-        ?.componentSelections
-    ).toEqual(model.assets[0].componentSelections);
-  });
 });

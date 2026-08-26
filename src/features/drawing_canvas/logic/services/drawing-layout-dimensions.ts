@@ -1,4 +1,5 @@
 import type {
+  DrawingMeasurementUnit,
   DrawingPlacement,
   DrawingSheetCanvasModel
 } from "../../data/schema";
@@ -8,7 +9,9 @@ import {
   getBackplaneUsableBounds
 } from "./drawing-backplane-layouts";
 import {
+  getBackplaneDisplayOrigin,
   getBackplanePhysicalBounds,
+  getParentPanelForBackplane,
   resolveBackplaneLayoutScale,
   resolveLayoutHelperDisplayPlacement
 } from "./drawing-backplane-scale";
@@ -21,6 +24,7 @@ import {
   type DimensionAttachmentTarget,
   type DimensionSnapTarget
 } from "./drawing-dimension-snapping";
+import { formatDrawingMeasurement } from "./drawing-measurement-units";
 
 export const GENERATED_HORIZONTAL_DIMENSION_SYMBOL_ID =
   "__generated_horizontal_dimension__";
@@ -365,10 +369,12 @@ export function getLayoutDimensionDisplayGeometry({
   if (!geometry) {
     return undefined;
   }
+  const parentPanel = getParentPanelForBackplane(model.placements, backplane);
 
   const startWitness = dimensionAttachmentPointToSheet({
     sheet: model.sheet,
     backplane,
+    parentPanel,
     pointMm: dimensionPointFromAxisAndWitness({
       orientation: geometry.orientation,
       axisMm: geometry.startMm,
@@ -378,6 +384,7 @@ export function getLayoutDimensionDisplayGeometry({
   const endWitness = dimensionAttachmentPointToSheet({
     sheet: model.sheet,
     backplane,
+    parentPanel,
     pointMm: dimensionPointFromAxisAndWitness({
       orientation: geometry.orientation,
       axisMm: geometry.endMm,
@@ -387,6 +394,7 @@ export function getLayoutDimensionDisplayGeometry({
   const dimensionStart = dimensionAttachmentPointToSheet({
     sheet: model.sheet,
     backplane,
+    parentPanel,
     pointMm: dimensionPointFromAxisAndWitness({
       orientation: geometry.orientation,
       axisMm: geometry.startMm,
@@ -396,6 +404,7 @@ export function getLayoutDimensionDisplayGeometry({
   const dimensionEnd = dimensionAttachmentPointToSheet({
     sheet: model.sheet,
     backplane,
+    parentPanel,
     pointMm: dimensionPointFromAxisAndWitness({
       orientation: geometry.orientation,
       axisMm: geometry.endMm,
@@ -405,6 +414,7 @@ export function getLayoutDimensionDisplayGeometry({
   const label = dimensionAttachmentPointToSheet({
     sheet: model.sheet,
     backplane,
+    parentPanel,
     pointMm: dimensionPointFromAxisAndWitness({
       orientation: geometry.orientation,
       axisMm: geometry.labelPositionMm,
@@ -437,7 +447,8 @@ export function getLayoutDimensionDisplayGeometry({
 
 export function layoutDimensionValueLabel(
   placement: DrawingPlacement,
-  resolvedDimension: Pick<LayoutDimensionPhysicalGeometry, "startMm" | "endMm"> | undefined = undefined
+  resolvedDimension: Pick<LayoutDimensionPhysicalGeometry, "startMm" | "endMm"> | undefined = undefined,
+  measurementUnit: DrawingMeasurementUnit = "mm"
 ): string {
   const dimension = placement.layoutDimension;
 
@@ -449,9 +460,10 @@ export function layoutDimensionValueLabel(
     (resolvedDimension?.endMm ?? dimension.endMm) -
       (resolvedDimension?.startMm ?? dimension.startMm)
   );
-  const rounded = Number(measured.toFixed(measured >= 10 ? 0 : 1));
-
-  return dimension.labelOverride?.trim() || `${rounded} mm`;
+  return (
+    dimension.labelOverride?.trim() ||
+    `${formatDrawingMeasurement(measured, measurementUnit)} ${measurementUnit}`
+  );
 }
 
 function placementGeometryFromDimension(
@@ -684,9 +696,21 @@ export function resolveLayoutDimensionPointerUpdate({
     return { placement };
   }
 
-  const scale = resolveBackplaneLayoutScale(sheet, backplane).factor;
-  const pointerXmm = (pointer.x - backplane.x) / scale;
-  const pointerYmm = (pointer.y - backplane.y) / scale;
+  const parentPanel = model
+    ? getParentPanelForBackplane(model.placements, backplane)
+    : undefined;
+  const scale = resolveBackplaneLayoutScale(
+    sheet,
+    backplane,
+    parentPanel
+  ).factor;
+  const displayOrigin = getBackplaneDisplayOrigin({
+    sheet,
+    backplane,
+    parentPanel
+  });
+  const pointerXmm = (pointer.x - displayOrigin.x) / scale;
+  const pointerYmm = (pointer.y - displayOrigin.y) / scale;
   const axisValue =
     dimension.orientation === "horizontal" ? pointerXmm : pointerYmm;
   const offsetValue =
@@ -798,13 +822,19 @@ export function resolveLayoutDimensionPointerUpdate({
     }),
     snapTarget,
     guideSheetValue: snapTarget
-      ? dimensionSnapTargetSheetValue({ sheet, backplane, target: snapTarget })
+      ? dimensionSnapTargetSheetValue({
+          sheet,
+          backplane,
+          parentPanel,
+          target: snapTarget
+        })
       : undefined,
     snapAttachmentTarget,
     guideSheetPoint: attachmentPoint
       ? dimensionAttachmentPointToSheet({
           sheet,
           backplane,
+          parentPanel,
           pointMm: attachmentPoint
         })
       : undefined
@@ -847,7 +877,14 @@ export function moveLayoutDimensionByDisplayDelta({
     return placement;
   }
 
-  const factor = resolveBackplaneLayoutScale(sheet, backplane).factor;
+  const parentPanel = model
+    ? getParentPanelForBackplane(model.placements, backplane)
+    : undefined;
+  const factor = resolveBackplaneLayoutScale(
+    sheet,
+    backplane,
+    parentPanel
+  ).factor;
   const axisLimit =
     dimension.orientation === "horizontal"
       ? getBackplanePhysicalBounds(backplane).width
@@ -891,11 +928,13 @@ export function moveLayoutDimensionByDisplayDelta({
 export function renderLayoutDimensionSvg({
   model,
   sourcePlacement,
-  backplane
+  backplane,
+  measurementUnit = "mm"
 }: {
   model: DrawingSheetCanvasModel;
   sourcePlacement: DrawingPlacement;
   backplane: DrawingPlacement;
+  measurementUnit?: DrawingMeasurementUnit;
 }): string {
   const dimension = sourcePlacement.layoutDimension;
   const physicalGeometry = resolveLayoutDimensionPhysicalGeometry({
@@ -915,7 +954,11 @@ export function renderLayoutDimensionSvg({
 
   const showValue = dimension.showValue ?? true;
   const label = escapeXml(
-    layoutDimensionValueLabel(sourcePlacement, physicalGeometry)
+    layoutDimensionValueLabel(
+      sourcePlacement,
+      physicalGeometry,
+      measurementUnit
+    )
   );
   const stroke = "#0f5f86";
   const text = "#164e63";

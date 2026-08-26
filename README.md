@@ -70,14 +70,39 @@ computer, including the private SQLite restore process, see
 [`docs/HOME_SETUP.md`](docs/HOME_SETUP.md).
 
 ```powershell
-npm install
+npm ci
 $env:DATABASE_URL='file:./dev.db'; npm run db:setup
-$env:DATABASE_URL='file:./dev.db'; npm run dev
+$env:DATABASE_URL='file:./dev.db'; npm run dev:webpack
 ```
+
+`npm ci` automatically generates Prisma Client. Stop every development server before running `npm ci` or `npx prisma generate` manually so Windows does not hold generated-client files open. Ordinary development startup only regenerates Prisma Client; it does not migrate, seed, bootstrap, or otherwise modify a database.
+
+`npm run dev:webpack` is the supported shared local runtime and binds to
+`127.0.0.1`. Run it from the active linked worktree so edits appear immediately
+on port 3000. Keep the branch local until publication is explicitly requested.
+The development launcher resolves the canonical `main` worktree and injects its
+`prisma/dev.db` as an absolute database URL. It refuses to start if that
+database cannot be located, preventing a feature worktree's stale database from
+making current records appear to be missing.
+
+`npm run dev` remains available for an explicit Turbopack compatibility check.
+If Turbopack panics or enters a repeated compile/HMR loop, stop it completely
+before returning to webpack:
+
+```powershell
+$env:DATABASE_URL='file:./dev.db'; npm run dev:webpack
+```
+
+Keep development logs in the terminal. Do not redirect changing server logs into the repository because file-watcher updates can trigger unnecessary rebuilds.
+
+Local implementation does not require a GitHub round trip. Push the feature
+branch and open a squash pull request only after the user explicitly requests
+publication.
 
 Verification:
 
 ```powershell
+npm run audit:dependencies
 npm run lint
 npm run test
 $env:DATABASE_URL='file:./dev.db'; npm run build
@@ -119,8 +144,7 @@ features are:
 
 - Cable schedule and termination schedule pages generated from the drawing
   model.
-- Standard drawing templates that capture specialist engineering knowledge for
-  reuse.
+- Presentation-only layout aids that never recreate canonical wiring.
 - Additional controlled symbol imports for terminal blocks, glands, panels, and
   other standard items.
-- Engineering notes/template reuse workflows outside the current sheet canvas.
+- Engineering-note workflows outside the current sheet canvas.

@@ -40,6 +40,19 @@ export function toSvgPoint(
   };
 }
 
+export function getSvgPixelsPerUnit(
+  element: SVGElement,
+  sheet: DrawingModel["sheet"]
+) {
+  const svgElement = element.ownerSVGElement ?? element;
+  const rect = svgElement.getBoundingClientRect();
+
+  return {
+    x: rect.width > 0 ? rect.width / sheet.width : 1,
+    y: rect.height > 0 ? rect.height / sheet.height : 1
+  };
+}
+
 export function snap(value: number, gridSize: number): number {
   return Number((Math.round(value / gridSize) * gridSize).toFixed(2));
 }
@@ -235,7 +248,8 @@ export function calculatePlacementLengthResizeUpdate(
 
 export function calculatePanelEnclosureResizeUpdate(
   resizeState: PlacementResizeState,
-  pointer: { x: number; y: number }
+  pointer: { x: number; y: number },
+  physicalScaleFactor = 1
 ) {
   const rawWidth =
     resizeState.handle === "nw" || resizeState.handle === "sw"
@@ -245,8 +259,14 @@ export function calculatePanelEnclosureResizeUpdate(
     resizeState.handle === "nw" || resizeState.handle === "ne"
       ? resizeState.fixedPoint.y - pointer.y
       : pointer.y - resizeState.fixedPoint.y;
-  const width = Math.max(MIN_PANEL_ENCLOSURE_WIDTH, rawWidth);
-  const height = Math.max(MIN_PANEL_ENCLOSURE_HEIGHT, rawHeight);
+  const width = Math.max(
+    MIN_PANEL_ENCLOSURE_WIDTH * physicalScaleFactor,
+    rawWidth
+  );
+  const height = Math.max(
+    MIN_PANEL_ENCLOSURE_HEIGHT * physicalScaleFactor,
+    rawHeight
+  );
   const x =
     resizeState.handle === "nw" || resizeState.handle === "sw"
       ? resizeState.fixedPoint.x - width

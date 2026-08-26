@@ -18,7 +18,10 @@ test("reviews, traces, and exports deterministic panel deliverables", async ({
       .getByRole("button", { name: "Load" })
       .click();
 
-    await page.getByRole("button", { name: "Deliverables" }).click();
+    await page.getByRole("button", { name: "Preview", exact: true }).click();
+    await page
+      .getByRole("menuitem", { name: /Panel Deliverables/ })
+      .click();
     let dialog = page.getByRole("dialog", {
       name: "Panel Engineering Deliverables"
     });
@@ -51,9 +54,16 @@ test("reviews, traces, and exports deterministic panel deliverables", async ({
     await expect(page.getByTestId("active-sheet-readout")).toContainText(
       "JB001 Field Terminations"
     );
-    await expect(page.getByRole("button", { name: "Deliverables" })).toBeVisible();
+    await page.getByRole("button", { name: "Preview", exact: true }).click();
+    await expect(
+      page.getByRole("menuitem", { name: /Panel Deliverables/ })
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Preview", exact: true }).click();
 
-    await page.getByRole("button", { name: "Deliverables" }).click();
+    await page.getByRole("button", { name: "Preview", exact: true }).click();
+    await page
+      .getByRole("menuitem", { name: /Panel Deliverables/ })
+      .click();
     dialog = page.getByRole("dialog", {
       name: "Panel Engineering Deliverables"
     });

@@ -1,19 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
-import { Save } from "lucide-react";
-import { updateSymbolNetworkProfileAction } from "../../api/actions";
+import { useMemo } from "react";
 import {
   networkDeviceTypeSchema,
   type NetworkDeviceType,
-  type SymbolAnchor,
-  type SymbolNetworkProfile
+  type SymbolAnchor
 } from "../../data/schema";
 import {
-  buildNetworkProfileFromReviewDraft,
   createEmptyNetworkPortReviewDraft,
-  createNetworkProfileReviewDraft,
   type NetworkManagedReviewValue,
   type NetworkProfileReviewDraft
 } from "../../logic/services/network-profile-review-draft";
@@ -30,28 +24,24 @@ function formatOptionLabel(value: string): string {
 }
 
 export function NetworkProfilePanel({
-  versionId,
   manufacturer,
   model,
-  profile,
+  draft,
   anchors,
-  editable
+  readOnly,
+  onManufacturerChange,
+  onModelChange,
+  onDraftChange
 }: {
-  versionId: string;
-  manufacturer?: string | null;
-  model?: string | null;
-  profile?: SymbolNetworkProfile;
+  manufacturer: string;
+  model: string;
+  draft: NetworkProfileReviewDraft;
   anchors: SymbolAnchor[];
-  editable: boolean;
+  readOnly: boolean;
+  onManufacturerChange: (value: string) => void;
+  onModelChange: (value: string) => void;
+  onDraftChange: (draft: NetworkProfileReviewDraft) => void;
 }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [manufacturerDraft, setManufacturerDraft] = useState(manufacturer ?? "");
-  const [modelDraft, setModelDraft] = useState(model ?? "");
-  const [draft, setDraft] = useState<NetworkProfileReviewDraft>(() =>
-    createNetworkProfileReviewDraft(profile)
-  );
-  const [message, setMessage] = useState<string | null>(null);
   const networkAnchors = useMemo(
     () => anchors.filter((anchor) => anchor.kind === "network_port"),
     [anchors]
@@ -65,46 +55,15 @@ export function NetworkProfilePanel({
     const fallbackIndex = draft.ports.length + 1;
     const key = availableAnchor?.key ?? `PORT${fallbackIndex}`;
 
-    setDraft((current) => ({
-      ...current,
+    onDraftChange({
+      ...draft,
       ports: [
-        ...current.ports,
+        ...draft.ports,
         createEmptyNetworkPortReviewDraft({
           key,
           anchorKey: availableAnchor?.key ?? ""
         })
       ]
-    }));
-  };
-
-  const save = () => {
-    setMessage(null);
-
-    let networkProfile: SymbolNetworkProfile;
-    try {
-      networkProfile = buildNetworkProfileFromReviewDraft(draft);
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Network profile is invalid."
-      );
-      return;
-    }
-
-    startTransition(async () => {
-      const result = await updateSymbolNetworkProfileAction({
-        versionId,
-        manufacturer: manufacturerDraft,
-        model: modelDraft,
-        networkProfile
-      });
-
-      if (!result.ok) {
-        setMessage(result.error);
-        return;
-      }
-
-      setMessage("Network profile updated. Validation was refreshed.");
-      router.refresh();
     });
   };
 
@@ -118,7 +77,7 @@ export function NetworkProfilePanel({
       </div>
 
       <div className="grid gap-3 p-4 sm:grid-cols-2">
-        {editable ? (
+        {!readOnly ? (
           <>
             <div>
               <label className="field-label" htmlFor="network-manufacturer">
@@ -127,10 +86,9 @@ export function NetworkProfilePanel({
               <input
                 id="network-manufacturer"
                 className="field-input"
-                value={manufacturerDraft}
-                disabled={isPending}
+                value={manufacturer}
                 onChange={(event) =>
-                  setManufacturerDraft(event.currentTarget.value)
+                  onManufacturerChange(event.currentTarget.value)
                 }
               />
             </div>
@@ -141,9 +99,8 @@ export function NetworkProfilePanel({
               <input
                 id="network-model"
                 className="field-input"
-                value={modelDraft}
-                disabled={isPending}
-                onChange={(event) => setModelDraft(event.currentTarget.value)}
+                value={model}
+                onChange={(event) => onModelChange(event.currentTarget.value)}
               />
             </div>
             <div>
@@ -154,12 +111,11 @@ export function NetworkProfilePanel({
                 id="network-device-type-review"
                 className="field-input"
                 value={draft.deviceType}
-                disabled={isPending}
                 onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
+                  onDraftChange({
+                    ...draft,
                     deviceType: event.currentTarget.value as NetworkDeviceType
-                  }))
+                  })
                 }
               >
                 {networkDeviceTypeSchema.options.map((deviceType) => (
@@ -177,12 +133,11 @@ export function NetworkProfilePanel({
                 id="network-managed-review"
                 className="field-input"
                 value={draft.managed}
-                disabled={isPending}
                 onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
+                  onDraftChange({
+                    ...draft,
                     managed: event.currentTarget.value as NetworkManagedReviewValue
-                  }))
+                  })
                 }
               >
                 <option value="unspecified">Unspecified</option>
@@ -195,7 +150,9 @@ export function NetworkProfilePanel({
           <>
             <div>
               <div className="field-label">Manufacturer</div>
-              <div className="text-sm text-slate-900">{manufacturer || "-"}</div>
+              <div className="text-sm text-slate-900">
+                {manufacturer || "-"}
+              </div>
             </div>
             <div>
               <div className="field-label">Model</div>
@@ -204,15 +161,15 @@ export function NetworkProfilePanel({
             <div>
               <div className="field-label">Device type</div>
               <div className="text-sm text-slate-900">
-                {profile ? formatOptionLabel(profile.deviceType) : "-"}
+                {formatOptionLabel(draft.deviceType)}
               </div>
             </div>
             <div>
               <div className="field-label">Managed status</div>
               <div className="text-sm text-slate-900">
-                {profile?.managed === undefined
+                {draft.managed === "unspecified"
                   ? "Unspecified"
-                  : profile.managed
+                  : draft.managed === "managed"
                     ? "Managed"
                     : "Unmanaged"}
               </div>
@@ -224,38 +181,17 @@ export function NetworkProfilePanel({
       <NetworkPortTable
         ports={draft.ports}
         anchors={networkAnchors}
-        editable={editable}
-        disabled={isPending}
-        onChange={(ports) => setDraft((current) => ({ ...current, ports }))}
+        editable={!readOnly}
+        disabled={readOnly}
+        onChange={(ports) => onDraftChange({ ...draft, ports })}
         onAdd={addPort}
       />
 
-      {message ? (
-        <div
-          className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700"
-          role="status"
-        >
-          {message}
+      {readOnly ? (
+        <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+          Archived symbols are read-only.
         </div>
       ) : null}
-
-      {editable ? (
-        <div className="border-t border-slate-200 p-4">
-          <button
-            type="button"
-            className="icon-button icon-button-primary w-full justify-center"
-            disabled={isPending}
-            onClick={save}
-          >
-            <Save aria-hidden="true" size={14} />
-            Save network profile
-          </button>
-        </div>
-      ) : (
-        <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-          Approved and archived versions are read-only.
-        </div>
-      )}
     </section>
   );
 }

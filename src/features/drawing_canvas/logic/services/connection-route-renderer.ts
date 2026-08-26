@@ -214,13 +214,7 @@ export function renderConnectionRouteSvg(input: {
   const label = rendered.label;
   const labelSvg =
     input.showLabel !== false && label
-      ? (() => {
-          const box = routeLabelBox(label, rendered.labelPoint);
-          return `
-            <rect x="${formatNumber(box.x)}" y="${formatNumber(box.y)}" width="${formatNumber(box.width)}" height="${formatNumber(box.height)}" rx="1.2" fill="white" opacity="0.86"/>
-            <text x="${formatNumber(rendered.labelPoint.x)}" y="${formatNumber(rendered.labelPoint.y)}" font-family="Arial, Helvetica, sans-serif" font-size="2.7" font-weight="600" text-anchor="${rendered.labelPoint.anchor}" fill="#475569">${input.escapeXml(label)}</text>
-          `;
-        })()
+      ? `<text data-connection-label="${input.escapeXml(input.connection.id)}" x="${formatNumber(rendered.labelPoint.x)}" y="${formatNumber(rendered.labelPoint.y)}" font-family="Arial, Helvetica, sans-serif" font-size="2.7" font-weight="600" text-anchor="${rendered.labelPoint.anchor}" fill="#475569">${input.escapeXml(label)}</text>`
       : "";
 
   return `

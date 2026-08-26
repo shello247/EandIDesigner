@@ -10,6 +10,7 @@ import {
   centerDetailedPanelEquipment,
   getDetailedPanelUsableDrawingRect,
   placePanelAssetOccurrence,
+  placePanelAssetOccurrences,
   removePanelAssetOccurrence
 } from "../logic/commands/drawing-panel-occurrence-commands";
 import { getPlacementBounds } from "../logic/services/drawing-geometry";
@@ -175,6 +176,31 @@ describe("Detailed Panel asset occurrence commands", () => {
       sideHint: "internal",
       physicalPosition: "top"
     });
+  });
+
+  it("places a selected equipment set atomically in one model result", () => {
+    const model = createFixture();
+    const result = placePanelAssetOccurrences({
+      model,
+      sheetId: DETAIL_SHEET_ID,
+      assetIds: [TERMINAL_ASSET_ID, SECOND_TERMINAL_ASSET_ID]
+    });
+    const detailedSheet = result.model.sheets.find(
+      (sheet) => sheet.id === DETAIL_SHEET_ID
+    );
+
+    expect(result.placements.map((placement) => placement.assetId)).toEqual([
+      TERMINAL_ASSET_ID,
+      SECOND_TERMINAL_ASSET_ID
+    ]);
+    expect(
+      detailedSheet?.placements.filter((placement) =>
+        [TERMINAL_ASSET_ID, SECOND_TERMINAL_ASSET_ID].includes(
+          placement.assetId ?? ""
+        )
+      )
+    ).toHaveLength(2);
+    expect(model.sheets.find((sheet) => sheet.id === DETAIL_SHEET_ID)?.placements).toEqual([]);
   });
 
   it("creates a schematic occurrence from a layout-only terminal group", () => {

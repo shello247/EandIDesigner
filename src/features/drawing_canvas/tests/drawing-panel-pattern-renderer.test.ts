@@ -141,6 +141,36 @@ describe("Detailed Panel pattern renderer", () => {
     expect(svg).toContain('data-route-style="panel-pattern"');
   });
 
+  it("renders the complete Wire ID for a numbered pattern-owned wire", () => {
+    const model = canvasModel();
+    model.connections = [
+      {
+        id: "route_1",
+        from: { placementId: "p1", anchorKey: "T" },
+        to: { placementId: "p2", anchorKey: "T" },
+        panelConnectionId: "wire_7",
+        panelPatternId: "pattern_jumper",
+        panelPatternSegmentId: "pattern_jumper:segment:1"
+      }
+    ];
+    const svg = renderDrawingToSvg({
+      model,
+      approvedSymbols: [symbol],
+      panelConnectionPatterns: [jumper()],
+      panelInternalWires: [
+        {
+          id: "wire_7",
+          wireNumber: 7,
+          wireId: "K-101:T(007)"
+        }
+      ],
+      connectionVisibility: "panel_internal"
+    });
+
+    expect(svg).toContain(">K-101:T(007)</text>");
+    expect(svg).not.toContain(">007</text>");
+  });
+
   it("renders shield bonds with a dashed technical style", () => {
     const model = canvasModel();
     model.connections = [

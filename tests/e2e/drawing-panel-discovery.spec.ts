@@ -1,12 +1,15 @@
 import { expect, test } from "@playwright/test";
 import {
   createE2ePanelDiscoveryPackage,
-  deleteE2eDrawing
+  deleteE2eDrawing,
 } from "./drawing-fixtures";
-import { openDetailedPanelWorkflow } from "./panel-workflow-helpers";
+import {
+  openPanelEngineeringWorkbench,
+  selectPanelEngineeringView,
+} from "./panel-workflow-helpers";
 
 test("discovers, places, removes, and reloads an existing panel asset occurrence", async ({
-  page
+  page,
 }) => {
   const drawingId = await createE2ePanelDiscoveryPackage();
 
@@ -19,32 +22,32 @@ test("discovers, places, removes, and reloads an existing panel asset occurrence
       .getByRole("button", { name: "Load" })
       .click();
 
-    const queue = await openDetailedPanelWorkflow(page, "advanced");
+    const queue = await openPanelEngineeringWorkbench(page);
     const assetRow = queue.getByRole("row", { name: /TB-101/ });
 
     await expect(assetRow).toContainText("Available");
-    await assetRow.getByRole("button", { name: "Place" }).click();
+    await assetRow.getByRole("button", { name: "Add", exact: true }).click();
     await expect(assetRow).toContainText("Represented");
 
-    await queue
-      .getByRole("tab", { name: /External Terminations/ })
-      .click();
+    await selectPanelEngineeringView(queue, "External Terminations");
     const automaticTerminationRow = queue.getByRole("row", {
-      name: /C-101-P1-WHT/
+      name: /C-101-P1-WHT/,
     });
     await expect(automaticTerminationRow).toContainText("C-101-P1-WHT");
     await expect(automaticTerminationRow).toContainText(
-      "Sheet 1 - JB001 Field Terminations"
+      "Sheet 1 - JB001 Field Terminations",
     );
 
-    await queue.getByRole("tab", { name: /Associated Assets/ }).click();
-    await assetRow.getByRole("button", { name: "Remove representation" }).click();
+    await selectPanelEngineeringView(queue, "Equipment");
+    await assetRow.getByRole("button", { name: "Remove" }).click();
     await expect(assetRow).toContainText("Available");
-    await assetRow.getByRole("button", { name: "Place" }).click();
+    await assetRow.getByRole("button", { name: "Add", exact: true }).click();
     await queue.getByRole("button", { name: "Close", exact: true }).click();
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByTestId("drawing-toast")).toContainText("Drawing saved.");
+    await expect(page.getByTestId("drawing-toast")).toContainText(
+      "Drawing saved.",
+    );
     await page.reload();
     await page.getByRole("button", { name: "Open sheet loader" }).click();
     await page
@@ -52,9 +55,9 @@ test("discovers, places, removes, and reloads an existing panel asset occurrence
       .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
       .getByRole("button", { name: "Load" })
       .click();
-    const reloadedQueue = await openDetailedPanelWorkflow(page, "advanced");
+    const reloadedQueue = await openPanelEngineeringWorkbench(page);
     await expect(
-      reloadedQueue.getByRole("row", { name: /TB-101/ })
+      reloadedQueue.getByRole("row", { name: /TB-101/ }),
     ).toContainText("Represented");
   } finally {
     await deleteE2eDrawing(drawingId);

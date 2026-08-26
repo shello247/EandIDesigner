@@ -33,6 +33,10 @@ and never import drawing-canvas internals.
 Main public operations:
 
 - `buildPackageConnectivityGraph`
+- `getElectricalNetForTerminalSide`
+- `listElectricalNetsForAsset`
+- `listElectricalNetworkConnections`
+- `traceElectricalPath`
 - `getPanelConnectivitySnapshot`
 - `getTerminalByRef`
 - `getExternalTerminationProvenance`
@@ -68,6 +72,31 @@ Main public operations:
 - `buildPanelInternalWireCatalog`
 - `getPanelWireSettings`
 - `updatePanelWireSettings`
+
+## Permanent Internal Topology And Electrical Nets
+
+- Approved Registry metadata may declare versioned permanent continuity groups.
+  These groups describe factory-installed passive conductors only; terminal
+  function text is never parsed as connectivity.
+- The runtime source projection carries topology from the exact renderable
+  symbol used by the drawing. Structured terminal-strip groups are namespaced
+  by permanent member token, for example `M02.1` and `M02.2`.
+- Terminal body relationships join the supported sides of one logical terminal.
+  Registry groups join logical terminals within one physical asset. Identical
+  symbols used by different assets never become electrically common without an
+  explicit wire, bridge, bond, or drawing connection.
+- The graph builds deterministic runtime electrical nets with separate
+  relationship provenance. Nets are recalculated from authoritative records and
+  are never persisted into drawing JSON.
+- Direct terminal-side occupancy remains authoritative for available/used
+  status. Transitive net membership never consumes an unused terminal landing.
+- Linked representations that disagree about topology fail closed with
+  `linked_internal_topology_mismatch`; their Registry topology is excluded until
+  repaired.
+- Electrical-network query and deterministic path-tracing APIs remain available
+  internally. The Properties network explorer and its interactive highlighting
+  have been removed; a future drawing-analysis interface is deferred so the
+  canvas stays focused on drawing authoring.
 
 Commands return typed mutations. The canvas applies those mutations through
 `applyPanelWiringMutations`; callers and future AI agents do not edit raw drawing
@@ -113,7 +142,7 @@ rejected. This release provides no autonomous AI caller or agent UI.
 - External terminations are derived from authoritative field connections. Their
   provenance preserves connection, sheet, endpoint, placement, anchor, wire,
   cable asset, cable placement, cable tag, and conductor identity.
-- The Panel Work Queue reports `available`, `represented`, `missing`,
+- The Panel Engineering Workbench reports `available`, `represented`, `missing`,
   `conflicting`, and `unsupported` records with deterministic disabled reasons.
 - Placing an asset creates one drawing occurrence that reuses its existing
   `assetId`, tag, symbol/version, role, and terminal configuration. It does not
@@ -124,29 +153,22 @@ rejected. This release provides no autonomous AI caller or agent UI.
 - A termination becomes represented when its target physical asset is represented.
   Phase 3 does not draw the external wire or persist a duplicate termination.
 
-## Guided Detailed Panel Workflow
+## Panel Engineering Workbench
 
-- The Detailed Panel Workflow opens in Guided mode and works through the panel's
-  associated assets one at a time on the same Detailed Panel sheet. The existing
-  package-wide catalog tables remain available under Advanced Workbench.
-- The active equipment focus is stored as the optional
-  `panelDrawingContext.workflowFocusAssetId`. Legacy contexts remain valid, and
-  relinking a sheet to another panel clears the previous focus.
-- Workflow completion is never stored as checklist data. Asset status is derived
-  from representation, external-termination resolution, terminal mapping,
-  required-side occupancy, internal wires, connection patterns, and Panel Review.
-- Guided steps reuse the established existing-asset placement, mapping, Wire,
-  Pattern, Review, and Deliverables commands. They do not create alternate
-  engineering records or new panel equipment.
+- The Detailed Panel sheet opens one focused workbench for selecting existing
+  panel equipment and reviewing its terminal, wire, and pattern records.
+- The Equipment view is primary. It supports search, status filtering, individual
+  Add actions, checkbox selection, Select all available, and one atomic
+  Add selected to sheet operation.
 - Detailed Panel equipment is initially allocated from the usable drawing center
   outward. `Center equipment` recenters all represented panel equipment as one
   group while preserving relative spacing, attached labels, and complete wire
   route geometry; notes and generated reference helpers remain fixed.
-- `Continue` opens the next incomplete required step. When the focused asset is
-  ready, `Next equipment` selects the next incomplete asset by natural tag order.
-  Engineers can enter any valid step or Advanced Workbench at any time.
-- Missing or stale focused assets are reported and displayed through a deterministic
-  first-incomplete fallback without silently rewriting the drawing model.
+- The workbench reuses the established existing-asset placement, mapping, Wire,
+  Pattern, Review, and Deliverables commands. It does not create alternate
+  engineering records or new panel equipment.
+- Legacy `workflowFocusAssetId` values remain loadable for compatibility, but the
+  workbench does not expose or write guided-workflow focus or checklist state.
 
 ## Terminal Identity And Mapping
 
@@ -170,9 +192,10 @@ rejected. This release provides no autonomous AI caller or agent UI.
   conductor occupancy from structural jumper/bridge/bond occupancy. One
   conductor and one compatible structural relationship may coexist; conflicts
   within either channel remain loadable and are reported as repair work.
-- The Panel Work Queue contains Associated Assets, External Terminations, and
-  Terminal Map views. Mapping changes use typed mutations and one canvas history
-  commit; they never alter or duplicate source field connections.
+- The Panel Engineering Workbench contains Equipment, External Terminations,
+  Terminal Map, Internal Wires, and Connection Patterns views. Mapping changes
+  use typed mutations and one canvas history commit; they never alter or
+  duplicate source field connections.
 
 The backplane-oriented `drawing_panel_asset_placement` work queue remains a
 separate physical-layout workflow. Detailed Panel discovery creates electrical
@@ -185,9 +208,13 @@ to a Backplane.
   equipment. A Detailed Panel Drawing does not create breakers, relays,
   controllers, terminal blocks, or other physical devices.
 - Existing panel equipment is discovered through `containerAssetId` and added to
-  the Detailed Panel Drawing from the Panel Work Queue. The occurrence keeps the
+  the Detailed Panel Drawing from the Panel Engineering Workbench. The occurrence keeps the
   same `assetId`, approved symbol/version, tag, and terminal metadata used by the
   physical layout.
+- The Workbench derives a non-persisted physical position from the authoritative
+  Backplane layout. Equipment is ordered by rail/free-placement row from top to
+  bottom and then by its rotated left boundary from left to right. Moving panel
+  equipment recalculates this position without changing asset or drawing data.
 - A resolved asset-backed panel-layout occurrence is a valid representation
   source when no field-wiring occurrence exists. The Detailed Panel occurrence
   is generated at schematic scale and does not retain backplane layout fields.
@@ -209,31 +236,43 @@ to a Backplane.
 - Detailed Panel Wire mode accepts resolved `internal` and `single` terminal
   sides only. External sides, occupied sides, duplicate endpoint pairs, terminals
   outside the active panel, and ambiguous metadata are blocked before commit.
-- Wire IDs are allocated package-wide from per-panel settings. The default policy
-  produces identifiers such as `JB001-W001`; IDs are checked case-insensitively
-  against both field and internal wires. Manual IDs remain supported.
+- New wires receive a permanent package-wide positive Wire number. It is shown
+  with at least three digits (`001`, `999`, `1000`) and is never reused after
+  deletion. The package sequence is independent of panels and pattern ownership.
+- Wire ID is derived from the electrical source as
+  `<source tag>:<source terminal>(<Wire #>)`, for example
+  `MCB-101:1(001)`. Tag changes update this materialized display identity without
+  changing the Wire number, stable record ID, route, or pattern reference.
+- Detailed Panel canvas routes, Package Preview, print, and PDF display the
+  complete derived Wire ID. Schedules and inspectors also retain Wire # as a
+  separate field for sorting and reference.
+- Every new wire selects one global Wire Catalog entry and stores an immutable
+  type/size/color snapshot. Description remains separate engineer-entered text.
+  Existing legacy free-text attributes remain readable.
 - Creating a wire commits the canonical record and first orthogonal route in one
   history entry. Component movement keeps route endpoints attached to approved
   symbol anchors.
-- Guided Internal Wiring is form-first: equipment and canonical internal/single
-  terminal sides can be selected inside the workflow without leaving the dialog.
-  Physical top/right/bottom/left position is shown only when it can be derived
-  unambiguously from generated or approved-symbol anchor geometry. The existing
-  canvas terminal picker remains available as `Pick on drawing`.
+- Internal wires are authored directly on the sheet through Wire mode. New
+  standalone wire forms prefill editable Description text from the existing
+  numbered wire immediately before the proposed Wire number.
+- Physical top/right/bottom/left position is shown only when it can be derived
+  unambiguously from generated or approved-symbol anchor geometry.
 - A physical wire can have one route occurrence on each Detailed Panel sheet for
   the same panel. The Internal Wires work-queue tab exposes unrepresented wires,
-  route sheets, settings, findings, and representation actions.
+  route sheets, specification, findings, and representation actions.
 - Removing a route preserves the physical wire and terminal occupancy. Deleting a
   physical wire is an explicit separate action that removes every route occurrence.
-- Selected routes expose canonical endpoints, wire ID, attributes, route reset,
-  and deletion in Properties. Endpoints remain read-only in V1.
+- Selected routes expose read-only Wire number and derived Wire ID, catalog
+  specification selection, Description, route reset, and deletion in Properties.
+  Endpoints remain read-only after creation.
 - Canvas, Package Preview, print, and PDF use the same dark-blue internal-wire
   renderer. Detailed Panel sheets do not copy ordinary field connections; instead,
   represented equipment automatically receives non-interactive straight teal field
   stubs derived from canonical external terminations. Each stub remains linked to
   its source connection, wire/cable provenance, terminal side, and source sheet.
-- Schedules, general multi-conductor terminal capacity, and automatic circuit
-  generation remain future work.
+- Legacy internal wires remain unchanged until the explicit package upgrade is
+  reviewed and applied. The upgrade preserves record IDs, routes, patterns,
+  endpoints, descriptions, and legacy specification data.
 
 ## Connection Patterns, Shielding, And Earthing
 
@@ -269,9 +308,10 @@ to a Backplane.
 
 - Panel Review derives deterministic findings from the package connectivity graph;
   it never inspects rendered SVG and does not persist a stale review snapshot.
-- The review opened from a Detailed Panel Drawing is scoped to that physical
-  panel. Findings include stable subjects, source sheets, drawing objects,
-  severity, and repair/navigation actions suitable for engineers and agents.
+- There is no standalone review action in the drawing toolbar. Existing blocked
+  approval handling opens a review scoped to the affected physical panel;
+  a dedicated approval workflow is deferred. Findings include stable subjects,
+  source sheets, drawing objects, severity, and repair/navigation actions.
 - Blocking errors cover identity conflicts, unresolved or over-occupied
   terminals, broken routes, invalid patterns, missing records, and panel-context
   mismatches. Warnings and information remain reviewable but do not block
@@ -302,9 +342,15 @@ to a Backplane.
 
 ## Compatibility And Performance
 
-The v2 drawing model remains unchanged. `panelDrawingContext`, `panelWiring`, and
-`panelConnectionId` are optional and remain absent until explicitly created. No
-Prisma migration is required.
+The v2 drawing model remains unchanged. `panelDrawingContext`, `panelWiring`,
+`panelConnectionId`, and per-occurrence connection display are optional and
+additive. `sheet_only`, `internal_connected`, `external_connected`, and
+`all_connected` use the package connectivity graph to project existing
+canonical rows onto a selected symbol occurrence. Generated sided terminals map
+internal wires to TOP and external field connections to BOTTOM; generic and
+single-sided symbols are filtered by canonical wire kind instead of geometry.
+Projection never creates records or changes terminal occupancy. No Prisma
+migration is required.
 
 Graph construction is deterministic and linear in package assets, sheets,
 placements, connections, and terminal definitions. It builds indexed `Map`/`Set`
@@ -317,7 +363,7 @@ than rescanning every wire and pattern for each member. Release performance and
 manual procedures are in `docs/DETAILED_PANEL_RELEASE.md`.
 
 Generated modular terminal blocks normalize `T1_TOP` and `T1_BOTTOM` into logical
-terminal `T1` with external/internal capabilities. Approved symbols with one
+terminal `T1` with internal/external capabilities. Approved symbols with one
 anchor per terminal resolve as `single`; ambiguous metadata produces findings
 instead of guessed mappings.
 

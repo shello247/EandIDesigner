@@ -1,9 +1,7 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Save } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import { updateSymbolPanelWiringCapabilityAction } from "../../api/actions";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { useState } from "react";
 import type {
   SymbolMetadata,
   SymbolPanelWiringAssetType
@@ -23,6 +21,7 @@ const assetTypeOptions: Array<{
   { value: "isolator", label: "Isolator" },
   { value: "converter", label: "Converter" },
   { value: "io_module", label: "I/O Module" },
+  { value: "network_device", label: "Network Device" },
   { value: "earth_bar", label: "Earth Bar" },
   { value: "other", label: "Other" }
 ];
@@ -67,18 +66,16 @@ function parsePositive(value: string): number | undefined {
 }
 
 export function SymbolPanelWiringCapabilityPanel({
-  versionId,
-  metadata
+  metadata,
+  readOnly,
+  onChange
 }: {
-  versionId: string;
   metadata: SymbolMetadata;
+  readOnly: boolean;
+  onChange: (updater: (current: SymbolMetadata) => SymbolMetadata) => void;
 }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [enabled, setEnabled] = useState(Boolean(metadata.panelWiring));
-  const [assetType, setAssetType] = useState<SymbolPanelWiringAssetType>(
-    metadata.panelWiring?.assetType ?? "other"
-  );
+  const enabled = Boolean(metadata.panelWiring);
+  const assetType = metadata.panelWiring?.assetType ?? "other";
   const [tagPrefix, setTagPrefix] = useState(
     metadata.panelWiring?.tagPrefix ?? "EQ"
   );
@@ -87,34 +84,22 @@ export function SymbolPanelWiringCapabilityPanel({
       ? String(metadata.panelWiring.schematicScale)
       : ""
   );
-  const [message, setMessage] = useState<string | null>(null);
   const readinessIssues = terminalReadiness(metadata);
   const missingPhysicalDimensions =
     !metadata.physicalWidthMm || !metadata.physicalHeightMm;
 
-  const save = () => {
-    const normalizedPrefix = tagPrefix.trim().toUpperCase();
-    if (enabled && !normalizedPrefix) {
-      setMessage("A default tag prefix is required.");
-      return;
-    }
-
-    startTransition(async () => {
-      const result = await updateSymbolPanelWiringCapabilityAction({
-        versionId,
-        panelWiring: enabled
-          ? {
-              assetType,
-              tagPrefix: normalizedPrefix,
-              schematicScale: parsePositive(schematicScale)
-            }
-          : undefined
-      });
-      setMessage(
-        result.ok ? "Detailed Panel component metadata saved." : result.error
-      );
-      router.refresh();
-    });
+  const updateCapability = (
+    updates: Partial<NonNullable<SymbolMetadata["panelWiring"]>>
+  ) => {
+    onChange((current) => ({
+      ...current,
+      panelWiring: {
+        assetType: current.panelWiring?.assetType ?? "other",
+        tagPrefix: current.panelWiring?.tagPrefix ?? "EQ",
+        ...current.panelWiring,
+        ...updates
+      }
+    }));
   };
 
   return (
@@ -130,8 +115,20 @@ export function SymbolPanelWiringCapabilityPanel({
           <input
             type="checkbox"
             checked={enabled}
-            disabled={isPending}
-            onChange={(event) => setEnabled(event.currentTarget.checked)}
+            disabled={readOnly}
+            onChange={(event) => {
+              const checked = event.currentTarget.checked;
+              onChange((current) => ({
+                ...current,
+                panelWiring: checked
+                  ? {
+                      assetType: current.panelWiring?.assetType ?? "other",
+                      tagPrefix: current.panelWiring?.tagPrefix ?? "EQ",
+                      schematicScale: current.panelWiring?.schematicScale
+                    }
+                  : undefined
+              }));
+            }}
           />
           Enable Detailed Panel use
         </label>
@@ -144,11 +141,12 @@ export function SymbolPanelWiringCapabilityPanel({
               id="panel-wiring-asset-type"
               className="field-input"
               value={assetType}
-              disabled={isPending || !enabled}
+              disabled={readOnly || !enabled}
               onChange={(event) =>
-                setAssetType(
-                  event.currentTarget.value as SymbolPanelWiringAssetType
-                )
+                updateCapability({
+                  assetType:
+                    event.currentTarget.value as SymbolPanelWiringAssetType
+                })
               }
             >
               {assetTypeOptions.map((option) => (
@@ -166,9 +164,13 @@ export function SymbolPanelWiringCapabilityPanel({
               id="panel-wiring-tag-prefix"
               className="field-input"
               value={tagPrefix}
-              disabled={isPending || !enabled}
+              disabled={readOnly || !enabled}
               maxLength={24}
-              onChange={(event) => setTagPrefix(event.currentTarget.value)}
+              onChange={(event) => {
+                const value = event.currentTarget.value.toUpperCase();
+                setTagPrefix(value);
+                updateCapability({ tagPrefix: value });
+              }}
             />
           </div>
         </div>
@@ -182,8 +184,12 @@ export function SymbolPanelWiringCapabilityPanel({
             inputMode="decimal"
             placeholder="Use normal symbol scale"
             value={schematicScale}
-            disabled={isPending || !enabled}
-            onChange={(event) => setSchematicScale(event.currentTarget.value)}
+            disabled={readOnly || !enabled}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              setSchematicScale(value);
+              updateCapability({ schematicScale: parsePositive(value) });
+            }}
           />
         </div>
         {readinessIssues.length === 0 ? (
@@ -210,20 +216,11 @@ export function SymbolPanelWiringCapabilityPanel({
             but physical panel-layout placement remains unavailable.
           </div>
         ) : null}
-        {message ? (
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            {message}
+        {enabled && !tagPrefix.trim() ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            A default tag prefix is required.
           </div>
         ) : null}
-        <button
-          type="button"
-          className="icon-button icon-button-primary w-full justify-center"
-          disabled={isPending}
-          onClick={save}
-        >
-          <Save aria-hidden="true" size={14} />
-          Save Detailed Panel metadata
-        </button>
       </div>
     </section>
   );

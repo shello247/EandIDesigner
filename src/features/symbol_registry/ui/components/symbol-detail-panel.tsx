@@ -1,29 +1,33 @@
+"use client";
+
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import type { SymbolDetail } from "../../types";
-import { ApprovalBar } from "./approval-bar";
 import { SymbolStatusBadge } from "./symbol-status-badge";
-import { SymbolWorkspaceTabs } from "./symbol-workspace-tabs";
+import { SymbolMetadataEditor } from "./symbol-metadata-editor";
 import type { ComponentAlternativeCandidate } from "@/features/symbol_components/api/public";
+import type { SymbolCategoryRecord } from "@/features/symbol_categories/api/public";
+import styles from "./symbol-detail-workspace.module.css";
 
 export function SymbolDetailPanel({
   symbol,
   componentAlternatives,
-  bomPanel
+  categories
 }: {
   symbol: SymbolDetail;
   componentAlternatives: ComponentAlternativeCandidate[];
-  bomPanel?: ReactNode;
+  categories: SymbolCategoryRecord[];
 }) {
   const latest = symbol.latestVersion;
-  const blockingIssueCount = symbol.validationIssues.filter(
-    (issue) => issue.severity === "blocking"
-  ).length;
+  const [displayName, setDisplayName] = useState(symbol.displayName);
+  const [description, setDescription] = useState(latest?.metadata.description);
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className={`flex flex-col gap-5 ${styles.workspace}`}>
+      <div
+        className={`flex flex-wrap items-start justify-between gap-4 ${styles.workspaceHeader}`}
+      >
         <div>
           <Link
             href="/symbols"
@@ -34,7 +38,7 @@ export function SymbolDetailPanel({
           </Link>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-xl font-semibold tracking-normal">
-              {symbol.displayName}
+              {displayName}
             </h1>
             <SymbolStatusBadge status={symbol.status} />
           </div>
@@ -43,24 +47,25 @@ export function SymbolDetailPanel({
             {symbol.manufacturer ? ` / ${symbol.manufacturer}` : ""}
             {symbol.model ? ` / ${symbol.model}` : ""}
           </p>
+          {description ? (
+            <p className="mt-1 max-w-3xl text-sm text-slate-500">
+              {description}
+            </p>
+          ) : null}
         </div>
       </div>
 
       {latest ? (
-        <>
-          <ApprovalBar
-            symbolId={symbol.id}
-            versionId={latest.id}
-            status={symbol.status}
-            blockingIssueCount={blockingIssueCount}
-          />
-          <SymbolWorkspaceTabs
-            symbol={symbol}
-            latest={latest}
-            componentAlternatives={componentAlternatives}
-            bomPanel={bomPanel}
-          />
-        </>
+        <SymbolMetadataEditor
+          symbol={symbol}
+          latest={latest}
+          componentAlternatives={componentAlternatives}
+          categories={categories}
+          onSavedRegistryDetails={(details) => {
+            setDisplayName(details.displayName);
+            setDescription(details.description);
+          }}
+        />
       ) : (
         <div className="tool-panel p-6 text-sm text-slate-600">
           This symbol does not have any versions.

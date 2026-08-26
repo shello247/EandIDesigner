@@ -9,6 +9,12 @@ export function collectDrawingSymbolVersionIds(model: DrawingModel): string[] {
       ),
       ...model.assets.flatMap((asset) =>
         collectComponentSelectionVersionIds(asset.componentSelections)
+      ),
+      ...model.assets.flatMap((asset) =>
+        (asset.terminalStrip?.members ?? []).flatMap((member) => [
+          member.versionId,
+          ...collectComponentSelectionVersionIds(member.componentSelections)
+        ])
       )
     ])
   ];

@@ -1,9 +1,31 @@
 export * from "./contracts";
 export {
+  allocateInternalWireNumber,
+  assertUniqueInternalWireIdentity,
+  createInternalWireRecordId,
+  deriveInternalWireId,
+  deriveInternalWireIdFromSource,
+  formatWireNumber,
+  getEffectiveInternalWireId,
+  getInternalWireDisplayNumber,
+  getWireNumberSettings,
+  reconcileDerivedInternalWireIds
+} from "../logic/services/internal-wire-identity";
+export {
+  buildLegacyWireIdentityUpgradePreview,
+  upgradeLegacyWireIdentities,
+  type LegacyWireIdentityUpgradePreview,
+  type LegacyWireIdentityUpgradeRow
+} from "../logic/services/legacy-wire-identity-upgrade";
+export {
   buildPackageConnectivityGraph,
   getExternalTerminationProvenance,
+  getElectricalNetForTerminalSide,
   getPanelConnectivitySnapshot,
-  getTerminalByRef
+  getTerminalByRef,
+  listElectricalNetworkConnections,
+  listElectricalNetsForAsset,
+  traceElectricalPath
 } from "../logic/services/connectivity-graph";
 export { buildPackageConnectivityGraph as buildPanelConnectivityGraph } from "../logic/services/connectivity-graph";
 export {
@@ -26,17 +48,17 @@ export {
 } from "../logic/use_cases/review-panel-drawing";
 export { validatePanelConnectivitySource } from "../logic/services/panel-wiring-validation";
 export { buildPanelDiscoveryIndex } from "../logic/services/panel-discovery-index";
-export {
-  buildPanelGuidedWorkflowSnapshot,
-  filterPanelWorkflowRecordsByAsset,
-  getNextPanelWorkflowAction
-} from "../logic/services/panel-guided-workflow";
 export { buildPanelAssociatedAssetCatalog } from "../logic/services/panel-associated-asset-catalog";
+export { derivePanelEquipmentSequence } from "../logic/services/panel-equipment-sequence";
 export { buildExternalTerminationCatalog } from "../logic/services/external-termination-catalog";
 export {
   buildPanelExternalTerminationDisplayIndex,
   buildPanelExternalTerminationDisplayRows
 } from "../logic/services/external-termination-display";
+export {
+  buildPlacementWireContextDisplayIndex,
+  placementWireContextKey
+} from "../logic/services/placement-wire-context";
 export {
   buildExternalTerminationMappingCandidates,
   buildExternalTerminationMappingRows,
@@ -55,6 +77,7 @@ export {
   createInternalPanelWire,
   deleteInternalPanelWire,
   getPanelWireDisplayLabel,
+  getPreviousInternalWireDescription,
   getPanelWireSettings,
   updateInternalPanelWire,
   updatePanelWireSettings,
@@ -109,7 +132,6 @@ export {
   setPanelDrawingContext,
   upsertExternalTerminationMapping
 } from "../logic/use_cases/update-panel-wiring-context";
-export { updatePanelWorkflowFocus } from "../logic/use_cases/update-panel-workflow-focus";
 export {
   mapExternalTerminationToTerminal,
   resetExternalTerminationMapping,
@@ -128,26 +150,31 @@ export type {
   PanelConnectivityFinding,
   PanelConnectivityFindingSeverity,
   PanelConnectivityGraph,
+  PanelConductiveRelationship,
+  PanelConductiveRelationshipKind,
+  PanelConductiveRelationshipProvenance,
+  PanelElectricalNet,
+  PanelElectricalNode,
+  PanelElectricalPath,
+  PanelElectricalPathStep,
   PanelEngineeringSnapshot,
   PanelConnectivitySnapshot,
   PanelExternalTermination,
   PanelExternalTerminationProvenance,
   PanelExternalTerminationDisplayRow,
+  PlacementWireContextDisplayIndex,
+  PlacementWireContextDisplayRow,
+  PlacementWireContextRequest,
+  PlacementWireContextSummary,
   PanelDiscoveryStatus,
   PanelAssociatedAssetCatalogRow,
+  PanelEquipmentSequence,
+  PanelEquipmentSequenceIndex,
   ExternalTerminationCatalogRow,
   ExternalTerminationMappingMode,
   ExternalTerminationMappingRow,
   PanelDiscoveryIndex,
   PanelDiscoverySnapshot,
-  PanelGuidedWorkflowStepId,
-  PanelGuidedWorkflowStepStatus,
-  PanelAssetWorkflowStatus,
-  PanelAssetWorkflowRow,
-  PanelGuidedWorkflowStep,
-  PanelGuidedWorkflowAction,
-  PanelGuidedWorkflowSnapshot,
-  PanelWorkflowFilteredRecords,
   PanelTerminalCatalog,
   PanelTerminalCatalogRow,
   PanelTerminalMappingCandidate,

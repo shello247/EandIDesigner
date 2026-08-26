@@ -1,0 +1,38 @@
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import {createHash} from "node:crypto";
+const root=process.cwd();
+if(path.basename(root)!=="drawing-performance-audit-20260826") throw new Error("Isolated audit worktree required");
+const [label,command,...args]=process.argv.slice(2);
+if(!/^[a-z0-9-]+$/.test(label??"")||!command) throw new Error("Usage: run-command.mjs <label> <executable> [...args]");
+const output=path.join(root,"artifacts/drawing-performance/20260826-baseline");
+fs.mkdirSync(output,{recursive:true});
+const hash=value=>createHash("sha256").update(value).digest("hex");
+const baseline=JSON.parse(fs.readFileSync(path.join(output,"source-manifest.json"),"utf8"));
+const instrumentFile=path.join(output,"instrumentation-manifest.json");
+const instrument=fs.existsSync(instrumentFile)?JSON.parse(fs.readFileSync(instrumentFile,"utf8")):null;
+const adapterFile=path.join(output,"test-adapter-manifest.json");
+const adapter=fs.existsSync(adapterFile)?JSON.parse(fs.readFileSync(adapterFile,"utf8")):null;
+const actual=baseline.files.map(file=>({path:file.path,sha256:hash(fs.readFileSync(path.join(root,file.path)))}));
+for(const file of actual){const expected=adapter?.changes.find(change=>change.path===file.path)?.after??instrument?.changes.find(change=>change.path===file.path)?.after??baseline.files.find(item=>item.path===file.path).sha256;if(file.sha256!==expected)throw new Error("Audit source drift: "+file.path);}
+const sourceState={baseFingerprint:baseline.sourceFingerprint,sourceFingerprint:hash(JSON.stringify(actual)),instrumented:Boolean(instrument),buildId:fs.existsSync(path.join(root,".next/BUILD_ID"))?fs.readFileSync(path.join(root,".next/BUILD_ID"),"utf8").trim():null};
+const harnessFiles=fs.readdirSync(path.join(root,"scripts/drawing-performance-audit")).filter(name=>fs.statSync(path.join(root,"scripts/drawing-performance-audit",name)).isFile()).sort().map(name=>({name,sha256:hash(fs.readFileSync(path.join(root,"scripts/drawing-performance-audit",name)))}));
+sourceState.harnessFingerprint=hash(JSON.stringify(harnessFiles));
+const log=fs.createWriteStream(path.join(output,label+".log"));
+const started=Date.now();
+const env={...process.env,DATABASE_URL:"file:"+path.join(root,"prisma/test-drawing-performance-20260826.db").replaceAll("\\","/"),NEXT_TELEMETRY_DISABLED:"1",OPENAI_TERMINAL_MAP_MOCK:"true",OPENAI_BOM_ITEM_EXTRACTION_MOCK:"true"};
+const child=spawn(command,args,{cwd:root,env,shell:false,stdio:["ignore","pipe","pipe"]});
+fs.writeFileSync(path.join(output,label+"-start.json"),JSON.stringify({label,command,args,pid:child.pid,startedAt:new Date(started).toISOString(),sourceState,harnessFiles},null,2));
+process.on("SIGINT",()=>child.kill("SIGINT"));
+for(const stream of [child.stdout,child.stderr]) stream.on("data",chunk=>{log.write(chunk);process.stdout.write(chunk);});
+child.on("error",error=>{log.end(String(error));process.exitCode=1;});
+child.on("exit",(exitCode,signal)=>{
+  log.end();
+  const instrumentAfter=fs.existsSync(instrumentFile)?JSON.parse(fs.readFileSync(instrumentFile,"utf8")):null;
+  const adapterAfter=fs.existsSync(adapterFile)?JSON.parse(fs.readFileSync(adapterFile,"utf8")):null;
+  const after=baseline.files.map(file=>({path:file.path,sha256:hash(fs.readFileSync(path.join(root,file.path)))}));
+  const unexpectedChanges=after.filter(file=>file.sha256!==(adapterAfter?.changes.find(change=>change.path===file.path)?.after??instrumentAfter?.changes.find(change=>change.path===file.path)?.after??baseline.files.find(item=>item.path===file.path).sha256)).map(file=>file.path);
+  const result={label,command,args,startedAt:new Date(started).toISOString(),durationMs:Date.now()-started,exitCode,signal,sourceState,afterSourceFingerprint:hash(JSON.stringify(after)),unexpectedChanges};
+  fs.writeFileSync(path.join(output,label+"-result.json"),JSON.stringify(result,null,2)+"\n");console.log(JSON.stringify(result));process.exitCode=unexpectedChanges.length?1:exitCode??1;
+});

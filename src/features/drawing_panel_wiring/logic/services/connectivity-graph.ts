@@ -18,6 +18,10 @@ import {
   validatePanelConnectionPattern
 } from "./panel-pattern-validation";
 import {
+  buildElectricalNetworkIndex,
+  traceElectricalPathInIndex
+} from "./electrical-network-index";
+import {
   sheetConnectionKey,
   sheetPlacementKey,
   sourceEndpointKey,
@@ -156,6 +160,7 @@ function addRecordFindings(
   findings: PanelConnectivityFinding[]
 ): void {
   const wireIds = new Map<string, string>();
+  const wireNumbers = new Map<number, string>();
   const mappedSources = new Map<string, string>();
 
   const validateTerminalSide = ({
@@ -209,6 +214,37 @@ function addRecordFindings(
   }
 
   for (const wire of source.panelWiring?.internalWires ?? []) {
+    if (!wire.wireNumber) {
+      findings.push({
+        id: `legacy_internal_wire_identity:${wire.id}`,
+        severity: "warning",
+        code: "legacy_internal_wire_identity",
+        message: `${wire.wireId} uses a legacy wire identity. Review the package upgrade before assigning a Wire #.`,
+        panelAssetId: wire.panelAssetId
+      });
+    } else {
+      const duplicateNumberId = wireNumbers.get(wire.wireNumber);
+      if (duplicateNumberId) {
+        findings.push({
+          id: `duplicate_internal_wire_number:${wire.wireNumber}:${wire.id}`,
+          severity: "error",
+          code: "duplicate_internal_wire_number",
+          message: `Wire # ${String(wire.wireNumber).padStart(3, "0")} is already used by internal wire ${duplicateNumberId}.`,
+          panelAssetId: wire.panelAssetId
+        });
+      } else {
+        wireNumbers.set(wire.wireNumber, wire.id);
+      }
+      if (!wire.specification) {
+        findings.push({
+          id: `missing_wire_catalog_snapshot:${wire.id}`,
+          severity: "warning",
+          code: "missing_wire_catalog_snapshot",
+          message: `${wire.wireId} has no Wire Catalog snapshot. Select an approved specification before issue.`,
+          panelAssetId: wire.panelAssetId
+        });
+      }
+    }
     const normalizedWireId = wire.wireId.trim().toUpperCase();
     const duplicateId = wireIds.get(normalizedWireId);
 
@@ -464,6 +500,11 @@ export function buildPackageConnectivityGraphFromValidatedSource(
     internalWiresById,
     bridgesById,
     bondsById,
+    electricalNodesById: new Map(),
+    conductiveRelationshipsById: new Map(),
+    relationshipIdsByElectricalNodeId: new Map(),
+    electricalNetsById: new Map(),
+    electricalNetIdByNodeId: new Map(),
     findings
   };
 
@@ -487,6 +528,15 @@ export function buildPackageConnectivityGraphFromValidatedSource(
       })
     );
   }
+  const networkIndex = buildElectricalNetworkIndex(graph);
+  graph.electricalNodesById = networkIndex.electricalNodesById;
+  graph.conductiveRelationshipsById =
+    networkIndex.conductiveRelationshipsById;
+  graph.relationshipIdsByElectricalNodeId =
+    networkIndex.relationshipIdsByElectricalNodeId;
+  graph.electricalNetsById = networkIndex.electricalNetsById;
+  graph.electricalNetIdByNodeId = networkIndex.electricalNetIdByNodeId;
+  findings.push(...networkIndex.findings);
   const uniqueFindings = new Map(findings.map((finding) => [finding.id, finding]));
   graph.findings.splice(0, graph.findings.length, ...uniqueFindings.values());
   graph.findings.sort((first, second) => first.id.localeCompare(second.id));
@@ -585,6 +635,33 @@ export function getPanelConnectivitySnapshot(
     internalWires: filterByPanel([...graph.internalWiresById.values()]),
     bridges: filterByPanel([...graph.bridgesById.values()]),
     bonds: filterByPanel([...graph.bondsById.values()]),
+    electricalNets: [...graph.electricalNetsById.values()]
+      .filter(
+        (net) =>
+          !panelAssetId ||
+          net.assetIds.some((assetId) => belongsToPanel(graph, assetId, panelAssetId)) ||
+          net.panelAssetIds.includes(panelAssetId)
+      )
+      .sort((first, second) => first.id.localeCompare(second.id)),
+    conductiveRelationships: [...graph.conductiveRelationshipsById.values()]
+      .filter(
+        (relationship) =>
+          !panelAssetId ||
+          relationship.nodeIds.some((nodeId) => {
+            const node = graph.electricalNodesById.get(nodeId);
+            return node?.kind === "panel_reference"
+              ? node.panelAssetId === panelAssetId
+              : Boolean(
+                  node?.kind === "terminal_side" &&
+                    belongsToPanel(
+                      graph,
+                      node.terminal.assetId,
+                      panelAssetId
+                    )
+                );
+          })
+      )
+      .sort((first, second) => first.id.localeCompare(second.id)),
     findings: graph.findings.filter(
       (finding) =>
         !panelAssetId ||
@@ -594,4 +671,44 @@ export function getPanelConnectivitySnapshot(
         )
     )
   };
+}
+
+export function getElectricalNetForTerminalSide(
+  graph: PanelConnectivityGraph,
+  terminal: Parameters<typeof terminalSideNodeId>[0]
+) {
+  const netId = graph.electricalNetIdByNodeId.get(terminalSideNodeId(terminal));
+  return netId ? graph.electricalNetsById.get(netId) : undefined;
+}
+
+export function listElectricalNetsForAsset(
+  graph: PanelConnectivityGraph,
+  assetId: string
+) {
+  return [...graph.electricalNetsById.values()]
+    .filter((net) => net.assetIds.includes(assetId))
+    .sort((first, second) => first.id.localeCompare(second.id));
+}
+
+export function listElectricalNetworkConnections(
+  graph: PanelConnectivityGraph,
+  netId: string
+) {
+  const net = graph.electricalNetsById.get(netId);
+  if (!net) return [];
+  return net.relationshipIds
+    .map((relationshipId) =>
+      graph.conductiveRelationshipsById.get(relationshipId)
+    )
+    .filter(
+      (relationship): relationship is NonNullable<typeof relationship> =>
+        Boolean(relationship)
+    );
+}
+
+export function traceElectricalPath(
+  graph: PanelConnectivityGraph,
+  input: { fromNodeId: string; toNodeId: string }
+) {
+  return traceElectricalPathInIndex({ index: graph, ...input });
 }

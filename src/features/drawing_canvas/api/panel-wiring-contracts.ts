@@ -7,6 +7,7 @@ import type { DrawingModel } from "../data/schema";
 import { drawingPackageModelSchema } from "../data/schema";
 import type { ApprovedDrawingSymbol } from "../types";
 import { buildDrawingPanelWiringSource } from "../logic/services/drawing-panel-wiring-source";
+import { normalizeNetworkDeviceDrawingAssets } from "../logic/services/drawing-network-device-assets";
 
 function emptyPanelWiringData() {
   return {
@@ -15,6 +16,7 @@ function emptyPanelWiringData() {
     internalWires: [],
     bridges: [],
     bonds: [],
+    wireNumberSettings: undefined,
     panelSettings: [],
     patternSettings: []
   };
@@ -29,6 +31,7 @@ function removeEmptyPanelWiringData(model: DrawingModel): DrawingModel {
     data.internalWires.length === 0 &&
     data.bridges.length === 0 &&
     data.bonds.length === 0 &&
+    !data.wireNumberSettings &&
     (data.panelSettings?.length ?? 0) === 0 &&
     (data.patternSettings?.length ?? 0) === 0
   ) {
@@ -42,7 +45,10 @@ export function createPanelWiringSource(
   model: DrawingModel,
   symbols: ApprovedDrawingSymbol[]
 ): PanelWiringSourcePackage {
-  return buildDrawingPanelWiringSource(model, symbols);
+  return buildDrawingPanelWiringSource(
+    normalizeNetworkDeviceDrawingAssets(model, symbols),
+    symbols
+  );
 }
 
 export function applyPanelWiringMutations(
@@ -140,6 +146,17 @@ export function applyPanelWiringMutations(
           ].sort((first, second) =>
             first.panelAssetId.localeCompare(second.panelAssetId)
           )
+        }
+      };
+      continue;
+    }
+
+    if (mutation.kind === "upsert-wire-number-settings") {
+      next = {
+        ...next,
+        panelWiring: {
+          ...panelWiring,
+          wireNumberSettings: mutation.settings
         }
       };
       continue;

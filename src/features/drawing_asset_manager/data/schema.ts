@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { drawingAssetTypeSchema } from "@/features/drawing_canvas/api/asset-contracts";
+import { engineeringAttributeContainerSchema } from "@/features/engineering_attributes/api/public";
 
 export const managedAssetCreateInputSchema = z.object({
   type: drawingAssetTypeSchema,
   tag: z.string().trim().max(120).optional(),
   title: z.string().trim().max(160).optional(),
   description: z.string().trim().max(400).optional(),
+  engineeringAttributes: engineeringAttributeContainerSchema.optional(),
   symbolId: z.string().trim().min(1).optional(),
   versionId: z.string().trim().min(1).optional()
 });
@@ -15,6 +17,7 @@ export const managedAssetUpdateInputSchema = z.object({
   tag: z.string().trim().min(1).max(120).optional(),
   title: z.string().trim().min(1).max(160).optional(),
   description: z.string().trim().max(400).optional(),
+  engineeringAttributes: engineeringAttributeContainerSchema.optional(),
   symbolId: z.string().trim().min(1).optional(),
   versionId: z.string().trim().min(1).optional()
 });

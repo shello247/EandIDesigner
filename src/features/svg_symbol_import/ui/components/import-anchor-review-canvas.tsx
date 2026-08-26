@@ -12,6 +12,7 @@ import {
 import {
   clampPointToViewBox,
   findNearestAnchorInScreenSpace,
+  getAdaptiveSvgMarkerDiameterPx,
   roundSvgPoint,
   SVG_ANCHOR_SELECTION_RADIUS_PX,
   SVG_MARKER_DIAMETER_PX,
@@ -44,11 +45,34 @@ export function ImportAnchorReviewCanvas({
       })),
     [metadata.anchors]
   );
-  const markerRadius = svgUserUnitsForPixels(
-    SVG_MARKER_DIAMETER_PX / 2,
-    pixelsPerUserUnit
+  const markerGeometryByAnchorKey = useMemo(
+    () =>
+      new Map(
+        anchorPoints.map((point, index) => {
+          const diameterPx = getAdaptiveSvgMarkerDiameterPx(
+            anchorPoints,
+            index,
+            pixelsPerUserUnit
+          );
+
+          return [
+            point.anchor.key,
+            {
+              radius: svgUserUnitsForPixels(
+                diameterPx / 2,
+                pixelsPerUserUnit
+              ),
+              strokeWidth: svgUserUnitsForPixels(
+                Math.min(SVG_MARKER_STROKE_PX, diameterPx / 6),
+                pixelsPerUserUnit
+              )
+            }
+          ] as const;
+        })
+      ),
+    [anchorPoints, pixelsPerUserUnit]
   );
-  const markerStrokeWidth = svgUserUnitsForPixels(
+  const componentStrokeWidth = svgUserUnitsForPixels(
     SVG_MARKER_STROKE_PX,
     pixelsPerUserUnit
   );
@@ -143,7 +167,7 @@ export function ImportAnchorReviewCanvas({
                       rx={svgUserUnitsForPixels(3, pixelsPerUserUnit)}
                       className="fill-violet-500/10 stroke-violet-600"
                       strokeDasharray={`${svgUserUnitsForPixels(5, pixelsPerUserUnit)} ${svgUserUnitsForPixels(3, pixelsPerUserUnit)}`}
-                      strokeWidth={markerStrokeWidth}
+                      strokeWidth={componentStrokeWidth}
                     />
                     <text
                       x={component.box.centerX - component.box.width / 2}
@@ -156,26 +180,40 @@ export function ImportAnchorReviewCanvas({
                   </g>
                 ))
               )}
-              {metadata.anchors.map((anchor) => (
-                <g key={anchor.key} pointerEvents="none">
-                  <circle
-                    data-import-anchor-marker={anchor.key}
-                    cx={anchor.x}
-                    cy={anchor.y}
-                    r={markerRadius}
-                    className="fill-teal-500 stroke-white"
-                    strokeWidth={markerStrokeWidth}
-                  />
-                  <text
-                    x={anchor.x + labelOffset}
-                    y={anchor.y - labelOffset}
-                    className="fill-teal-800 font-bold"
-                    fontSize={labelFontSize}
-                  >
-                    {anchor.key}
-                  </text>
-                </g>
-              ))}
+              {metadata.anchors.map((anchor) => {
+                const markerGeometry = markerGeometryByAnchorKey.get(
+                  anchor.key
+                );
+
+                return (
+                  <g key={anchor.key} pointerEvents="none">
+                    <circle
+                      data-import-anchor-marker={anchor.key}
+                      cx={anchor.x}
+                      cy={anchor.y}
+                      r={
+                        markerGeometry?.radius ??
+                        svgUserUnitsForPixels(
+                          SVG_MARKER_DIAMETER_PX / 2,
+                          pixelsPerUserUnit
+                        )
+                      }
+                      className="fill-teal-500 stroke-white"
+                      strokeWidth={
+                        markerGeometry?.strokeWidth ?? componentStrokeWidth
+                      }
+                    />
+                    <text
+                      x={anchor.x + labelOffset}
+                      y={anchor.y - labelOffset}
+                      className="fill-teal-800 font-bold"
+                      fontSize={labelFontSize}
+                    >
+                      {anchor.key}
+                    </text>
+                  </g>
+                );
+              })}
             </>
           }
         />

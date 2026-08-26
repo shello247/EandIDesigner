@@ -39,7 +39,8 @@ const columns: Record<PanelReportKind, PanelTabularColumn[]> = {
   ],
   internal_wire_schedule: [
     ...commonColumns,
-    { key: "wireId", label: "Wire ID", width: 18 },
+    { key: "wireNumber", label: "Wire #", width: 10 },
+    { key: "wireId", label: "Wire ID", width: 24 },
     { key: "from", label: "From", width: 30 },
     { key: "to", label: "To", width: 30 },
     { key: "domain", label: "Domain", width: 16 },
@@ -125,7 +126,13 @@ export function buildPanelTabularRows(
           fieldSource: joined(external.map((item) =>
             [item.connectedAssetTag, item.sourceSheet?.sheetName].filter(Boolean).join(" / ")
           )),
-          internalWire: joined(internal.map((item) => item.wireId ?? item.label)),
+          internalWire: joined(
+            internal.map((item) =>
+              item.wireNumber && item.wireId
+                ? `${String(item.wireNumber).padStart(3, "0")} / ${item.wireId}`
+                : item.wireId ?? item.label
+            )
+          ),
           connectedDevice: joined(internal.map((item) =>
             item.connectedTerminalLabel ?? item.connectedAssetTag
           )),
@@ -154,6 +161,9 @@ export function buildPanelTabularRows(
       panel.wireSchedule.map((row) => ({
         rowId: row.id,
         ...bundleMetadata(bundle, panel.panelTag),
+        wireNumber: row.wireNumber
+          ? String(row.wireNumber).padStart(3, "0")
+          : "",
         wireId: row.wireId,
         from: row.fromLabel,
         to: row.toLabel,

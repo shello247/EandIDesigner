@@ -25,6 +25,7 @@ function symbol(input: {
   category: ApprovedDrawingSymbol["category"];
   model?: string;
   panelWiring?: ApprovedDrawingSymbol["metadata"]["panelWiring"];
+  managedCategory?: ApprovedDrawingSymbol["managedCategory"];
 }): ApprovedDrawingSymbol {
   return {
     symbolId: input.id,
@@ -32,6 +33,7 @@ function symbol(input: {
     displayName: input.name,
     model: input.model,
     category: input.category,
+    managedCategory: input.managedCategory,
     versionId: `${input.id}_v1`,
     versionNumber: 1,
     svg: '<svg viewBox="0 0 100 40" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="40"/></svg>',
@@ -256,6 +258,134 @@ describe("drawing asset manager use cases", () => {
       tag: "LIT-102",
       title: "Tank 2 Level Transmitter"
     });
+  });
+
+  it("classifies a managed Network Device symbol ahead of legacy other metadata", () => {
+    const networkSymbol = symbol({
+      id: "sym_switch",
+      key: "phoenix_fl_switch_1108nt",
+      name: "Industrial Ethernet Switch",
+      category: "controller",
+      managedCategory: {
+        id: "symbol_category_network_device",
+        name: "Network Device"
+      },
+      panelWiring: { assetType: "other", tagPrefix: "SW" }
+    });
+    const switchPlacement = placement({
+      id: "sw_101",
+      assetId: "asset_sw_101",
+      symbolId: networkSymbol.symbolId,
+      versionId: networkSymbol.versionId,
+      role: "device",
+      tag: "SW-101",
+      title: networkSymbol.displayName,
+      layoutKind: "layout_helper",
+      layoutDimensions: { lengthMm: 22.5, widthMm: 140.4 }
+    });
+
+    expect(
+      classifyManagedAssetFromPlacement(switchPlacement, [networkSymbol])
+    ).toBe("network_device");
+  });
+
+  it("preserves and updates engineering attributes on the managed asset", () => {
+    const reconciled = reconcileDrawingAssets(modelWithAssets(), symbols);
+    const engineeringAttributes = {
+      version: 1 as const,
+      values: [
+        {
+          definitionKey: "nominal_voltage",
+          definitionVersion: 1 as const,
+          kind: "quantity" as const,
+          value: 24,
+          unit: "V",
+          source: { kind: "manufacturer" as const, reference: "Datasheet 4.2" }
+        }
+      ]
+    };
+    const updated = updateManagedAsset(
+      reconciled,
+      "asset_lit_101",
+      { engineeringAttributes },
+      symbols
+    );
+    const rereconciled = reconcileDrawingAssets(updated, symbols);
+
+    expect(
+      rereconciled.assets.find((asset) => asset.id === "asset_lit_101")
+        ?.engineeringAttributes
+    ).toEqual(engineeringAttributes);
+    expect(
+      rereconciled.sheets[0]?.placements.find(
+        (item) => item.id === "lit_101"
+      )?.assetId
+    ).toBe("asset_lit_101");
+
+    const removed = updateManagedAsset(
+      rereconciled,
+      "asset_lit_101",
+      { engineeringAttributes: undefined },
+      symbols
+    );
+    expect(
+      removed.assets.find((asset) => asset.id === "asset_lit_101")
+        ?.engineeringAttributes
+    ).toBeUndefined();
+  });
+
+  it("copies technical ratings but clears purpose when splitting a physical asset", () => {
+    const reconciled = reconcileDrawingAssets(modelWithAssets(), symbols);
+    const sourceWithAttributes = {
+      ...reconciled,
+      assets: reconciled.assets.map((asset) =>
+        asset.id === "asset_lit_101"
+          ? {
+              ...asset,
+              engineeringAttributes: {
+                version: 1 as const,
+                values: [
+                  {
+                    definitionKey: "engineering_purpose",
+                    definitionVersion: 1 as const,
+                    kind: "text" as const,
+                    value: "Tank 1 level measurement",
+                    source: { kind: "engineer_entered" as const }
+                  },
+                  {
+                    definitionKey: "nominal_voltage",
+                    definitionVersion: 1 as const,
+                    kind: "quantity" as const,
+                    value: 24,
+                    unit: "V",
+                    source: { kind: "manufacturer" as const }
+                  }
+                ]
+              }
+            }
+          : asset
+      )
+    };
+    const copied = relinkPlacementsToNewAsset(
+      sourceWithAttributes,
+      ["lit_101"],
+      "LIT-102",
+      symbols
+    );
+    const copiedAsset = copied.assets.find((asset) => asset.tag === "LIT-102");
+
+    expect(copiedAsset?.engineeringAttributes?.values).toEqual([
+      expect.objectContaining({
+        definitionKey: "nominal_voltage",
+        value: 24,
+        unit: "V"
+      })
+    ]);
+    expect(
+      copiedAsset?.engineeringAttributes?.values.some(
+        (value) => value.definitionKey === "engineering_purpose"
+      )
+    ).toBe(false);
   });
 
   it("blocks creating or renaming to a tag used by another asset", () => {
