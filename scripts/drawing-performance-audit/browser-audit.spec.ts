@@ -166,6 +166,43 @@ test("instrumentation overhead",async({page})=>{
     persist("overhead-"+block+"-"+(enabled?"enabled":"disabled"),values);
   }
 });
+test("engineering snapshot reuse and mutation invalidation",async({page})=>{
+  test.skip(!diagnostic,"Structural counter run only");
+  await setup(page);await page.goto("/drawings/audit_mixed_40");await ready(page);
+  const placement=(index:number)=>page.locator('svg[aria-label="Interactive drawing overlay"] rect[data-placement-id*="_device_'+index+'"]');
+  // Warm the lazy graph once. It must then survive presentation-only changes.
+  await placement(0).click({force:true});await paint(page);
+  const selection=await action(page,"snapshot-selection",async()=>{
+    await placement(1).click({force:true});await expect(page.getByRole("button",{name:/Asset Identity/})).toBeVisible();
+  });
+  expect(selection.counts["panel.source"]?.count??0).toBe(0);
+  expect(selection.counts["panel.graph"]?.count??0).toBe(0);
+  expect(selection.counts["panel.placement-wire-context"]?.count??0).toBe(0);
+  expect(selection.counts["panel.connected-wire-schedule"]?.count??0).toBe(0);
+  const sheetButton=await prepareSheet(page,"Detail 1");
+  const sheet=await action(page,"snapshot-sheet",async()=>{
+    await sheetButton.click();await expect(page.getByTestId("active-sheet-readout")).toContainText("Detail 1");
+  });
+  expect(sheet.counts["panel.source"]?.count??0).toBe(0);
+  expect(sheet.counts["panel.graph"]?.count??0).toBe(0);
+  const preview=await action(page,"snapshot-preview",async()=>{
+    await page.getByRole("button",{name:"Preview",exact:true}).click();
+    await page.getByRole("menuitem",{name:/Package Preview/}).click();
+    await expect(page.getByTestId("drawing-package-preview")).toBeVisible();
+  });
+  expect(preview.counts["panel.source"]?.count??0).toBe(0);
+  expect(preview.counts["panel.graph"]?.count??0).toBe(0);
+  await page.getByRole("button",{name:"Exit preview"}).first().click();await ready(page);
+  await placement(0).click({force:true});
+  const mutation=await action(page,"snapshot-mutation",async()=>{
+    await page.getByTestId("drawing-canvas-viewport").focus();await page.keyboard.press("ArrowRight");
+  });
+  expect(mutation.counts["canvas.history-commit"]?.count).toBe(1);
+  expect(mutation.counts["panel.source"]?.count).toBe(1);
+  expect(mutation.counts["panel.graph"]?.count).toBe(1);
+  expect(mutation.requests).toHaveLength(0);
+  persist("snapshot-reuse",{selection,sheet,preview,mutation});
+});
 
 test("geometry and identity",async({page})=>{
   await setup(page);await page.goto("/drawings/audit_mixed_40");await ready(page);

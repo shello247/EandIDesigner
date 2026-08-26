@@ -247,6 +247,7 @@ import {
   measureDrawingOperation,
   updateDrawingPerformanceContext
 } from "../../logic/services/drawing-performance-diagnostics";
+import { createDrawingPanelEngineeringSnapshotCache } from "../../logic/services/drawing-panel-engineering-snapshot-cache";
 import {
   createEmptyDrawingHistory,
   pushDrawingHistoryEntry,
@@ -850,36 +851,40 @@ export function DrawingCanvasShell({
   }, [isDetailedPanelDrawing, panelWiringSource, resolvedActiveSheetId]);
   const effectivePanelReviewAssetId =
     detailedPanelContext?.panelAssetId ?? panelReviewAssetId ?? undefined;
+  const panelEngineeringSnapshotRequired =
+    isDetailedPanelDrawing ||
+    activeSheetHasCompleteWiringDisplay ||
+    hasConnectedWireSchedules ||
+    viewMode === "preview" ||
+    Boolean(panelReviewAssetId) ||
+    Boolean(selectedPlacementId);
+  const panelEngineeringSnapshotCache = useMemo(
+    () => createDrawingPanelEngineeringSnapshotCache(),
+    []
+  );
   const panelEngineeringSnapshot = useMemo(
-    () =>
-      isDetailedPanelDrawing ||
-      activeSheetHasCompleteWiringDisplay ||
-      hasConnectedWireSchedules ||
-      viewMode === "preview" ||
-      Boolean(panelReviewAssetId) ||
-      Boolean(selectedPlacementId)
-        ? measureDrawingOperation(
-            "panel.graph",
-            () =>
-              buildPanelEngineeringSnapshotFromValidatedSource(
-                panelWiringSource,
-                `edit:${editRevision}`
-              ),
-            {
-              sheets: panelWiringSource.sheets.length,
-              assets: panelWiringSource.assets.length
-            }
-          )
-        : undefined,
+    () => {
+      if (!panelEngineeringSnapshotRequired) return undefined;
+      return panelEngineeringSnapshotCache.getOrCreate(
+        panelWiringSource,
+        () => measureDrawingOperation(
+          "panel.graph",
+          () => buildPanelEngineeringSnapshotFromValidatedSource(
+            panelWiringSource,
+            `edit:${editRevision}`
+          ),
+          {
+            sheets: panelWiringSource.sheets.length,
+            assets: panelWiringSource.assets.length
+          }
+        )
+      );
+    },
     [
       editRevision,
-      activeSheetHasCompleteWiringDisplay,
-      hasConnectedWireSchedules,
-      isDetailedPanelDrawing,
-      panelReviewAssetId,
-      selectedPlacementId,
+      panelEngineeringSnapshotCache,
+      panelEngineeringSnapshotRequired,
       panelWiringSource,
-      viewMode
     ]
   );
   const panelConnectivityGraph = panelEngineeringSnapshot?.graph;

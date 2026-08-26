@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-008 — accurate bounded action and rendering metrics
-Status: done
+Task: PLAN-002-TASK-009 — reuse engineering snapshots across view changes
+Status: complete; checkpoint publication in progress
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: publish/verify008 checkpoint; require clean CI before Stage2 tag, then begin009 stable engineering snapshots.
+Next action: review and publish the Task009 checkpoint, verify the exact remote SHA, then start Task010 endpoint/topology indexing.
 
 ## Progress snapshot
+
+Stage2 CI33001312593 passed all gates and28production workflows. Tag drawing-perf-pass-1-stage-2-20260826 remote verified, peeled ab2dd18969bb4d9f4a18b8561607892cb3d4fec7.009 started14:48.
+
+009 complete14:56 (approx8m): editor-scoped weak snapshot cache eliminates unchanged source/graph rebuilds for selection, sheet and preview transitions. Mutation still records1history/source/graph build and0requests.720units, types/lint/build, focused production diagnostic and3affected workflows pass. Failed audit-selector attempts retained; checkpoint publication pending.
 
 008 local completion14:43 (approx11m): bounded diagnostics are off with zero allocation by default; action/revision-correlated stages separate from settled time. Final parity,90gesture invariants, Wire Catalog Linux sync,719units/types/lint/build pass. Prior CI/audit failures retained. Stage2 tag awaits clean checkpoint CI.
 

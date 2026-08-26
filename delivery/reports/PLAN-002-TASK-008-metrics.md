@@ -34,7 +34,7 @@ First production diagnostic batch `diagnostic-task008-browser`:2tests pass in1.6
 
 Final `diagnostic-task008-parity-v2` passes: disabled block medians67.6/77.8ms with0stages/counters; enabled blocks both66.0ms with exactly6stages and `edit:0` on every sample. This controlled sequence finds no instrumentation regression but is not evidence of a speedup. `task008-wire-catalog-sync` passes the previously Linux-racy workflow after waiting for its existing close control to re-enable. Full719tests/121files, full typecheck, full lint and production build pass. Final fingerprint `25084ae99debb201f8121838860c001c60e994505ebb4bd85221f2a1a54771cd`; build `du30EUy9kGYYUnBNzMj8F`. No3100listener remains; original audited source matches.
 
-GitHub checkpoint and clean-checkout CI: pending publication lines replaced after exact verification. Stage2 tag is not created until that CI passes.
+GitHub checkpoint `ab2dd18969bb4d9f4a18b8561607892cb3d4fec7` was publication-reviewed (15files, zero findings), pushed and exact remote branch SHA verified. Clean-checkout CI33001312593 passes audit/lint/types/719units/harness/bootstrap/build and all28production drawing workflows with one worker, zero retries and automatic page/popup-error checks. Annotated tag `drawing-perf-pass-1-stage-2-20260826` is remote verified and peels to this tested commit. Existing GitHub action Node-runtime deprecation warning remains non-fatal and deferred; no live promotion.
 
 ## Risk controls
 

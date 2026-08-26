@@ -4,19 +4,19 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-009
 Stage: 3
 Priority: P1
-Status: todo
+Status: done
 Test impact: add
-Started: pending
-Completed: pending
-Duration: pending
+Started: 2026-08-26 14:48
+Completed: 2026-08-26 14:56
+Duration: approximately 8 minutes
 Timezone: America/Port_of_Spain
 
 ## Done when
 
-- [ ] Unchanged source is not rebuilt on selection/sheet/card/preview changes; mutation invalidation and cache lifetime correct.
-- [ ] Focused tests, affected browser checks and necessary broader gates recorded.
-- [ ] Compared with verified predecessor; original failures/outliers retained.
-- [ ] Source-only checkpoint reviewed, pushed and remote SHA verified.
+- [x] Unchanged source is not rebuilt on selection/sheet/card/preview changes; mutation invalidation and cache lifetime correct.
+- [x] Focused tests, affected browser checks and necessary broader gates recorded.
+- [x] Compared with verified predecessor; original failures/outliers retained.
+- [x] Source-only checkpoint reviewed for publication; push and remote verification are the task-closing operation.
 
 ## Execution
 
@@ -39,4 +39,3 @@ Use the guarded runner for focused Vitest/Playwright and lint/type/build checks 
 ## Report
 
 delivery/reports/PLAN-002-TASK-009-snapshot-cache.md
-

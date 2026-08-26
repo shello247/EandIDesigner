@@ -1,7 +1,7 @@
 # PLAN-002 — Drawing Performance Improvements
 
 Status: active
-Progress: Stage0/Stage1 verified; Stage2 implementation locally complete. Catalog manager waits for first request. Accurate bounded disabled-default counters distinguish calculations from settled interactions;719units and production parity/gestures pass. Await Stage2 clean-checkout CI/tag, then Task009 stable engineering snapshots.
+Progress: Stage0–2 verified. CI33001312593 passes719units/build/28production workflows; tag drawing-perf-pass-1-stage-2-20260826 peels to ab2dd18969bb4d9f4a18b8561607892cb3d4fec7. Task009 stable engineering snapshot reuse passes its local gate; Task010 endpoint/topology indexing is next after checkpoint publication.
 Started: 2026-08-26 12:55
 Completed: pending
 Duration: pending
@@ -87,7 +87,7 @@ Port3000/live canonical DB untouched. Independent worktree/deps/Prisma/build; gu
 
 - [x] Stage0 reviewed source recovery remote verified; isolated clean install/build/runtime baseline. Tag drawing-perf-pass-1-stage-0-20260826; known baseline failures retained.
 - [x] Stage1 full lint/types/unit/build and audited production browsers pass; no hydration suppression/weakened assertions. Tag drawing-perf-pass-1-stage-1-20260826 targets c63a0ef5db295103a2d0a9ecc9f9e161aacb9b83.
-- [x] Stage2 closed dialog absent and accurate bounded metrics/parity. Clean-checkout tag pending CI on final checkpoint.
+- [x] Stage2 closed dialog absent and accurate bounded metrics/parity. Tag drawing-perf-pass-1-stage-2-20260826 targets verified ab2dd18969bb4d9f4a18b8561607892cb3d4fec7.
 - [ ] Stage3 graph/invalidation/parity/history/requests counts improve without confirmed regression.
 - [ ] Stage4 dependency closure, lazy catalogue and all render/export/validation consumers correct.
 - [ ] Stage5 at most25 document parses/page, exact counts, stable pages and no migration.
