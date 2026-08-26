@@ -140,7 +140,6 @@ import {
   resetExternalTerminationMapping,
   runPanelDrawingQualityChecks,
   updatePanelConnectionPattern,
-  reconcileDerivedInternalWireIds,
   upgradeLegacyWireIdentities,
   validateInternalWireEndpoints,
   updateDetailedPanelDrawingContext,
@@ -249,6 +248,10 @@ import {
 } from "../../logic/services/drawing-performance-diagnostics";
 import { createDrawingPanelEngineeringSnapshotCache } from "../../logic/services/drawing-panel-engineering-snapshot-cache";
 import {
+  createDrawingModelPreparationCache,
+  createDrawingModelPreparationSymbolKey
+} from "../../logic/services/drawing-model-preparation";
+import {
   createEmptyDrawingHistory,
   pushDrawingHistoryEntry,
   redoDrawingHistory,
@@ -306,7 +309,6 @@ import {
   createManagedAsset,
   classifyManagedAssetFromPlacement,
   deleteManagedAsset,
-  reconcileDrawingAssets,
   updateManagedAsset
 } from "@/features/drawing_asset_manager/logic/use_cases/drawing-asset-manager-use-cases";
 import { replaceDrawingAssetComponentSelections } from "@/features/symbol_components/api/public";
@@ -455,25 +457,6 @@ type PendingPanelPatternReview = {
   memberLabels: string[];
 };
 
-function normalizeCanvasModel(
-  model: DrawingModel,
-  symbols: ApprovedDrawingSymbol[]
-): DrawingModel {
-  const reconciled = reconcileDrawingAssets(
-    {
-      ...model,
-      measurementUnit: model.measurementUnit ?? "mm"
-    },
-    symbols
-  );
-  const mutations = reconcileDerivedInternalWireIds(
-    createPanelWiringSource(reconciled, symbols)
-  );
-  return mutations.length
-    ? applyPanelWiringMutations(reconciled, mutations)
-    : reconciled;
-}
-
 export function DrawingCanvasShell({
   drawing,
   symbols,
@@ -487,6 +470,30 @@ export function DrawingCanvasShell({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const modelPreparationSymbolKey = useMemo(
+    () => createDrawingModelPreparationSymbolKey(symbols),
+    [symbols]
+  );
+  const modelPreparationCache = useMemo(
+    () =>
+      createDrawingModelPreparationCache({
+        symbols,
+        createSource: (candidate) =>
+          measureDrawingOperation(
+            "panel.source",
+            () => createPanelWiringSource(candidate, symbols),
+            {
+              sheets: candidate.sheets.length,
+              assets: candidate.assets?.length ?? 0
+            }
+          )
+      }),
+    // An unchanged Server Component payload may contain a fresh array. The
+    // engineering dependency key prevents that referential churn from
+    // discarding prepared state after Save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [modelPreparationSymbolKey]
+  );
   const initialSheet = drawing.model.sheets[0];
   const initialSelection: DrawingCanvasSelection = initialSheet.placements[0]
     ? {
@@ -511,7 +518,10 @@ export function DrawingCanvasShell({
     useState(false);
   const [viewMode, setViewMode] = useState<CanvasViewMode>("edit");
   const [model, setModelState] = useState<DrawingModel>(() =>
-    normalizeCanvasModel(drawing.model, symbols)
+    measureDrawingOperation(
+      "canvas.normalize",
+      () => modelPreparationCache.prepare(drawing.model).model
+    )
   );
   const [gesturePreviewModel, setGesturePreviewModel] =
     useState<DrawingModel | null>(null);
@@ -814,16 +824,8 @@ export function DrawingCanvasShell({
     [model.sheets]
   );
   const panelWiringSource = useMemo(
-    () =>
-      measureDrawingOperation(
-        "panel.source",
-        () => createPanelWiringSource(model, symbols),
-        {
-          sheets: model.sheets.length,
-          assets: model.assets?.length ?? 0
-        }
-      ),
-    [model, symbols]
+    () => modelPreparationCache.prepare(model).panelWiringSource,
+    [model, modelPreparationCache]
   );
   const compatiblePanelOptions = useMemo(
     () => buildCompatiblePanelOptions(panelWiringSource),
@@ -1390,7 +1392,8 @@ export function DrawingCanvasShell({
         }
 
         const nextModel = measureDrawingOperation(
-          "canvas.normalize", () => normalizeCanvasModel(rawNextModel, symbols)
+          "canvas.normalize",
+          () => modelPreparationCache.prepare(rawNextModel).model
         );
         const beforeEntry = currentHistoryEntry(current);
         const shouldRecord = options.history !== "skip";
@@ -1422,7 +1425,7 @@ export function DrawingCanvasShell({
       });
       setEditRevision((current) => current + 1);
     },
-    [currentHistoryEntry, detailedPanelDrawingsEnabled, symbols]
+    [currentHistoryEntry, detailedPanelDrawingsEnabled, modelPreparationCache]
   );
 
   const beginModelHistoryTransaction = useCallback(() => {
@@ -1454,7 +1457,8 @@ export function DrawingCanvasShell({
 
     if (result.changed) {
       const nextModel = measureDrawingOperation(
-        "canvas.normalize", () => normalizeCanvasModel(result.model, symbols)
+        "canvas.normalize",
+        () => modelPreparationCache.prepare(result.model).model
       );
       historyRef.current = measureDrawingOperation(
         "canvas.history-commit",
@@ -1464,7 +1468,7 @@ export function DrawingCanvasShell({
       setModelState(nextModel);
       setEditRevision((current) => current + 1);
     }
-  }, [symbols]);
+  }, [modelPreparationCache]);
 
   const cancelModelHistoryTransaction = useCallback(() => {
     const draft = canvasGestureDraftRef.current;
@@ -4129,7 +4133,7 @@ export function DrawingCanvasShell({
     setIsSaving(true);
     startTransition(async () => {
       try {
-        const modelToSave = normalizeCanvasModel(model, symbols);
+        const modelToSave = modelPreparationCache.prepare(model).model;
         const result = await saveDrawingAction({
           drawingId: drawing.id,
           title,
@@ -4300,7 +4304,7 @@ export function DrawingCanvasShell({
   const approve = () => {
     const revisionToSave = editRevision;
     startTransition(async () => {
-      const modelToSave = normalizeCanvasModel(model, symbols);
+      const modelToSave = modelPreparationCache.prepare(model).model;
       const result = await approveDrawingAction({
         drawingId: drawing.id,
         title,

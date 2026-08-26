@@ -18,7 +18,7 @@ PLAN-002 — [Drawing Performance Improvements](plans/active/PLAN-002-drawing-pe
 - [x] PLAN-002-TASK-009 — Reuse engineering snapshots across view changes
 - [x] PLAN-002-TASK-010 — Index endpoint and topology resolution
 - [x] PLAN-002-TASK-011 — Benchmark equivalent reusable numeric ordering
-- [ ] PLAN-002-TASK-012 — Share normalized model and final derived source
+- [x] PLAN-002-TASK-012 — Share normalized model and final derived source
 - [ ] PLAN-002-TASK-013 — Reuse exact-version and generated render preparation
 - [ ] PLAN-002-TASK-014 — Complete pinned render dependency collection
 - [ ] PLAN-002-TASK-015 — Batched render bundle and catalogue summaries

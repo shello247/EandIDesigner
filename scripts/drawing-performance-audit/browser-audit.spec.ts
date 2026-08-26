@@ -201,7 +201,14 @@ test("engineering snapshot reuse and mutation invalidation",async({page})=>{
   expect(mutation.counts["panel.source"]?.count).toBe(1);
   expect(mutation.counts["panel.graph"]?.count).toBe(1);
   expect(mutation.requests).toHaveLength(0);
-  persist("snapshot-reuse",{selection,sheet,preview,mutation});
+  const save=await action(page,"snapshot-save",async()=>{
+    await page.getByRole("button",{name:"Save",exact:true}).click();
+    await expect(page.getByText("Saved",{exact:true})).toBeVisible();
+  });
+  expect(save.counts["canvas.normalize"]?.count??0).toBe(0);
+  expect(save.counts["panel.source"]?.count??0).toBe(0);
+  expect(save.counts["panel.graph"]?.count??0).toBe(0);
+  persist("snapshot-reuse",{selection,sheet,preview,mutation,save});
 });
 
 test("geometry and identity",async({page})=>{

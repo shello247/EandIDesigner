@@ -1,12 +1,16 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-011 — benchmark equivalent reusable numeric ordering
-Status: complete; checkpoint publication in progress
+Task: PLAN-002-TASK-012 — share normalized model and final derived source
+Status: complete; checkpoint publication pending
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: review and publish the Task011 checkpoint, verify its exact remote SHA, then start Task012 shared normalized-model/final-source preparation.
+Next action: publication-review, push and remote-verify the Task012 checkpoint; then begin Task013 render preparation.
 
 ## Progress snapshot
+
+012 complete15:36 (approx16m): editor-scoped preparation returns one final model/source pair, rebuilds from the final model only when wire-ID reconciliation mutates it, and survives unchanged Server Action prop serialization. Selection/sheet/preview/save record0normalize/source/graph rebuilds; a real mutation records1source/graph/history and0requests.729units, types/lint/build and5production workflows pass. Two diagnostic red runs and one no-server invocation error are retained. Checkpoint publication pending.
+
+011 checkpoint875686a154444404e176b0e3a4029f4d8d0f07f7 publication-reviewed, pushed and exact remote branch SHA verified.012 started15:20. Stage3 remains open; no live promotion.
 
 011 complete15:19 (approx6m):12,281real/adversarial identifiers and961pairwise cases prove equivalent reusable numeric ordering. ABBA sorting falls~998ms to~36ms. Source120 electrical network now30.52/35.10ms and repeats31.64/36.94ms, below100ms p95; combined validation+graph p95108.27 remains visible.726units, types/lint/build and4production workflows pass. Checkpoint publication pending.
 
