@@ -11,10 +11,14 @@ import {
 import type { SaveDrawingInput } from "../data/schema";
 import type {
   ActionResult,
+  ApprovedDrawingSymbol,
   DrawingApprovalOutcome,
   DrawingDetail
 } from "../types";
-import { listSymbolsForDrawing } from "@/features/symbol_registry/api/public";
+import {
+  listDrawingRenderSymbols,
+  listSymbolsForDrawing
+} from "@/features/symbol_registry/api/public";
 import { detailedPanelDrawingsEnabled } from "@/features/drawing_panel_wiring/api/release";
 import { buildDrawingApprovalDecision } from "../logic/services/drawing-approval-quality";
 import { getDrawingDetail } from "../data/queries";
@@ -47,6 +51,19 @@ async function detailedPanelMutationBlocked(
   if (detailedPanelDrawingsEnabled()) return false;
   const current = await getDrawingDetail(input.drawingId);
   return current ? hasDetailedPanelMutation(current.model, input.model) : true;
+}
+
+export async function loadDrawingSymbolVersionAction(
+  versionId: string
+): Promise<ActionResult<ApprovedDrawingSymbol>> {
+  try {
+    const [symbol] = await listDrawingRenderSymbols([versionId]);
+    return symbol
+      ? { ok: true, data: symbol }
+      : { ok: false, error: "Symbol version was not found." };
+  } catch (error) {
+    return toActionError(error);
+  }
 }
 
 export async function createDrawingAction(
