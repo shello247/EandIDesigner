@@ -4,12 +4,12 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-002
 Stage: 0
 Priority: P1
-Status: todo
+Status: doing
 Test impact: add
 Started: 2026-08-26 13:00
 Completed: pending
 Duration: pending
-Prerequisite: Task002A security repair authorized; resume after its gate passes.
+Prerequisite: Task002A completed13:41 with exact baseline browser failures retained; Task003 types fixed. Resume clean recovery build/runtime and audit runner checks.
 Timezone: America/Port_of_Spain
 
 ## Done when

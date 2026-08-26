@@ -4,10 +4,10 @@ PlanId: PLAN-002
 TaskId: PLAN-002-TASK-002A
 Stage: 0 prerequisite
 Priority: P0 verification blocker
-Status: doing
+Status: done
 Started: 2026-08-26 13:21
-Completed: pending
-Duration: pending
+Completed: 2026-08-26 13:41
+Duration: approximately17m active,20m elapsed including Task003
 Prerequisite update: Task003 repairs all39 test diagnostics; standalone types,704 unit tests, lint and production build pass. Resume002A browser verification.
 Timezone: America/Port_of_Spain
 
@@ -17,11 +17,11 @@ User authorized narrowly scoped repairs before resuming the performance plan. Ve
 
 ## Done when
 
-- [ ] Current audit, dependency paths and upstream compatibility evidence recorded.
-- [ ] Minimal candidate resolves findings without introducing exceptions; remove obsolete exceptions only after verified fixes.
-- [ ] Focused security/compatibility tests, full unit/lint/build and production drawing checks recorded; distinguish known baseline failures.
-- [ ] Public-safe source checkpoint pushed and exact remote SHA verified.
-- [ ] Task002 baseline work resumed only when required gates pass.
+- [x] Current audit, dependency paths and upstream compatibility evidence recorded.
+- [x] Candidate resolves all findings without exceptions; obsolete exceptions removed after verified fixes.
+- [x] Focused17 tests, full704 units/lint/types/build pass; production27 browser tests retain exact baseline22pass/5knownfail result.
+- [x] Public-safe source checkpoints99f38c5/9349e31 pushed and exact remote SHAs verified.
+- [x] Task002 baseline work resumed; fully green browser Stage1 gate is not claimed.
 
 ## Files and verification
 

@@ -1,9 +1,9 @@
 # PLAN-002-TASK-002A — Dependency-security prerequisite
 
 Start: 2026-08-26 13:21 America/Port_of_Spain
-End: pending
-Duration: pending
-Status: verifying candidate; not a release
+End: 2026-08-26 13:41 America/Port_of_Spain
+Duration: approximately17m active (20m elapsed, including3m separate Task003)
+Status: security prerequisite complete with existing browser failures retained; not a release
 
 ## Scope and baseline
 
@@ -43,5 +43,13 @@ Preserved failed attempts: direct npm.cmd spawn raises Windows EINVAL; direct sy
 package.json, package-lock.json, tsconfig.json (redundant baseUrl removal); scripts/dependency-audit-policy.ts; scripts/tests/dependency-audit-policy.test.ts; scripts/tests/dependency-compatibility.test.ts; scripts/tests/fixtures/security/prisma.config.ts; PLAN-002 task/plan/report/state files.
 
 ## Remaining gates and recovery
+
+Final comparison: original27-test production suite repeated with one worker/no retries:22 pass,5 fail,0 skipped/flaky. Exact failing test identity set is unchanged. Same3 React418 hydration errors in panel-assignment; same4 stale Sheet Loader/Asset Manager locators. No new browser failure detected. These are Stage1 Tasks004/005, not waived passes. Save/reload, connected schedules/continuations, routing/hit-testing, guides/arrangement, terminal attributes/reuse, and PDF preview among passing checks. Detailed raw results/traces: artifacts/drawing-performance/pass-1/security-browser-01/; buildId UqgJOCoOVHLH0sgxhWWgq. No performance conclusion from suite duration.
+
+The owned3100 process was stopped after verifying its PID and command against security-server-start.json; shutdown exit4294967295 is intentional, not a workload failure. Original source matched at17:41:13Z (changed/removed empty); port3000 unchanged. No live database inspection or modifications. Security/test code checkpoints99f38c5 and9349e31 are exact-remote verified; this report completion is a source-recovery checkpoint, no stage tag.
+
+Task002A security gate resolves the original13 findings with no exceptions. Stage0 clean recovery build/run and Stage1 fully green browser gates remain. Resume002 automatically; then004/005. The zero audit result is not a security certification or proof that all possible vulnerabilities are absent.
+
+Task003 checkpoint9349e31ee06e91c2e9f9a15cb7cdd0e21b31f7ed pushed and remote verified. It fixes the39 baseline test types separately; standalone types,704 units, full lint and production build now pass. Candidate source fingerprint17ce56960202be2bdbc44b14851e48c9e9d6f862deca6c814454de976ad1c7a6 (the test-repair checkpoint only adds test/package-script changes). Security production-browser run uses the original27-test list, one worker/no retries, unique security-browser-01 output directory; pending final comparison.
 
 Task002A remains incomplete until Task003 typing repair enables production/browser checks. Stage0 clean recovery build/runtime and Stage1 known test typing, hydration and locator repairs are not declared passed. No verified-stage tag. Latest verified remote recovery before this task:b891b861786388f6908144435b8b7c70f5364534. Security changes are a WIP checkpoint, not a verified release. Original source verification at17:30:12Z matches with no changes/deletions; live listener remains127.0.0.1:3000 PID31720. No3100 listener started.

@@ -1,12 +1,14 @@
 # Current work
 
 Plan: PLAN-002 — delivery/plans/active/PLAN-002-drawing-performance-improvements.md
-Task: PLAN-002-TASK-002A — dependency-security browser verification
-Status: doing — Task003 type repair verified
+Task: PLAN-002-TASK-002 — recovery baseline and guarded runner
+Status: doing — security prerequisite complete; Task003 also complete
 Started: 2026-08-26 12:55 America/Port_of_Spain
-Next action: checkpoint Task003, run maintained production drawing browsers on guarded synthetic3100; compare known failures. Then finish002A and resume002 recovery baseline.
+Next action: finish Task002 clean recovery build/runtime and harness failure/uniqueness checks; then proceed to004 hydration and005 stale locators. No new permission needed for agreed tasks.
 
 ## Progress snapshot
+
+Task002A complete13:41: audit0,types0,704units/lint/build pass; browser22pass/5fail exact same failing set as baseline. No new detected regression; no greenStage1 claim. Owned3100 stopped; original source hashes still match. Security code99f38c5 and type repair9349e31 remotely verified. See002A report for evidence and retained risks.
 
 Task003 complete13:36: standalone typecheck0 errors,704 units/116files, full lint and production build pass. No runtime logic or weakened assertions; metadata fixtures corrected and discriminants narrowed. No stage tag; browser/hydration gate remains.
 
