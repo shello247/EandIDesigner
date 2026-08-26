@@ -8,8 +8,14 @@ import type {
   DrawingBomOption,
   DrawingBomSource,
   DrawingDetail,
-  DrawingListItem
+  DrawingListPage
 } from "../types";
+
+export const DRAWING_LIST_PAGE_SIZE = 25;
+
+const drawingListWhere = {
+  NOT: { status: "archived" }
+} as const;
 
 export const listDrawingBomOptions = cache(
   async (): Promise<DrawingBomOption[]> => {
@@ -48,12 +54,15 @@ export const getDrawingBomSource = cache(
   }
 );
 
-export const listDrawings = cache(async (): Promise<DrawingListItem[]> => {
+export const listDrawingPage = cache(async (requestedPage: number): Promise<DrawingListPage> => {
+  const totalCount = await prisma.drawing.count({ where: drawingListWhere });
+  const totalPages = Math.max(1, Math.ceil(totalCount / DRAWING_LIST_PAGE_SIZE));
+  const page = Math.min(Math.max(1, requestedPage), totalPages);
   const rows = await prisma.drawing.findMany({
-    where: {
-      NOT: { status: "archived" }
-    },
-    orderBy: { updatedAt: "desc" },
+    where: drawingListWhere,
+    orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+    skip: (page - 1) * DRAWING_LIST_PAGE_SIZE,
+    take: DRAWING_LIST_PAGE_SIZE,
     select: {
       id: true,
       title: true,
@@ -63,7 +72,7 @@ export const listDrawings = cache(async (): Promise<DrawingListItem[]> => {
     }
   });
 
-  return rows.map((row) => {
+  const items = rows.map((row) => {
     const model = parseDrawingModelJson(row.modelJson);
 
     return {
@@ -74,6 +83,14 @@ export const listDrawings = cache(async (): Promise<DrawingListItem[]> => {
       updatedAt: row.updatedAt.toISOString()
     };
   });
+
+  return {
+    items,
+    page,
+    pageSize: DRAWING_LIST_PAGE_SIZE,
+    totalCount,
+    totalPages
+  };
 });
 
 export const getDrawingDetail = cache(

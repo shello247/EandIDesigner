@@ -18,7 +18,10 @@ application stage.
 
 Supported now:
 
-- Drawing list, creation, deletion, save, and manual approval.
+- Drawing list, creation, deletion, save, and manual approval. The list uses
+  deterministic 25-row server pages and parses drawing documents only for the
+  visible page; the separate BOM drawing-option query is intentionally
+  unchanged.
 - Approved symbol library panel.
 - Add Symbol dialog with package-wide tag allocation and existing-asset
   references for devices.

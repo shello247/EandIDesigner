@@ -7,6 +7,7 @@ export const drawingGateSpecs = [
   "drawing-din-rail-resize.spec.ts",
   "drawing-guided-connection-routing.spec.ts",
   "drawing-guides.spec.ts",
+  "drawing-list-pagination.spec.ts",
   "drawing-panel-assignment.spec.ts",
   "drawing-panel-component-placement.spec.ts",
   "drawing-panel-connection-patterns.spec.ts",

@@ -10,7 +10,7 @@ const {mixedModel,setCatalogueCount}=await import("./fixtures");
 const {stringifyDrawingModel}=await import("../../src/features/drawing_canvas/data/schema");
 let queries:{fingerprint:string;sql:string;durationMs:number}[]=[];
 client.$on("query",event=>{if(queries.length<10000)queries.push({fingerprint:sha(event.query.replace(/\s+/g," ")),sql:event.query,durationMs:event.duration});});
-const {listDrawings,getDrawingDetail}=await import("../../src/features/drawing_canvas/data/queries");
+const {listDrawingPage,getDrawingDetail}=await import("../../src/features/drawing_canvas/data/queries");
 const {
   listDrawingRenderSymbols,
   listDrawingSymbolCatalogSummaries,
@@ -42,7 +42,7 @@ try{
     const existing=await client.drawing.count({where:{status:{not:"archived"}}});
     for(let i=existing;i<count;i++){const id="audit_list_"+i;await client.drawing.create({data:{id,drawingKey:id,title:id,status:"needs_review",modelJson:json}});created.push(id);}
     const aggregate=await client.drawing.findMany({where:{status:{not:"archived"}},select:{modelJson:true}});
-    await run("drawings-list-"+count,()=>listDrawings(),{actualPackages:aggregate.length,storedJsonBytes:aggregate.reduce((n,r)=>n+Buffer.byteLength(r.modelJson),0)});
+    await run("drawings-list-"+count,()=>listDrawingPage(1),{actualPackages:aggregate.length,storedJsonBytes:aggregate.reduce((n,r)=>n+Buffer.byteLength(r.modelJson),0)});
   }
   }finally{
   await client.drawing.deleteMany({where:{id:{in:created}}});
@@ -65,7 +65,7 @@ try{
     if(!result)throw new Error("Save returned no drawing");drawing=result;return result;
   });
   const plans={
-    list:await client.$queryRawUnsafe('EXPLAIN QUERY PLAN SELECT id,title,status,modelJson,updatedAt FROM Drawing WHERE NOT status = ? ORDER BY updatedAt DESC',"archived"),
+    list:await client.$queryRawUnsafe('EXPLAIN QUERY PLAN SELECT id,title,status,modelJson,updatedAt FROM Drawing WHERE NOT status = ? ORDER BY updatedAt DESC, id ASC LIMIT 25 OFFSET 0',"archived"),
     detail:await client.$queryRawUnsafe('EXPLAIN QUERY PLAN SELECT * FROM Drawing WHERE id = ?', "audit_mixed_40"),
     revisionUpdate:await client.$queryRawUnsafe('EXPLAIN QUERY PLAN UPDATE Drawing SET title = ? WHERE id = ? AND updatedAt = ?', "Synthetic","audit_mixed_40",drawing.updatedAt)
   };

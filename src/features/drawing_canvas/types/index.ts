@@ -31,6 +31,14 @@ export type DrawingListItem = {
   updatedAt: string;
 };
 
+export type DrawingListPage = {
+  items: DrawingListItem[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+};
+
 export type DrawingDetail = {
   id: string;
   drawingKey: string;

@@ -266,6 +266,17 @@ export const drawingAnnotationSchema = z.union([
   connectedWireScheduleAnnotationSchema
 ]);
 
+export const drawingListPageSchema = z
+  .string()
+  .regex(/^[1-9]\d*$/)
+  .transform(Number)
+  .pipe(z.number().int().positive().max(Number.MAX_SAFE_INTEGER))
+  .catch(1);
+
+export function parseDrawingListPage(input: unknown): number {
+  return drawingListPageSchema.parse(input);
+}
+
 export const drawingTitleBlockSchema = z.object({
   client: z.string().trim().max(160).optional(),
   project: z.string().trim().max(200).optional(),
