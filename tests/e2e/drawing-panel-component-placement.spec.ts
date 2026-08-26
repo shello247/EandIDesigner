@@ -178,6 +178,16 @@ test("references and reloads panel equipment defined before Detailed Panel wirin
     await manager
       .getByRole("textbox", { name: "Title" })
       .fill("Created Asset Selection Check");
+    const approvedSymbolSelect = manager.getByLabel("Approved symbol");
+    const approvedSymbolOption = approvedSymbolSelect
+      .locator("option")
+      .filter({ hasText: fixture.symbolName });
+    const approvedSymbolValue = await approvedSymbolOption.getAttribute("value");
+    if (!approvedSymbolValue) {
+      throw new Error("Expected the fixture symbol in the lightweight catalogue.");
+    }
+    await approvedSymbolSelect.selectOption(approvedSymbolValue);
+    await expect(approvedSymbolSelect).toHaveValue(approvedSymbolValue);
     await manager
       .getByRole("button", { name: "Create asset", exact: true })
       .last()

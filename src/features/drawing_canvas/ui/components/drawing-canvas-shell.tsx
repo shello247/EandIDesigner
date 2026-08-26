@@ -42,8 +42,10 @@ import type {
 import type { ApprovedDrawingSymbol, DrawingDetail } from "../../types";
 import {
   approveDrawingAction,
+  loadDrawingSymbolVersionAction,
   saveDrawingAction
 } from "../../api/actions";
+import type { DrawingSymbolCatalogSummary } from "@/features/symbol_registry/api/public";
 import {
   addConnection as addConnectionCommand,
   addAnnotation as addAnnotationCommand,
@@ -252,6 +254,11 @@ import {
   createDrawingModelPreparationSymbolKey
 } from "../../logic/services/drawing-model-preparation";
 import {
+  createDrawingSymbolCatalogLoader,
+  loadDrawingSymbolDependencyClosure
+} from "../../logic/services/drawing-symbol-catalog-loader";
+import { selectDrawingRenderDependencies } from "../../logic/services/drawing-symbol-version-references";
+import {
   createEmptyDrawingHistory,
   pushDrawingHistoryEntry,
   redoDrawingHistory,
@@ -340,6 +347,7 @@ import {
 } from "@/features/drawing_panel_asset_placement/api/public";
 import { PanelAssociatedAssetsSection } from "@/features/drawing_panel_asset_placement/ui/components/panel-associated-assets-section";
 import {
+  getGeneratedSymbolsForLibraryContext,
   getSymbolLibraryContextForSheetKind,
   hasPanelLayoutPhysicalDimensions,
   isPanelLayoutLibrarySymbol
@@ -420,6 +428,47 @@ function EngineeringDialogLoading({ label }: { label: string }) {
   );
 }
 
+function SymbolCatalogLoadErrorDialog({
+  error,
+  onCancel,
+  onRetry
+}: {
+  error: string;
+  onCancel: () => void;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 p-4 backdrop-blur-[2px]">
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="symbol-catalog-load-error-title"
+        className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl"
+      >
+        <h2
+          id="symbol-catalog-load-error-title"
+          className="text-sm font-bold text-slate-950"
+        >
+          Terminal catalogue could not be loaded
+        </h2>
+        <p className="mt-2 text-sm text-slate-600">{error}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" className="icon-button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="icon-button icon-button-primary"
+            onClick={onRetry}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type DragState = {
   placementId: string;
   placementIds: string[];
@@ -457,42 +506,61 @@ type PendingPanelPatternReview = {
   memberLabels: string[];
 };
 
+type TerminalStripCatalogRequest =
+  | { kind: "create" }
+  | { kind: "group" }
+  | { kind: "edit"; assetId: string };
+
+type TerminalStripCatalogLoadState = {
+  request: TerminalStripCatalogRequest;
+  status: "loading" | "error";
+  error?: string;
+};
+
 export function DrawingCanvasShell({
   drawing,
-  symbols,
+  symbols: initialSymbols,
+  symbolCatalogSummaries,
   wireCatalogEntries: initialWireCatalogEntries = [],
   detailedPanelDrawingsEnabled = true
 }: {
   drawing: DrawingDetail;
   symbols: ApprovedDrawingSymbol[];
+  symbolCatalogSummaries: DrawingSymbolCatalogSummary[];
   wireCatalogEntries?: WireCatalogEntry[];
   detailedPanelDrawingsEnabled?: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const modelPreparationSymbolKey = useMemo(
-    () => createDrawingModelPreparationSymbolKey(symbols),
-    [symbols]
+  const [symbols, setSymbols] = useState(initialSymbols);
+  const symbolsRef = useRef<ApprovedDrawingSymbol[]>(initialSymbols);
+  const initialEngineeringSymbols = useMemo(
+    () => selectDrawingRenderDependencies(drawing.model, initialSymbols),
+    [drawing.model, initialSymbols]
   );
-  const modelPreparationCache = useMemo(
+  const initialModelPreparationSymbolKey = useMemo(
+    () => createDrawingModelPreparationSymbolKey(initialEngineeringSymbols),
+    [initialEngineeringSymbols]
+  );
+  const initialModelPreparationCache = useMemo(
     () =>
       createDrawingModelPreparationCache({
-        symbols,
+        symbols: initialEngineeringSymbols,
         createSource: (candidate) =>
           measureDrawingOperation(
             "panel.source",
-            () => createPanelWiringSource(candidate, symbols),
+            () =>
+              createPanelWiringSource(candidate, initialEngineeringSymbols),
             {
               sheets: candidate.sheets.length,
               assets: candidate.assets?.length ?? 0
             }
           )
       }),
-    // An unchanged Server Component payload may contain a fresh array. The
-    // engineering dependency key prevents that referential churn from
-    // discarding prepared state after Save.
+    // An unchanged Server Component payload may contain fresh arrays. The
+    // complete immutable dependency key owns cache invalidation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [modelPreparationSymbolKey]
+    [initialModelPreparationSymbolKey]
   );
   const initialSheet = drawing.model.sheets[0];
   const initialSelection: DrawingCanvasSelection = initialSheet.placements[0]
@@ -520,8 +588,47 @@ export function DrawingCanvasShell({
   const [model, setModelState] = useState<DrawingModel>(() =>
     measureDrawingOperation(
       "canvas.normalize",
-      () => modelPreparationCache.prepare(drawing.model).model
+      () => initialModelPreparationCache.prepare(drawing.model).model
     )
+  );
+  const engineeringSymbols = useMemo(
+    () => selectDrawingRenderDependencies(model, symbols),
+    [model, symbols]
+  );
+  const modelPreparationSymbolKey = useMemo(
+    () => createDrawingModelPreparationSymbolKey(engineeringSymbols),
+    [engineeringSymbols]
+  );
+  const modelPreparationCache = useMemo(
+    () =>
+      modelPreparationSymbolKey === initialModelPreparationSymbolKey
+        ? initialModelPreparationCache
+        : createDrawingModelPreparationCache({
+            symbols: engineeringSymbols,
+            createSource: (candidate) =>
+              measureDrawingOperation(
+                "panel.source",
+                () => createPanelWiringSource(candidate, engineeringSymbols),
+                {
+                  sheets: candidate.sheets.length,
+                  assets: candidate.assets?.length ?? 0
+                }
+              )
+          }),
+    // The complete immutable dependency key deliberately owns invalidation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      initialModelPreparationCache,
+      initialModelPreparationSymbolKey,
+      modelPreparationSymbolKey
+    ]
+  );
+  const symbolCatalogLoader = useMemo(
+    () =>
+      createDrawingSymbolCatalogLoader({
+        loadVersion: loadDrawingSymbolVersionAction
+      }),
+    []
   );
   const [gesturePreviewModel, setGesturePreviewModel] =
     useState<DrawingModel | null>(null);
@@ -594,6 +701,8 @@ export function DrawingCanvasShell({
   const [isCopyTerminalBlockOpen, setIsCopyTerminalBlockOpen] = useState(false);
   const [isTerminalBlockGroupOpen, setIsTerminalBlockGroupOpen] =
     useState(false);
+  const [terminalStripCatalogLoad, setTerminalStripCatalogLoad] =
+    useState<TerminalStripCatalogLoadState | null>(null);
   const [editingTerminalStripAssetId, setEditingTerminalStripAssetId] =
     useState<string | null>(null);
   const [terminalStripReuseSource, setTerminalStripReuseSource] = useState<{
@@ -665,6 +774,59 @@ export function DrawingCanvasShell({
     setHasRequestedWireCatalog(true);
     openLocalDialog(setIsWireCatalogOpen, wireCatalogReturnFocusRef);
   };
+  const loadSymbolDependencies = useCallback(
+    async (versionIds: readonly string[]) => {
+      const result = await loadDrawingSymbolDependencyClosure({
+        versionIds,
+        existingSymbols: symbolsRef.current,
+        catalogueSummaries: symbolCatalogSummaries,
+        loader: symbolCatalogLoader
+      });
+      if (!result.ok) return result;
+
+      const nextByVersionId = new Map(
+        symbolsRef.current.map((symbol) => [symbol.versionId, symbol])
+      );
+      const selectableVersionIds = new Set(
+        symbolCatalogSummaries.map((summary) => summary.versionId)
+      );
+      let changed = false;
+      for (const symbol of result.symbols) {
+        const nextSymbol = selectableVersionIds.has(symbol.versionId)
+          ? { ...symbol, selectable: true }
+          : symbol;
+        const current = nextByVersionId.get(symbol.versionId);
+        if (!current || current.selectable !== nextSymbol.selectable) {
+          changed = true;
+        }
+        nextByVersionId.set(symbol.versionId, nextSymbol);
+      }
+      const nextSymbols = [...nextByVersionId.values()];
+      if (changed) {
+        symbolsRef.current = nextSymbols;
+        setSymbols(nextSymbols);
+      }
+
+      return result;
+    },
+    [symbolCatalogLoader, symbolCatalogSummaries]
+  );
+  const loadCatalogSymbol = useCallback(
+    async (versionId: string) => {
+      const result = await loadSymbolDependencies([versionId]);
+      if (!result.ok) return result;
+      const symbol = result.symbols.find(
+        (candidate) => candidate.versionId === versionId
+      );
+      return symbol
+        ? ({ ok: true, symbol } as const)
+        : ({
+            ok: false,
+            error: "The requested symbol version could not be loaded."
+          } as const);
+    },
+    [loadSymbolDependencies]
+  );
   const revealPropertiesForWireAuthoring = () => {
     if (propertiesCollapsedBeforeWireModeRef.current === null) {
       propertiesCollapsedBeforeWireModeRef.current = isPropertiesCollapsed;
@@ -1263,6 +1425,15 @@ export function DrawingCanvasShell({
   );
   const symbolLibraryContext = getSymbolLibraryContextForSheetKind(
     activeSheet.kind ?? "drawing"
+  );
+  const generatedLibrarySymbolsByVersionId = useMemo(
+    () =>
+      new Map(
+        getGeneratedSymbolsForLibraryContext(symbolLibraryContext).map(
+          (symbol) => [symbol.versionId, symbol]
+        )
+      ),
+    [symbolLibraryContext]
   );
   const sheetDeleteCandidate = sheetDeleteCandidateId
     ? model.sheets.find((sheet) => sheet.id === sheetDeleteCandidateId) ?? null
@@ -3968,7 +4139,36 @@ export function DrawingCanvasShell({
     setMessage("Automatic terminal mapping restored.");
   };
 
-  const addSymbolFromLibrary = (symbol: ApprovedDrawingSymbol) => {
+  const openTerminalStripBuilder = async (
+    request: TerminalStripCatalogRequest
+  ) => {
+    setTerminalStripCatalogLoad({ request, status: "loading" });
+    const result = await loadSymbolDependencies(
+      symbolCatalogSummaries
+        .filter((summary) => summary.capabilities.terminalStripCapability)
+        .map((summary) => summary.versionId)
+    );
+
+    if (!result.ok) {
+      setTerminalStripCatalogLoad({
+        request,
+        status: "error",
+        error: result.error
+      });
+      return;
+    }
+
+    setTerminalStripCatalogLoad(null);
+    if (request.kind === "create") {
+      setIsAddTerminalBlockOpen(true);
+    } else if (request.kind === "group") {
+      setIsTerminalBlockGroupOpen(true);
+    } else {
+      setEditingTerminalStripAssetId(request.assetId);
+    }
+  };
+
+  const addResolvedSymbolFromLibrary = (symbol: ApprovedDrawingSymbol) => {
     if (symbolLibraryContext === "wiring") {
       if (isGeneratedBackplaneSymbolReference(symbol)) {
         addBackplaneFromLibrary();
@@ -3981,7 +4181,7 @@ export function DrawingCanvasShell({
       }
 
       if (isGeneratedTerminalBlockGroupLibrarySymbolReference(symbol)) {
-        setIsTerminalBlockGroupOpen(true);
+        void openTerminalStripBuilder({ kind: "group" });
         return;
       }
 
@@ -3997,6 +4197,23 @@ export function DrawingCanvasShell({
 
       setPendingSymbol(symbol);
     }
+  };
+
+  const addSymbolFromLibrary = async (
+    summary: DrawingSymbolCatalogSummary
+  ): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const generated = generatedLibrarySymbolsByVersionId.get(
+      summary.versionId
+    );
+    if (generated) {
+      addResolvedSymbolFromLibrary(generated);
+      return { ok: true };
+    }
+
+    const result = await loadCatalogSymbol(summary.versionId);
+    if (!result.ok) return result;
+    addResolvedSymbolFromLibrary(result.symbol);
+    return { ok: true };
   };
 
   const updateAssetComponentSelections = (
@@ -4410,6 +4627,20 @@ export function DrawingCanvasShell({
 
   return (
     <div className="space-y-5">
+      {terminalStripCatalogLoad?.status === "loading" ? (
+        <EngineeringDialogLoading label="Loading terminal catalogue" />
+      ) : terminalStripCatalogLoad?.status === "error" ? (
+        <SymbolCatalogLoadErrorDialog
+          error={
+            terminalStripCatalogLoad.error ??
+            "The terminal catalogue could not be loaded."
+          }
+          onCancel={() => setTerminalStripCatalogLoad(null)}
+          onRetry={() =>
+            void openTerminalStripBuilder(terminalStripCatalogLoad.request)
+          }
+        />
+      ) : null}
       {isDrawingSettingsOpen ? (
         <DrawingSettingsDialog
           drawingTitle={title}
@@ -4593,6 +4824,7 @@ export function DrawingCanvasShell({
         <AssetManagerDialog
           model={model}
           symbols={symbols}
+          symbolCatalogSummaries={symbolCatalogSummaries}
           initialAssetId={assetManagerInitialAssetId ?? undefined}
           onCancel={() => {
             setIsAssetManagerOpen(false);
@@ -4601,6 +4833,7 @@ export function DrawingCanvasShell({
           onCreateAsset={createAssetManagerAsset}
           onUpdateAsset={updateAssetManagerAsset}
           onLoadSheet={loadSheetFromAssetManager}
+          onLoadSymbol={loadCatalogSymbol}
           onDeleteAsset={deleteAssetManagerAsset}
         />
       ) : null}
@@ -4984,7 +5217,7 @@ export function DrawingCanvasShell({
               ) : (
                 <>
                   <SymbolLibraryPanel
-                    symbols={symbols}
+                    summaries={symbolCatalogSummaries}
                     context={symbolLibraryContext}
                     headerAction={
                       <button
@@ -5043,7 +5276,9 @@ export function DrawingCanvasShell({
             openLocalDialog(setIsConnectionsOpen, connectionsReturnFocusRef)
           }
           onAddPanel={() => setIsAddPanelOpen(true)}
-          onAddTerminalBlock={() => setIsAddTerminalBlockOpen(true)}
+          onAddTerminalBlock={() =>
+            void openTerminalStripBuilder({ kind: "create" })
+          }
           onCopyTerminalBlock={() => setIsCopyTerminalBlockOpen(true)}
           onAddNote={addNote}
           onAddConnectedWireSchedule={addConnectedWireSchedule}
@@ -5207,7 +5442,9 @@ export function DrawingCanvasShell({
                   ? connectedWireScheduleIndex.get(selectedAnnotationId)
                   : undefined
               }
-              onEditTerminalStrip={setEditingTerminalStripAssetId}
+              onEditTerminalStrip={(assetId) =>
+                void openTerminalStripBuilder({ kind: "edit", assetId })
+              }
               onReuseTerminalStrip={(placementId) =>
                 setTerminalStripReuseSource({
                   sheetId: resolvedActiveSheetId,

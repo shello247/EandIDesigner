@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ApprovedDrawingSymbol } from "../types";
-import { createDrawingSymbolCatalogLoader } from "../logic/services/drawing-symbol-catalog-loader";
+import type { DrawingSymbolCatalogSummary } from "@/features/symbol_registry/api/public";
+import {
+  createDrawingSymbolCatalogLoader,
+  loadDrawingSymbolDependencyClosure
+} from "../logic/services/drawing-symbol-catalog-loader";
 
 function symbol(versionId: string): ApprovedDrawingSymbol {
   return {
@@ -19,6 +23,22 @@ function symbol(versionId: string): ApprovedDrawingSymbol {
       anchors: [],
       terminals: []
     }
+  };
+}
+
+function summary(
+  symbolId: string,
+  versionId: string
+): DrawingSymbolCatalogSummary {
+  return {
+    symbolId,
+    symbolKey: `key_${symbolId}`,
+    displayName: `Symbol ${symbolId}`,
+    technicalKind: "instrument",
+    managedCategory: { id: "instruments", name: "Instruments" },
+    versionId,
+    versionNumber: 1,
+    capabilities: {}
   };
 }
 
@@ -129,5 +149,107 @@ describe("drawing symbol catalogue loader", () => {
     await secondEditor.load("version_4");
 
     expect(loadVersion).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads an allowed component closure once and returns it atomically", async () => {
+    const parent = {
+      ...symbol("parent_version"),
+      symbolId: "parent_symbol",
+      metadata: {
+        ...symbol("parent_version").metadata,
+        componentPositions: [
+          {
+            key: "slot",
+            label: "Slot",
+            required: true,
+            components: [
+              {
+                key: "module",
+                label: "Module",
+                box: {
+                  centerX: 5,
+                  centerY: 5,
+                  width: 4,
+                  height: 4,
+                  rotationDeg: 0
+                },
+                allowedSymbolIds: ["child_symbol", "child_symbol"]
+              }
+            ]
+          }
+        ]
+      }
+    } satisfies ApprovedDrawingSymbol;
+    const child = {
+      ...symbol("child_version"),
+      symbolId: "child_symbol"
+    };
+    const loadVersion = vi.fn(async (versionId: string) => ({
+      ok: true as const,
+      data: versionId === parent.versionId ? parent : child
+    }));
+    const loader = createDrawingSymbolCatalogLoader({ loadVersion });
+
+    await expect(
+      loadDrawingSymbolDependencyClosure({
+        versionIds: [parent.versionId],
+        existingSymbols: [],
+        catalogueSummaries: [
+          summary(parent.symbolId, parent.versionId),
+          summary(child.symbolId, child.versionId)
+        ],
+        loader
+      })
+    ).resolves.toEqual({ ok: true, symbols: [parent, child] });
+    expect(loadVersion).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns no partial closure when a required exact request fails", async () => {
+    const parent = {
+      ...symbol("parent_version"),
+      symbolId: "parent_symbol",
+      metadata: {
+        ...symbol("parent_version").metadata,
+        componentPositions: [
+          {
+            key: "slot",
+            label: "Slot",
+            required: true,
+            components: [
+              {
+                key: "module",
+                label: "Module",
+                box: {
+                  centerX: 5,
+                  centerY: 5,
+                  width: 4,
+                  height: 4,
+                  rotationDeg: 0
+                },
+                allowedSymbolIds: ["missing_symbol"]
+              }
+            ]
+          }
+        ]
+      }
+    } satisfies ApprovedDrawingSymbol;
+    const loadVersion = vi.fn(async (versionId: string) =>
+      versionId === parent.versionId
+        ? { ok: true as const, data: parent }
+        : { ok: false as const, error: "Missing child." }
+    );
+    const loader = createDrawingSymbolCatalogLoader({ loadVersion });
+
+    await expect(
+      loadDrawingSymbolDependencyClosure({
+        versionIds: [parent.versionId],
+        existingSymbols: [],
+        catalogueSummaries: [
+          summary(parent.symbolId, parent.versionId),
+          summary("missing_symbol", "missing_version")
+        ],
+        loader
+      })
+    ).resolves.toEqual({ ok: false, error: "Missing child." });
   });
 });

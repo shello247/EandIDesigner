@@ -59,8 +59,12 @@ updated size.
 
 ## Drawing Canvas Relationship
 
-The drawing canvas consumes approved symbols with latest approved versions. It
-uses each symbol's metadata to:
+The drawing canvas receives lightweight latest-approved catalogue summaries
+for browsing and complete exact-version records only for the drawing model's
+pinned dependency closure. Selecting a new catalogue item loads that immutable
+version on demand; save validation, preview, print, PDF, and panel deliverables
+use the same exact-version path and never substitute the latest version for a
+missing historical reference. It uses each resolved symbol's metadata to:
 
 - render placements.
 - expose anchor hover data.

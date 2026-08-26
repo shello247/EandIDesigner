@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation";
-import { listSymbolsForDrawing } from "@/features/symbol_registry/api/public";
+import {
+  listDrawingRenderSymbols,
+  listDrawingSymbolCatalogSummaries
+} from "@/features/symbol_registry/api/public";
 import { getDrawingDetail } from "@/features/drawing_canvas/data/queries";
 import { DrawingCanvasShell } from "@/features/drawing_canvas/ui/components/drawing-canvas-shell";
 import { detailedPanelDrawingsEnabled } from "@/features/drawing_panel_wiring/api/release";
@@ -19,8 +22,9 @@ export default async function DrawingDetailPage({
   if (!drawing) {
     notFound();
   }
-  const [symbols, wireCatalogEntries] = await Promise.all([
-    listSymbolsForDrawing(collectDrawingSymbolVersionIds(drawing.model)),
+  const [symbols, symbolCatalogSummaries, wireCatalogEntries] = await Promise.all([
+    listDrawingRenderSymbols(collectDrawingSymbolVersionIds(drawing.model)),
+    listDrawingSymbolCatalogSummaries(),
     listWireCatalogEntries()
   ]);
 
@@ -28,6 +32,7 @@ export default async function DrawingDetailPage({
     <DrawingCanvasShell
       drawing={drawing}
       symbols={symbols}
+      symbolCatalogSummaries={symbolCatalogSummaries}
       wireCatalogEntries={wireCatalogEntries}
       detailedPanelDrawingsEnabled={detailedPanelDrawingsEnabled()}
     />

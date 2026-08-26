@@ -489,6 +489,15 @@ Adjacent drawing features:
 
 - The drawing canvas reads drawing-usable symbols through the symbol registry public
   interface.
+- Initial editor, save, preview, print, PDF, and panel-report rendering resolve
+  only the model's exact pinned symbol-version dependency closure. The Symbol
+  Library and Asset Manager browse lightweight latest-approved summaries;
+  selecting a new symbol loads its complete immutable record and allowed
+  component closure on demand. Failed loads remain retryable and never insert a
+  partial asset.
+- Loaded catalogue records that are not referenced by the drawing model stay
+  outside the engineering preparation key. Browsing the library therefore does
+  not rebuild an unchanged connectivity graph.
 - The UI does not call Prisma directly.
 - Route and identification logic should remain testable without React.
 - Do not reintroduce bundle routing unless the product direction changes. Cable

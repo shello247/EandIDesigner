@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { chromium } from "playwright";
-import { listSymbolsForDrawing } from "@/features/symbol_registry/api/public";
+import { listDrawingRenderSymbols } from "@/features/symbol_registry/api/public";
 import { getDrawingDetail } from "@/features/drawing_canvas/data/queries";
 import { buildDrawingPdfPrintHtml } from "@/features/drawing_canvas/logic/services/drawing-pdf-export";
 import { toSheetCanvasModel } from "@/features/drawing_canvas/logic/commands/drawing-sheet-commands";
@@ -54,7 +54,7 @@ export async function GET(
   if (!drawing) {
     notFound();
   }
-  const symbols = await listSymbolsForDrawing(
+  const symbols = await listDrawingRenderSymbols(
     collectDrawingSymbolVersionIds(drawing.model)
   );
 

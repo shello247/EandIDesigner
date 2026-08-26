@@ -1,7 +1,10 @@
 import { listSymbolBomTemplatesForSymbols } from "@/features/bom_creator/api/public";
 import type { DrawingAssetRecord } from "@/features/drawing_canvas/api/asset-contracts";
-import { getDrawingDetailForReports } from "@/features/drawing_canvas/api/report-contracts";
-import { listSymbolsForDrawing } from "@/features/symbol_registry/api/public";
+import {
+  collectDrawingSymbolVersionIds,
+  getDrawingDetailForReports
+} from "@/features/drawing_canvas/api/report-contracts";
+import { listDrawingRenderSymbols } from "@/features/symbol_registry/api/public";
 import type { PanelDeliverableRequest } from "./schema";
 import { buildPanelDeliverables } from "../logic/use_cases/build-panel-deliverables";
 
@@ -20,7 +23,9 @@ export async function buildSavedPanelDeliverables(
 ) {
   const drawing = await getDrawingDetailForReports(drawingId);
   if (!drawing) return null;
-  const symbols = await listSymbolsForDrawing();
+  const symbols = await listDrawingRenderSymbols(
+    collectDrawingSymbolVersionIds(drawing.model)
+  );
   const symbolIds = [...new Set([
     ...(drawing.model.assets ?? []).flatMap((asset) => [
       ...(asset.symbolId ? [asset.symbolId] : []),

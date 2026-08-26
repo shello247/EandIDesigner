@@ -16,8 +16,7 @@ import type {
   DrawingDetail
 } from "../types";
 import {
-  listDrawingRenderSymbols,
-  listSymbolsForDrawing
+  listDrawingRenderSymbols
 } from "@/features/symbol_registry/api/public";
 import { detailedPanelDrawingsEnabled } from "@/features/drawing_panel_wiring/api/release";
 import { buildDrawingApprovalDecision } from "../logic/services/drawing-approval-quality";
@@ -59,7 +58,7 @@ export async function loadDrawingSymbolVersionAction(
   try {
     const [symbol] = await listDrawingRenderSymbols([versionId]);
     return symbol
-      ? { ok: true, data: symbol }
+      ? { ok: true, data: { ...symbol, selectable: true } }
       : { ok: false, error: "Symbol version was not found." };
   } catch (error) {
     return toActionError(error);
@@ -99,7 +98,7 @@ export async function saveDrawingAction(
         error: "Detailed Panel Drawings are read-only in this deployment."
       };
     }
-    const symbols = await listSymbolsForDrawing(
+    const symbols = await listDrawingRenderSymbols(
       collectDrawingSymbolVersionIds(input.model)
     );
     const componentIssue = validateDrawingAssetComponentConfigurations({
@@ -145,7 +144,7 @@ export async function approveDrawingAction(
         error: "Detailed Panel packages cannot be approved while the feature is read-only."
       };
     }
-    const symbols = await listSymbolsForDrawing(
+    const symbols = await listDrawingRenderSymbols(
       collectDrawingSymbolVersionIds(input.model)
     );
     const componentIssue = validateDrawingAssetComponentConfigurations({

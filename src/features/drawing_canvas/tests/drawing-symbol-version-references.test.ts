@@ -32,7 +32,11 @@ import {
   GENERATED_PANEL_REFERENCE_SYMBOL_ID,
   GENERATED_PANEL_REFERENCE_VERSION_ID
 } from "../logic/services/drawing-panel-reference-symbols";
-import { collectDrawingSymbolVersionIds } from "../logic/services/drawing-symbol-version-references";
+import type { ApprovedDrawingSymbol } from "../types";
+import {
+  collectDrawingSymbolVersionIds,
+  selectDrawingRenderDependencies
+} from "../logic/services/drawing-symbol-version-references";
 import {
   GENERATED_TERMINAL_BLOCK_GROUP_LIBRARY_SYMBOL_ID,
   GENERATED_TERMINAL_BLOCK_GROUP_LIBRARY_VERSION_ID
@@ -58,6 +62,26 @@ function componentSelection(versionId: string, childVersionId?: string) {
           }
         ]
       : undefined
+  };
+}
+
+function approvedSymbol(versionId: string): ApprovedDrawingSymbol {
+  return {
+    symbolId: `symbol_${versionId}`,
+    symbolKey: `key_${versionId}`,
+    displayName: versionId,
+    category: "instrument",
+    versionId,
+    versionNumber: 1,
+    svg: "<svg></svg>",
+    metadata: {
+      symbolKey: `key_${versionId}`,
+      displayName: versionId,
+      category: "instrument",
+      viewBox: { x: 0, y: 0, width: 10, height: 10 },
+      anchors: [],
+      terminals: []
+    }
   };
 }
 
@@ -282,5 +306,25 @@ describe("drawing symbol version references", () => {
       "version_with_generated_in_its_name",
       "missing_exact_historical_version"
     ]);
+  });
+
+  it("keeps unrelated loaded catalogue records outside engineering dependencies", () => {
+    const model = createDefaultDrawingModel();
+    model.sheets[0].placements.push(
+      placement({
+        id: "referenced",
+        symbolId: "symbol_referenced_version",
+        versionId: "referenced_version"
+      })
+    );
+    const referenced = approvedSymbol("referenced_version");
+    const browsedOnly = approvedSymbol("browsed_only_version");
+
+    expect(
+      selectDrawingRenderDependencies(
+        drawingModelSchema.parse(model),
+        [referenced, browsedOnly]
+      )
+    ).toEqual([referenced]);
   });
 });

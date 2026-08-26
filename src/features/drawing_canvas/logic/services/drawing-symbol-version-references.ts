@@ -1,5 +1,6 @@
 import { collectComponentSelectionVersionIds } from "@/features/symbol_components/api/public";
 import type { DrawingModel } from "../../data/schema";
+import type { ApprovedDrawingSymbol } from "../../types";
 
 // These IDs are reserved by the in-memory drawing generators. Keep this list
 // exact: a broad "generated" prefix check could discard a legitimate pinned
@@ -62,4 +63,12 @@ export function collectDrawingSymbolVersionIds(model: DrawingModel): string[] {
   }
 
   return [...versionIds];
+}
+
+export function selectDrawingRenderDependencies(
+  model: DrawingModel,
+  symbols: readonly ApprovedDrawingSymbol[]
+): ApprovedDrawingSymbol[] {
+  const versionIds = new Set(collectDrawingSymbolVersionIds(model));
+  return symbols.filter((symbol) => versionIds.has(symbol.versionId));
 }

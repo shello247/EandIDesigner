@@ -33,6 +33,7 @@ import type {
   DrawingAssetType,
   DrawingModel
 } from "@/features/drawing_canvas/api/asset-contracts";
+import type { DrawingSymbolCatalogSummary } from "@/features/symbol_registry/api/public";
 import {
   findAssetTagConflict,
   formatAssetTagConflictMessage,
@@ -220,22 +221,27 @@ function assetMatchesSearch(
     .includes(normalizedQuery);
 }
 
-function symbolOptionLabel(symbol: ApprovedDrawingSymbol): string {
+function symbolOptionLabel(
+  symbol: Pick<DrawingSymbolCatalogSummary, "displayName" | "symbolKey">
+): string {
   return `${symbol.displayName} (${symbol.symbolKey})`;
 }
 
 export function AssetManagerDialog({
   model,
   symbols,
+  symbolCatalogSummaries,
   initialAssetId,
   onCancel,
   onCreateAsset,
   onUpdateAsset,
   onLoadSheet,
+  onLoadSymbol,
   onDeleteAsset
 }: {
   model: DrawingModel;
   symbols: ApprovedDrawingSymbol[];
+  symbolCatalogSummaries: DrawingSymbolCatalogSummary[];
   initialAssetId?: string;
   onCancel: () => void;
   onCreateAsset: (input: ManagedAssetCreateInput) => {
@@ -249,6 +255,12 @@ export function AssetManagerDialog({
     engineeringAttributeChange?: EngineeringAttributeChange
   ) => void;
   onLoadSheet: (sheetId: string) => void;
+  onLoadSymbol: (
+    versionId: string
+  ) => Promise<
+    | { ok: true; symbol: ApprovedDrawingSymbol }
+    | { ok: false; error: string }
+  >;
   onDeleteAsset: (assetId: string) => { ok: true } | { ok: false; error: string };
 }) {
   const titleId = "asset-manager-dialog-title";
@@ -287,6 +299,7 @@ export function AssetManagerDialog({
     title: initialSelectedAsset?.title ?? ""
   });
   const [error, setError] = useState<string | null>(null);
+  const [isLoadingCreateSymbol, setIsLoadingCreateSymbol] = useState(false);
   const filteredCatalog = useMemo(
     () => catalog.filter((asset) => assetMatchesSearch(asset, query)),
     [catalog, query]
@@ -318,7 +331,7 @@ export function AssetManagerDialog({
         };
   const decrementedTag = stepEngineeringTag(selectedDraft.tag, -1);
   const incrementedTag = stepEngineeringTag(selectedDraft.tag, 1);
-  const selectedCreateSymbol = symbols.find(
+  const selectedCreateSymbol = symbolCatalogSummaries.find(
     (symbol) => `${symbol.symbolId}:${symbol.versionId}` === createSymbolKey
   );
 
@@ -364,7 +377,7 @@ export function AssetManagerDialog({
     });
   };
 
-  const submitCreate = () => {
+  const submitCreate = async () => {
     const normalizedTag = createTag.trim();
     const normalizedTitle = createTitle.trim();
 
@@ -380,13 +393,24 @@ export function AssetManagerDialog({
       return;
     }
 
+    setIsLoadingCreateSymbol(Boolean(selectedCreateSymbol));
+    const loadedSymbol = selectedCreateSymbol
+      ? await onLoadSymbol(selectedCreateSymbol.versionId)
+      : undefined;
+    setIsLoadingCreateSymbol(false);
+
+    if (loadedSymbol && !loadedSymbol.ok) {
+      setError(loadedSymbol.error);
+      return;
+    }
+
     try {
       const createdAsset = onCreateAsset({
         type: createType,
         tag: normalizedTag,
         title: normalizedTitle || assetTypeLabel(createType),
-        symbolId: selectedCreateSymbol?.symbolId,
-        versionId: selectedCreateSymbol?.versionId
+        symbolId: loadedSymbol?.symbol.symbolId,
+        versionId: loadedSymbol?.symbol.versionId
       });
       setSelectedAssetId(createdAsset.id);
       setExpandedGroups((current) => {
@@ -779,7 +803,7 @@ export function AssetManagerDialog({
                     }
                   >
                     <option value="">No symbol selected yet</option>
-                    {symbols.map((symbol) => (
+                    {symbolCatalogSummaries.map((symbol) => (
                       <option
                         key={`${symbol.symbolId}:${symbol.versionId}`}
                         value={`${symbol.symbolId}:${symbol.versionId}`}
@@ -810,10 +834,11 @@ export function AssetManagerDialog({
                   <button
                     type="button"
                     className="icon-button icon-button-primary"
-                    onClick={submitCreate}
+                    disabled={isLoadingCreateSymbol}
+                    onClick={() => void submitCreate()}
                   >
                     <Plus aria-hidden="true" size={14} />
-                    Create asset
+                    {isLoadingCreateSymbol ? "Loading symbol..." : "Create asset"}
                   </button>
                 </div>
               </div>

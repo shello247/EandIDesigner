@@ -3,8 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { guard, output, summarize, write } from "./common";
-import { seed } from "./fixtures";
+import { auditSymbol, seed } from "./fixtures";
 import { createDrawingActionMeasurement } from "./browser-metrics";
+import { stringifyMetadata } from "../../src/features/symbol_registry/data/schema";
 guard();
 const phase=process.env.AUDIT_PHASE??"baseline";
 const diagnostic=phase.startsWith("diagnostic");
@@ -209,6 +210,29 @@ test("engineering snapshot reuse and mutation invalidation",async({page})=>{
   expect(save.counts["panel.source"]?.count??0).toBe(0);
   expect(save.counts["panel.graph"]?.count??0).toBe(0);
   persist("snapshot-reuse",{selection,sheet,preview,mutation,save});
+});
+test("catalogue detail loading does not invalidate engineering state",async({page})=>{
+  test.skip(!diagnostic,"Structural counter run only");
+  const librarySymbol=auditSymbol(1);
+  const {prisma}=await import("../../src/lib/prisma");
+  await prisma.symbolVersion.update({where:{id:librarySymbol.versionId},data:{metadataJson:stringifyMetadata({...librarySymbol.metadata,layoutUsage:"wiring"})}});
+  await prisma.$disconnect();
+  await setup(page);await page.goto("/drawings/audit_mixed_40");await ready(page);
+  await page.locator('svg[aria-label="Interactive drawing overlay"] rect[data-placement-id*="_device_0"]').first().click({force:true});await paint(page);
+  await page.getByRole("button",{name:"Expand Symbol Library"}).click();
+  const category=page.getByRole("button").filter({hasText:/Other/}).first();
+  if(await category.getAttribute("aria-expanded")!=="true")await category.click();
+  const value=await action(page,"catalogue-detail",async()=>{
+    await page.getByRole("button",{name:"Audit Device 0001",exact:true}).click();
+    await expect(page.getByRole("dialog",{name:"Add Symbol"})).toBeVisible();
+  });
+  expect(value.counts["panel.source"]?.count??0).toBe(0);
+  expect(value.counts["panel.graph"]?.count??0).toBe(0);
+  expect(value.counts["panel.placement-wire-context"]?.count??0).toBe(0);
+  expect(value.counts["panel.connected-wire-schedule"]?.count??0).toBe(0);
+  expect(value.requests.filter(request=>request.method==="POST")).toHaveLength(1);
+  await page.getByRole("button",{name:"Cancel",exact:true}).click();
+  persist("catalogue-detail-no-invalidation",value);
 });
 
 test("geometry and identity",async({page})=>{
