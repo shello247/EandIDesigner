@@ -28,6 +28,50 @@ export const symbolCategorySchema = z.enum([
 
 export const symbolTechnicalKindSchema = symbolCategorySchema;
 
+export const SYMBOL_REGISTRY_PAGE_SIZE = 10;
+export const SYMBOL_REGISTRY_MAX_PAGE = 1_000_000;
+
+function firstSymbolRegistryQueryValue(value: unknown): unknown {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+const symbolRegistryCategoryFilterSchema = z.preprocess((value) => {
+  const candidate = firstSymbolRegistryQueryValue(value);
+
+  if (
+    candidate === undefined ||
+    candidate === null ||
+    candidate === "" ||
+    candidate === "all"
+  ) {
+    return undefined;
+  }
+
+  return candidate;
+}, z.string().trim().min(1).max(128).optional());
+
+const symbolRegistryPageSchema = z.preprocess((value) => {
+  const candidate = firstSymbolRegistryQueryValue(value);
+
+  if (candidate === undefined || candidate === null || candidate === "") {
+    return 1;
+  }
+
+  const parsed = Number(candidate);
+  return Number.isInteger(parsed) &&
+    parsed >= 1 &&
+    parsed <= SYMBOL_REGISTRY_MAX_PAGE
+    ? parsed
+    : 1;
+}, z.number().int().min(1).max(SYMBOL_REGISTRY_MAX_PAGE));
+
+export const symbolRegistryListInputSchema = z
+  .object({
+    categoryId: symbolRegistryCategoryFilterSchema,
+    page: symbolRegistryPageSchema
+  })
+  .strict();
+
 export function isDrawingSymbolCategory(category: string): boolean {
   return category !== "network_device";
 }
@@ -634,6 +678,9 @@ export const terminalMapVerificationJsonSchema = {
 export type SymbolStatus = z.infer<typeof symbolStatusSchema>;
 export type SymbolCategory = z.infer<typeof symbolCategorySchema>;
 export type SymbolTechnicalKind = SymbolCategory;
+export type SymbolRegistryListInput = z.infer<
+  typeof symbolRegistryListInputSchema
+>;
 export type AnchorKind = z.infer<typeof anchorKindSchema>;
 export type NetworkDeviceType = z.infer<typeof networkDeviceTypeSchema>;
 export type NetworkPortMedia = z.infer<typeof networkPortMediaSchema>;

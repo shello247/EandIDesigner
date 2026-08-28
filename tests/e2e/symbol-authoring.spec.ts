@@ -372,6 +372,19 @@ test("filters symbols by the managed category and protects Other", async ({
 }) => {
   await page.goto("/symbols");
 
+  await expect(
+    page.getByText(
+      "Approved SVG symbols and drafts used as the controlled source for future engineering drawing generation."
+    )
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("columnheader", { name: "Item association" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Symbol Registry pages" })
+  ).toBeVisible();
+  expect(await page.locator("table tbody tr").count()).toBeLessThanOrEqual(10);
+
   await page
     .getByLabel("Filter symbols by category")
     .selectOption({ label: "Monitor" });

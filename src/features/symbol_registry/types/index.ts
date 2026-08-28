@@ -17,7 +17,17 @@ export type SymbolListItem = {
   status: SymbolStatus;
   latestVersionNumber?: number;
   blockingIssueCount: number;
+  linkedItemCount: number;
   updatedAt: string;
+};
+
+export type SymbolListPage = {
+  items: SymbolListItem[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  categoryId?: string;
 };
 
 export type SymbolIdentity = {

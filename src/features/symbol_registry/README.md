@@ -37,7 +37,9 @@ because symbols are the controlled source of geometry, terminals, and anchors.
 
 ## Routes
 
-- `/symbols` - registry list.
+- `/symbols` - registry list, filtered by managed category and server-paginated
+  at ten rows per page. Each row reports whether its Symbol Mini BOM links to
+  Items Library records.
 - `/symbols/new` - SVG-only import workflow.
 - `/symbols/[id]` - category-specific symbol review, engineer notes, documents,
   validation, and approval.
@@ -137,7 +139,7 @@ on a separate network-map catalogue.
 ## Tests
 
 ```powershell
-npm run test -- src/features/symbol_registry/tests/symbol_registry.test.ts src/features/symbol_registry/tests/network-symbol-review.test.ts
+npm run test -- src/features/symbol_registry/tests
 ```
 
 Full app verification:
