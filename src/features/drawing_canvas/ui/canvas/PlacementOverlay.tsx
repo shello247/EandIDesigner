@@ -8,10 +8,15 @@ import type { ApprovedDrawingSymbol } from "../../types";
 import { NOTE_NUDGE_STEP } from "../../logic/services/drawing-annotations";
 import { getPlacementBounds } from "../../logic/services/drawing-geometry";
 import {
-  getPanelEnclosureBounds,
+  getPanelEnclosureDisplayBounds,
   getPanelEnclosureTitle,
-  isGeneratedPanelEnclosurePlacement
+  isGeneratedPanelEnclosurePlacement,
+  resolvePanelEnclosureLayoutScale
 } from "../../logic/services/drawing-asset-containment";
+import {
+  getPanelConnectionViewBounds,
+  isPanelConnectionViewPlacement
+} from "../../logic/services/drawing-panel-connection-views";
 import {
   isBackplanePlacement,
   isLayoutHelperPlacement,
@@ -19,6 +24,8 @@ import {
 } from "../../logic/services/drawing-backplane-layouts";
 import {
   getBackplaneDisplayBounds,
+  getParentPanelForBackplane,
+  resolveBackplaneLayoutScale,
   resolveLayoutHelperDisplayPlacement
 } from "../../logic/services/drawing-backplane-scale";
 import { getRenderableSymbolForPlacement } from "../../logic/services/drawing-generated-symbols";
@@ -27,6 +34,7 @@ import {
   isLayoutDimensionPlacement,
   type LayoutDimensionDisplayGeometry
 } from "../../logic/services/drawing-layout-dimensions";
+import { isDinRailSymbol } from "../../logic/services/drawing-layout-labels";
 import { isWireTrayPlacement } from "../../logic/services/drawing-wire-tray-layouts";
 import type { DrawingCanvasSelection } from "../../logic/services/drawing-selection";
 import type {
@@ -289,6 +297,7 @@ export function PlacementOverlay({
     selection: DrawingCanvasSelection;
     delta: { x: number; y: number };
     baseModel?: DrawingModel;
+    bypassGuides?: boolean;
   }) => void;
   onDragEnd: () => void;
   onDragCancel: () => void;
@@ -303,12 +312,24 @@ export function PlacementOverlay({
   onRotationCancel: () => void;
 }) {
   const panelPlacements = model.placements.filter(
-    isGeneratedPanelEnclosurePlacement
+    (placement) =>
+      isGeneratedPanelEnclosurePlacement(placement) ||
+      isPanelConnectionViewPlacement(placement)
   );
   const backplaneById = new Map(
     model.placements
       .filter(isBackplanePlacement)
       .map((placement) => [placement.id, placement])
+  );
+  const parentPanelByBackplaneId = new Map(
+    [...backplaneById.values()].flatMap((placement) => {
+      const parentPanel = getParentPanelForBackplane(
+        model.placements,
+        placement
+      );
+
+      return parentPanel ? [[placement.id, parentPanel] as const] : [];
+    })
   );
   const renderPlacementForSheet = (
     placement: DrawingModel["placements"][number],
@@ -327,18 +348,25 @@ export function PlacementOverlay({
       ? resolveLayoutHelperDisplayPlacement({
           sheet: model.sheet,
           placement: normalizedPlacement,
-          backplane: parentBackplane
+          backplane: parentBackplane,
+          parentPanel: parentPanelByBackplaneId.get(parentBackplane.id)
         })
       : normalizedPlacement;
   };
   const normalPlacements = model.placements.filter(
-    (placement) => !isGeneratedPanelEnclosurePlacement(placement)
+    (placement) =>
+      !isGeneratedPanelEnclosurePlacement(placement) &&
+      !isPanelConnectionViewPlacement(placement)
   );
   const snapGuideBackplane = dimensionSnapFeedback
     ? backplaneById.get(dimensionSnapFeedback.backplaneId)
     : undefined;
   const snapGuideBounds = snapGuideBackplane
-    ? getBackplaneDisplayBounds(model.sheet, snapGuideBackplane)
+    ? getBackplaneDisplayBounds(
+        model.sheet,
+        snapGuideBackplane,
+        parentPanelByBackplaneId.get(snapGuideBackplane.id)
+      )
     : undefined;
 
   return (
@@ -377,12 +405,15 @@ export function PlacementOverlay({
         </g>
       ) : null}
       {panelPlacements.map((placement) => {
-        const bounds = getPanelEnclosureBounds(placement);
+        const isConnectionView = isPanelConnectionViewPlacement(placement);
+        const bounds = isConnectionView
+          ? getPanelConnectionViewBounds(placement)
+          : getPanelEnclosureDisplayBounds(model.sheet, placement);
         const isSelected =
           selectedPlacementId === placement.id ||
           selectedPlacementIds.has(placement.id);
         const handleSize = Math.max(3, Math.min(6, 5 / viewportZoom));
-        const headerHeight = panelHeaderHeight(bounds);
+        const headerHeight = isConnectionView ? 10 : panelHeaderHeight(bounds);
         const handles = getPlacementHandles(bounds, 0);
         const startPanelDrag = (event: PointerEvent<SVGRectElement>) => {
           if (event.button !== 0 || connectionMode === "connecting") {
@@ -432,7 +463,8 @@ export function PlacementOverlay({
               x: Number((nextPrimaryX - dragState.startPlacement.x).toFixed(2)),
               y: Number((nextPrimaryY - dragState.startPlacement.y).toFixed(2))
             },
-            baseModel: dragState.startModel
+            baseModel: dragState.startModel,
+            bypassGuides: event.altKey
           });
         };
 
@@ -462,7 +494,7 @@ export function PlacementOverlay({
               onPointerUp={onDragEnd}
               onPointerCancel={onDragCancel}
             >
-              <title>{placement.tag} {getPanelEnclosureTitle(placement)}</title>
+              <title>{`${placement.tag} ${isConnectionView ? placement.title ?? "" : getPanelEnclosureTitle(placement)}`}</title>
             </rect>
             {[
               { key: "top", x: bounds.x, y: bounds.y, width: bounds.width, height: 2 },
@@ -526,14 +558,20 @@ export function PlacementOverlay({
                         baseSize: {
                           width: bounds.width,
                           height: bounds.height
-                        }
+                        },
+                        physicalScaleFactor: isConnectionView
+                          ? undefined
+                          : resolvePanelEnclosureLayoutScale(
+                              model.sheet,
+                              placement
+                            ).factor
                       });
                     }}
                     onPointerMove={onResizeMove}
                     onPointerUp={onResizeEnd}
                     onPointerCancel={onResizeCancel}
                   >
-                    <title>Resize panel enclosure</title>
+                    <title>{isConnectionView ? "Resize panel connection reference" : "Resize panel enclosure"}</title>
                   </rect>
                 ))}
                 <g
@@ -608,7 +646,11 @@ export function PlacementOverlay({
         const bounds = dimensionGeometry
           ? dimensionGeometry.bounds
           : isBackplanePlacement(placement)
-            ? getBackplaneDisplayBounds(model.sheet, placement)
+            ? getBackplaneDisplayBounds(
+                model.sheet,
+                placement,
+                parentPanelByBackplaneId.get(placement.id)
+              )
             : getPlacementBounds(renderPlacement, symbol.metadata);
         const isSelected =
           selectedPlacementId === placement.id ||
@@ -626,7 +668,8 @@ export function PlacementOverlay({
             isBackplanePlacement(placement));
         const handles = canResize ? getPlacementHandles(bounds, rotation) : [];
         const lengthHandles =
-          canResize && isWireTrayPlacement(placement)
+          canResize &&
+          (isWireTrayPlacement(placement) || isDinRailSymbol(symbol))
             ? getPlacementLengthHandles(bounds, rotation)
             : [];
         const dimensionHandles = dimensionGeometry
@@ -739,7 +782,8 @@ export function PlacementOverlay({
                       (nextPrimaryY - dragState.startPlacement.y).toFixed(2)
                     )
                   },
-                  baseModel: dragState.startModel
+                  baseModel: dragState.startModel,
+                  bypassGuides: event.altKey
                 });
               }}
               onPointerUp={onDragEnd}
@@ -793,7 +837,14 @@ export function PlacementOverlay({
                             baseSize: {
                               width: bounds.width,
                               height: bounds.height
-                            }
+                            },
+                            physicalScaleFactor: isBackplanePlacement(placement)
+                              ? resolveBackplaneLayoutScale(
+                                  model.sheet,
+                                  placement,
+                                  parentPanelByBackplaneId.get(placement.id)
+                                ).factor
+                              : undefined
                           });
                         }}
                         onPointerMove={onResizeMove}
@@ -914,7 +965,8 @@ export function PlacementOverlay({
                         onPointerCancel={onResizeCancel}
                       >
                         <title>
-                          Adjust tray length from the {handle.label} (width locked)
+                          Adjust {placement.tag} length from the {handle.label} (width
+                          locked)
                         </title>
                       </circle>
                       <path

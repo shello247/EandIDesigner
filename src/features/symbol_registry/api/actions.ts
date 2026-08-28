@@ -7,11 +7,8 @@ import {
   createEngineerNote,
   deleteSymbol,
   exportSymbolPackage,
+  saveSymbolMetadataChanges,
   saveSymbolDraft,
-  updateSymbolLayoutMetadata,
-  updateSymbolNetworkProfile,
-  updateSymbolPanelWiringCapability,
-  updateSymbolTerminalMap,
   uploadSymbolDocument,
   validateSymbolVersion
 } from "../data/mutations";
@@ -21,11 +18,8 @@ import {
   listSymbols
 } from "../data/queries";
 import type {
+  SaveSymbolMetadataChangesInput,
   SaveSymbolDraftInput,
-  SymbolLayoutMetadataUpdateInput,
-  UpdateSymbolNetworkProfileInput,
-  SymbolPanelWiringCapabilityUpdateInput,
-  TerminalMapUpdateInput
 } from "../data/schema";
 import { verifyTerminalMapWithAi } from "../logic/services/openai-terminal-map-verifier";
 import type { ActionResult, SymbolDetail, SymbolListItem } from "../types";
@@ -94,6 +88,22 @@ export async function saveSymbolDraftAction(
   }
 }
 
+export async function saveSymbolMetadataChangesAction(
+  input: SaveSymbolMetadataChangesInput
+): Promise<ActionResult<SymbolDetail>> {
+  try {
+    const updated = await saveSymbolMetadataChanges(input);
+    if (!updated) {
+      return { ok: false, error: "Symbol metadata could not be saved." };
+    }
+    revalidatePath("/symbols");
+    revalidatePath(`/symbols/${updated.id}`);
+    return { ok: true, data: updated };
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) };
+  }
+}
+
 export async function validateSymbolAction(
   versionId: string
 ): Promise<ActionResult<{ symbolId: string; blockingIssueCount: number }>> {
@@ -108,70 +118,6 @@ export async function validateSymbolAction(
         blockingIssueCount: result.blockingIssueCount
       }
     };
-  } catch (error) {
-    return { ok: false, error: toErrorMessage(error) };
-  }
-}
-
-export async function updateSymbolTerminalMapAction(
-  input: TerminalMapUpdateInput
-): Promise<ActionResult<SymbolDetail>> {
-  try {
-    const updated = await updateSymbolTerminalMap(input);
-    if (!updated) {
-      return { ok: false, error: "Terminal map could not be updated." };
-    }
-    revalidatePath("/symbols");
-    revalidatePath(`/symbols/${updated.id}`);
-    return { ok: true, data: updated };
-  } catch (error) {
-    return { ok: false, error: toErrorMessage(error) };
-  }
-}
-
-export async function updateSymbolLayoutMetadataAction(
-  input: SymbolLayoutMetadataUpdateInput
-): Promise<ActionResult<SymbolDetail>> {
-  try {
-    const updated = await updateSymbolLayoutMetadata(input);
-    if (!updated) {
-      return { ok: false, error: "Layout metadata could not be updated." };
-    }
-    revalidatePath("/symbols");
-    revalidatePath(`/symbols/${updated.id}`);
-    return { ok: true, data: updated };
-  } catch (error) {
-    return { ok: false, error: toErrorMessage(error) };
-  }
-}
-
-export async function updateSymbolNetworkProfileAction(
-  input: UpdateSymbolNetworkProfileInput
-): Promise<ActionResult<SymbolDetail>> {
-  try {
-    const updated = await updateSymbolNetworkProfile(input);
-    if (!updated) {
-      return { ok: false, error: "Network profile could not be updated." };
-    }
-    revalidatePath("/symbols");
-    revalidatePath(`/symbols/${updated.id}`);
-    return { ok: true, data: updated };
-  } catch (error) {
-    return { ok: false, error: toErrorMessage(error) };
-  }
-}
-
-export async function updateSymbolPanelWiringCapabilityAction(
-  input: SymbolPanelWiringCapabilityUpdateInput
-): Promise<ActionResult<SymbolDetail>> {
-  try {
-    const updated = await updateSymbolPanelWiringCapability(input);
-    if (!updated) {
-      return { ok: false, error: "Detailed Panel metadata could not be updated." };
-    }
-    revalidatePath("/symbols");
-    revalidatePath(`/symbols/${updated.id}`);
-    return { ok: true, data: updated };
   } catch (error) {
     return { ok: false, error: toErrorMessage(error) };
   }

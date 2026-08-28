@@ -2,6 +2,5 @@ export type {
   DrawingComponentSelection,
   SymbolComponentBox,
   SymbolComponentDefinition,
-  SymbolComponentPosition,
-  UpdateSymbolComponentsInput
+  SymbolComponentPosition
 } from "../data/schema";

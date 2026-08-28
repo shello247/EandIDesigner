@@ -2,6 +2,9 @@ import type {
   PanelConnectivityGraph,
   PanelDrawingQualityFinding
 } from "@/features/drawing_panel_wiring/api/public";
+import {
+  deriveInternalWireId
+} from "@/features/drawing_panel_wiring/api/public";
 import type {
   PanelReportTraceRef,
   PanelWireScheduleRow
@@ -64,15 +67,24 @@ export function buildPanelWireSchedule({
         id: `wire-schedule:${wire.id}`,
         panelAssetId,
         panelTag: panel.tag,
-        wireId: wire.wireId,
+        wireNumber: wire.wireNumber,
+        wireId: wire.wireNumber
+          ? deriveInternalWireId({
+              sourceTag:
+                graph.assetsById.get(wire.from.assetId)?.tag ??
+                wire.from.assetId,
+              terminalKey: wire.from.terminalKey,
+              wireNumber: wire.wireNumber
+            })
+          : wire.wireId,
         from: wire.from,
         fromLabel: terminalDisplayLabel(graph, wire.from),
         to: wire.to,
         toLabel: terminalDisplayLabel(graph, wire.to),
         domain: wire.domain ?? "unknown",
-        color: wire.attributes?.color,
-        size: wire.attributes?.size,
-        wireType: wire.attributes?.wireType,
+        color: wire.specification?.color ?? wire.attributes?.color,
+        size: wire.specification?.size ?? wire.attributes?.size,
+        wireType: wire.specification?.wireType ?? wire.attributes?.wireType,
         description: wire.attributes?.description,
         origin: wire.origin,
         ownerPatternId: wire.ownerPatternId,
@@ -86,5 +98,13 @@ export function buildPanelWireSchedule({
         traces
       };
     })
-    .sort((first, second) => naturalCompare(first.wireId, second.wireId));
+    .sort((first, second) =>
+      first.wireNumber && second.wireNumber
+        ? first.wireNumber - second.wireNumber
+        : first.wireNumber
+          ? -1
+          : second.wireNumber
+            ? 1
+            : naturalCompare(first.wireId, second.wireId)
+    );
 }

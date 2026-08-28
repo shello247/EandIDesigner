@@ -1,5 +1,6 @@
 import Link from "next/link";
-import type { DrawingListItem } from "../../types";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import type { DrawingListItem, DrawingListPage } from "../../types";
 import { DrawingDeleteButton } from "./drawing-delete-button";
 
 const statusLabels: Record<DrawingListItem["status"], string> = {
@@ -9,8 +10,12 @@ const statusLabels: Record<DrawingListItem["status"], string> = {
   archived: "Archived"
 };
 
-export function DrawingTable({ drawings }: { drawings: DrawingListItem[] }) {
-  if (drawings.length === 0) {
+function drawingPageHref(page: number) {
+  return page === 1 ? "/drawings" : `/drawings?page=${page}`;
+}
+
+export function DrawingTable({ result }: { result: DrawingListPage }) {
+  if (result.items.length === 0) {
     return (
       <div className="tool-panel flex min-h-[260px] items-center justify-center p-8 text-center">
         <div>
@@ -24,6 +29,9 @@ export function DrawingTable({ drawings }: { drawings: DrawingListItem[] }) {
     );
   }
 
+  const firstItemNumber = (result.page - 1) * result.pageSize + 1;
+  const lastItemNumber = firstItemNumber + result.items.length - 1;
+
   return (
     <div className="tool-panel overflow-hidden">
       <table className="data-table">
@@ -32,14 +40,12 @@ export function DrawingTable({ drawings }: { drawings: DrawingListItem[] }) {
             <th>Drawing</th>
             <th>Status</th>
             <th>Sheets</th>
-            <th>Placements</th>
-            <th>Connections</th>
             <th>Updated</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {drawings.map((drawing) => (
+          {result.items.map((drawing) => (
             <tr key={drawing.id} className="hover:bg-slate-50">
               <td>
                 <Link
@@ -48,14 +54,9 @@ export function DrawingTable({ drawings }: { drawings: DrawingListItem[] }) {
                 >
                   {drawing.title}
                 </Link>
-                <div className="mt-1 text-xs text-slate-500">
-                  {drawing.drawingKey}
-                </div>
               </td>
               <td>{statusLabels[drawing.status]}</td>
               <td>{drawing.sheetCount}</td>
-              <td>{drawing.placementCount}</td>
-              <td>{drawing.connectionCount}</td>
               <td>{new Date(drawing.updatedAt).toLocaleString()}</td>
               <td>
                 <DrawingDeleteButton
@@ -67,6 +68,55 @@ export function DrawingTable({ drawings }: { drawings: DrawingListItem[] }) {
           ))}
         </tbody>
       </table>
+      <nav
+        aria-label="Drawing list pages"
+        className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-600"
+      >
+        <span>
+          {firstItemNumber}–{lastItemNumber} of {result.totalCount} drawings
+        </span>
+        <div className="flex items-center gap-2">
+          {result.page > 1 ? (
+            <Link
+              href={drawingPageHref(result.page - 1)}
+              className="icon-button min-h-8 px-2 py-1 text-xs"
+              aria-label="Previous drawings page"
+            >
+              <ChevronLeft aria-hidden="true" size={14} />
+              Previous
+            </Link>
+          ) : (
+            <span
+              className="icon-button min-h-8 cursor-not-allowed px-2 py-1 text-xs opacity-50"
+              aria-hidden="true"
+            >
+              <ChevronLeft aria-hidden="true" size={14} />
+              Previous
+            </span>
+          )}
+          <span className="min-w-20 text-center font-medium text-slate-700">
+            Page {result.page} of {result.totalPages}
+          </span>
+          {result.page < result.totalPages ? (
+            <Link
+              href={drawingPageHref(result.page + 1)}
+              className="icon-button min-h-8 px-2 py-1 text-xs"
+              aria-label="Next drawings page"
+            >
+              Next
+              <ChevronRight aria-hidden="true" size={14} />
+            </Link>
+          ) : (
+            <span
+              className="icon-button min-h-8 cursor-not-allowed px-2 py-1 text-xs opacity-50"
+              aria-hidden="true"
+            >
+              Next
+              <ChevronRight aria-hidden="true" size={14} />
+            </span>
+          )}
+        </div>
+      </nav>
     </div>
   );
 }

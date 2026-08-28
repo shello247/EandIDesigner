@@ -16,7 +16,8 @@ here, reviewed, then approved in the symbol registry.
 5. For network devices, select the device type and managed status, then review
    each detected port's label, anchor, media, speed, and protocol hints.
 6. For panel layout symbols, enter layout usage, physical width/height in mm,
-   mounting type, panel category, and whether the symbol is resizable.
+   mounting type, managed category, symbol function, and whether the symbol is
+   resizable.
 7. Save as `needs_review`.
 8. Approve the symbol after manual review.
 9. Use the approved symbol in its compatible canvas.

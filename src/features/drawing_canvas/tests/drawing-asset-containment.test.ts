@@ -7,9 +7,13 @@ import {
 } from "../data/schema";
 import {
   assignPlacementToContainer,
+  constrainPanelEnclosureDimensions,
   createPanelEnclosurePlacement,
   getPanelEnclosureBounds,
+  getPanelEnclosureCenteredPosition,
+  getPanelEnclosureDisplayBounds,
   getPanelEnclosureTitle,
+  resolvePanelEnclosureLayoutScale,
   updatePanelEnclosureTitle
 } from "../logic/services/drawing-asset-containment";
 import {
@@ -32,6 +36,7 @@ import {
 import {
   getBackplaneCenteredPosition,
   getBackplaneDisplayBounds,
+  getPanelPhysicalContentRequirements,
   resolveBackplaneLayoutScale,
   resolveDrawingBackplaneScaleLabel,
   resolveLayoutHelperDisplayPlacement
@@ -158,6 +163,188 @@ function modelWithPanelAndBreaker(): DrawingModel {
 }
 
 describe("drawing asset containment", () => {
+  it("constrains typed enclosure dimensions to physical content while allowing auto-scaled sizes", () => {
+    const model = createDefaultDrawingModel();
+    const placement = createPanelEnclosurePlacement({
+      model,
+      activeSheet: model.sheets[0],
+      x: 20,
+      y: 30,
+      width: 180,
+      height: 140
+    });
+
+    expect(
+      constrainPanelEnclosureDimensions({
+        placement,
+        sheet: { width: 240, height: 200 },
+        containedBounds: [{ x: 40, y: 50, width: 130, height: 100 }],
+        width: 80,
+        height: 60
+      })
+    ).toEqual({ width: 150, height: 120 });
+
+    expect(
+      constrainPanelEnclosureDimensions({
+        placement,
+        sheet: { width: 240, height: 200 },
+        containedBounds: [],
+        width: 400,
+        height: 400
+      })
+    ).toEqual({ width: 400, height: 400 });
+  });
+
+  it("auto-fits physical enclosure dimensions without mutating the placement", () => {
+    const model = createDefaultDrawingModel();
+    const sheet = {
+      ...model.sheets[0].page,
+      titleBlock: model.titleBlock
+    };
+    const panel = createPanelEnclosurePlacement({
+      model,
+      activeSheet: model.sheets[0],
+      x: 20,
+      y: 24,
+      width: 304.8,
+      height: 246,
+      kind: "junction_box"
+    });
+    const before = structuredClone(panel);
+
+    expect(resolvePanelEnclosureLayoutScale(sheet, panel)).toMatchObject({
+      mode: "auto",
+      label: "1:1.5",
+      factor: 1 / 1.5,
+      fits: true
+    });
+    expect(getPanelEnclosureDisplayBounds(sheet, panel)).toMatchObject({
+      x: 20,
+      y: 24,
+      width: 203.2,
+      height: 164
+    });
+    expect(getPanelEnclosureCenteredPosition(sheet, panel)).toEqual({
+      x: 108.4,
+      y: 47.5
+    });
+
+    expect(
+      resolvePanelEnclosureLayoutScale(sheet, {
+        ...panel,
+        layoutScale: { mode: "manual", value: 2.5 }
+      })
+    ).toMatchObject({
+      mode: "manual",
+      label: "1:2.5",
+      factor: 0.4,
+      fits: true
+    });
+    expect(panel).toEqual(before);
+  });
+
+  it("preserves legacy enclosure, backplane, and child display geometry", () => {
+    const model = createDefaultDrawingModel();
+    const sheet = {
+      ...model.sheets[0].page,
+      titleBlock: model.titleBlock
+    };
+    const createdPanel = createPanelEnclosurePlacement({
+      model,
+      activeSheet: model.sheets[0],
+      x: 20,
+      y: 22,
+      width: 388.8,
+      height: 230.6
+    });
+    const panel: DrawingPlacement = {
+      ...createdPanel,
+      layoutScale: undefined
+    };
+    const backplane: DrawingPlacement = {
+      id: "legacy_backplane",
+      symbolId: "generated:backplane",
+      versionId: "generated:backplane:v1",
+      role: "other",
+      tag: "Backplane",
+      containerAssetId: panel.assetId,
+      x: 110,
+      y: 46,
+      rotation: 0,
+      scale: 1,
+      layoutKind: "backplane",
+      layoutScale: { mode: "auto" },
+      layoutDimensions: {
+        lengthMm: 600,
+        widthMm: 600
+      }
+    };
+    const rail: DrawingPlacement = {
+      id: "legacy_rail",
+      symbolId: dinRailSymbol.symbolId,
+      versionId: dinRailSymbol.versionId,
+      role: "other",
+      tag: dinRailSymbol.displayName,
+      containerAssetId: panel.assetId,
+      layoutParentId: backplane.id,
+      x: 120,
+      y: 60,
+      rotation: 0,
+      scale: 1,
+      layoutKind: "layout_helper",
+      layoutDimensions: {
+        lengthMm: 300,
+        widthMm: 35
+      }
+    };
+
+    expect(resolvePanelEnclosureLayoutScale(sheet, panel)).toMatchObject({
+      mode: "manual",
+      label: "1:1",
+      factor: 1
+    });
+    expect(getPanelEnclosureDisplayBounds(sheet, panel)).toMatchObject({
+      x: 20,
+      y: 22,
+      width: 388.8,
+      height: 230.6
+    });
+    expect(resolveBackplaneLayoutScale(sheet, backplane, panel)).toMatchObject({
+      mode: "auto",
+      label: "1:3",
+      factor: 1 / 3
+    });
+    expect(getBackplaneDisplayBounds(sheet, backplane, panel)).toMatchObject({
+      x: 110,
+      y: 46,
+      width: 200,
+      height: 200
+    });
+    expect(resolveLayoutHelperDisplayPlacement({
+      sheet,
+      placement: rail,
+      backplane,
+      parentPanel: panel
+    })).toMatchObject({
+      x: 120,
+      y: 60,
+      layoutDimensions: {
+        lengthMm: 100,
+        widthMm: 11.67
+      }
+    });
+    expect(getPanelPhysicalContentRequirements({
+      panel,
+      placements: [panel, backplane, rail]
+    })).toEqual({
+      minX: 0,
+      minY: 0,
+      width: 690,
+      height: 624,
+      fits: false
+    });
+  });
+
   it("accepts generated panel placements and child container references", () => {
     const model = modelWithPanelAndBreaker();
     const parsed = drawingPackageModelSchema.parse(model);
@@ -684,6 +871,7 @@ describe("drawing asset containment", () => {
       backplane,
       symbol: dinRailSymbol,
       sheet,
+      parentPanel: panel,
       placement: {
         id: "rail_1",
         symbolId: dinRailSymbol.symbolId,
@@ -791,12 +979,12 @@ describe("drawing asset containment", () => {
       tag: "JB001",
       x: 20,
       y: 22,
-      width: 118,
-      height: 92,
+      width: 600,
+      height: 600,
       kind: "junction_box"
     });
     const backplane = {
-      ...createBackplanePlacement({ panelPlacement: panel }),
+      ...createBackplanePlacement({ panelPlacement: panel, sheet }),
       layoutDimensions: {
         lengthMm: 250,
         widthMm: 250
@@ -806,6 +994,7 @@ describe("drawing asset containment", () => {
       backplane,
       symbol: dinRailSymbol,
       sheet,
+      parentPanel: panel,
       placement: {
         id: "rail_1",
         symbolId: dinRailSymbol.symbolId,
@@ -826,7 +1015,8 @@ describe("drawing asset containment", () => {
     const displayRail = resolveLayoutHelperDisplayPlacement({
       sheet,
       placement: rail,
-      backplane
+      backplane,
+      parentPanel: panel
     });
     const svg = renderDrawingToSvg({
       model: {
@@ -843,11 +1033,11 @@ describe("drawing asset containment", () => {
       placements: [panel, backplane, rail],
       connections: [],
       annotations: []
-    })).toBe("1:2");
-    expect(displayRail.layoutDimensions?.lengthMm).toBe(122);
-    expect(displayRail.layoutDimensions?.widthMm).toBe(17.5);
-    expect(svg).not.toContain("250 x 250 mm | SCALE 1:2");
-    expect(svg).toContain(">1:2<");
+    })).toBe("1:3");
+    expect(displayRail.layoutDimensions?.lengthMm).toBe(81.33);
+    expect(displayRail.layoutDimensions?.widthMm).toBe(11.67);
+    expect(svg).not.toContain("250 x 250 mm | SCALE 1:3");
+    expect(svg).toContain(">1:3<");
   });
 
   it("renders generated wire trays and miters touching orthogonal corners", () => {
@@ -972,6 +1162,14 @@ describe("drawing asset containment", () => {
         showValue: false
       }
     });
+    const literalLabelDimension = updateLayoutDimensionPlacement({
+      placement: horizontalDimension,
+      backplane,
+      sheet,
+      updates: {
+        labelOverride: "FIELD VERIFY 1.5 mm²"
+      }
+    });
     const svg = renderDrawingToSvg({
       model: {
         sheet,
@@ -990,6 +1188,16 @@ describe("drawing asset containment", () => {
       },
       approvedSymbols: []
     });
+    const inchSvg = renderDrawingToSvg({
+      model: {
+        sheet,
+        placements: [panel, backplane, horizontalDimension],
+        connections: [],
+        annotations: []
+      },
+      approvedSymbols: [],
+      measurementUnit: "in"
+    });
 
     expect(horizontalDimension.assetId).toBeUndefined();
     expect(verticalDimension.assetId).toBeUndefined();
@@ -1002,6 +1210,12 @@ describe("drawing asset containment", () => {
       ).layoutDimensions?.lengthMm
     ).toBe(horizontalDimension.layoutDimensions?.lengthMm);
     expect(layoutDimensionValueLabel(horizontalDimension)).toMatch(/\d+ mm/);
+    expect(
+      layoutDimensionValueLabel(horizontalDimension, undefined, "in")
+    ).toMatch(/\d+(\.\d+)? in/);
+    expect(
+      layoutDimensionValueLabel(literalLabelDimension, undefined, "in")
+    ).toBe("FIELD VERIFY 1.5 mm²");
     expect(svg).toContain('data-generated-dimension="horizontal"');
     expect(svg).toContain('data-generated-dimension="vertical"');
     expect(svg).toContain('data-dimension-part="extension-lines"');
@@ -1009,6 +1223,9 @@ describe("drawing asset containment", () => {
     expect(svg).toContain('data-dimension-part="dimension-line"');
     expect(svg).toContain('data-dimension-part="label"');
     expect(svg).toContain(layoutDimensionValueLabel(horizontalDimension));
+    expect(inchSvg).toContain(
+      layoutDimensionValueLabel(horizontalDimension, undefined, "in")
+    );
     expect(hiddenSvg).toContain('data-generated-dimension="horizontal"');
     expect(hiddenSvg).not.toContain(layoutDimensionValueLabel(horizontalDimension));
   });
@@ -1162,6 +1379,13 @@ describe("drawing asset containment", () => {
         position: "bottom-right" as const
       }
     };
+    const manuallyPositionedTerminalBlock = {
+      ...terminalBlock,
+      id: "tb_103",
+      tag: "TB-103",
+      assetId: "asset_tb_103",
+      labelPosition: { x: 91.25, y: 74.5 }
+    };
     const customRail = {
       ...rail,
       layoutLabel: {
@@ -1187,6 +1411,7 @@ describe("drawing asset containment", () => {
           customRail,
           tray,
           terminalBlock,
+          manuallyPositionedTerminalBlock,
           hiddenTerminalBlock
         ],
         connections: [],
@@ -1201,10 +1426,14 @@ describe("drawing asset containment", () => {
     });
     expect(svg).toContain('data-layout-helper-label-id="tb_101"');
     expect(svg).toContain(">TB-101<");
+    expect(svg).toContain('data-layout-helper-label-id="tb_103"');
+    expect(svg).toContain(
+      'data-placement-tag="tb_103" x="91.25" y="74.5" text-anchor="middle"'
+    );
     expect(svg).toContain('data-layout-helper-label-id="rail_1"');
     expect(svg).toContain(">Standard TH35 DIN Rail<");
-    expect(svg).toContain('data-layout-helper-label-id="tray_1"');
-    expect(svg).toContain(">Wire Tray / Duct<");
+    expect(svg).not.toContain('data-layout-helper-label-id="tray_1"');
+    expect(svg).not.toContain(">Wire Tray / Duct<");
     expect(svg).not.toContain('data-layout-helper-label-id="tb_102"');
     expect(svg).not.toContain(">TB-102<");
   });

@@ -32,6 +32,10 @@ function getDrawingSymbolIds(model: DrawingModel): string[] {
       }
     };
     visit(asset.componentSelections);
+    for (const member of asset.terminalStrip?.members ?? []) {
+      symbolIds.add(member.symbolId);
+      visit(member.componentSelections);
+    }
   }
 
   for (const sheet of model.sheets) {

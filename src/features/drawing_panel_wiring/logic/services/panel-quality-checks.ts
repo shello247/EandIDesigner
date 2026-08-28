@@ -327,6 +327,156 @@ function addDuplicateAssetTags(
   }
 }
 
+function structuredTerminalStripMountContexts(
+  graph: PanelQualityIndex["graph"]
+) {
+  const structuredAssetIds = new Set(
+    graph.source.assets
+      .filter((asset) => asset.isStructuredTerminalStrip)
+      .map((asset) => asset.id)
+  );
+  const contexts = new Map<
+    string,
+    Map<
+      string,
+      Array<(typeof graph.source.sheets)[number]["occurrences"][number]>
+    >
+  >();
+
+  for (const sheet of graph.source.sheets) {
+    for (const occurrence of sheet.occurrences) {
+      if (
+        !occurrence.assetId ||
+        !structuredAssetIds.has(occurrence.assetId) ||
+        occurrence.panelLayout?.layoutKind !== "layout_helper" ||
+        !occurrence.containerAssetId
+      ) {
+        continue;
+      }
+      const byPanel = contexts.get(occurrence.assetId) ?? new Map();
+      byPanel.set(occurrence.containerAssetId, [
+        ...(byPanel.get(occurrence.containerAssetId) ?? []),
+        occurrence
+      ]);
+      contexts.set(occurrence.assetId, byPanel);
+    }
+  }
+
+  return contexts;
+}
+
+function structuredTerminalStripConflictPanelIds(
+  graph: PanelQualityIndex["graph"]
+): Set<string> {
+  const panelIds = new Set<string>();
+  for (const byPanel of structuredTerminalStripMountContexts(graph).values()) {
+    if (byPanel.size < 2) continue;
+    for (const panelAssetId of byPanel.keys()) panelIds.add(panelAssetId);
+  }
+  return panelIds;
+}
+
+function addStructuredTerminalStripMountFindings(
+  index: PanelQualityIndex,
+  findings: Map<string, PanelDrawingQualityFinding>
+): void {
+  const structuredAssets = new Set(
+    index.graph.source.assets
+      .filter((asset) => asset.isStructuredTerminalStrip)
+      .map((asset) => asset.id)
+  );
+  const contexts = structuredTerminalStripMountContexts(index.graph);
+
+  for (const [assetId, byPanel] of contexts) {
+    if (byPanel.size < 2 || !byPanel.has(index.panelAssetId)) continue;
+    const locations = [...byPanel.values()]
+      .flat()
+      .map((occurrence) =>
+        locationForSheet(
+          index,
+          occurrence.sheetId,
+          "placement",
+          occurrence.placementId
+        )
+      )
+      .filter((location): location is PanelFindingLocation => Boolean(location));
+    addFinding(
+      findings,
+      makeFinding({
+        id: findingId(
+          "structured_terminal_strip_multiple_physical_mounts",
+          assetId
+        ),
+        code: "structured_terminal_strip_multiple_physical_mounts",
+        severity: "blocking_error",
+        category: "asset_identity",
+        message: `${index.graph.assetsById.get(assetId)?.tag ?? assetId} is mounted in more than one physical panel. Copy it as a new terminal strip for each physical panel.`,
+        index,
+        assetId,
+        locations
+      })
+    );
+  }
+
+  for (const sheet of index.graph.source.sheets) {
+    for (const occurrence of sheet.occurrences) {
+      if (
+        !occurrence.assetId ||
+        !structuredAssets.has(occurrence.assetId) ||
+        occurrence.panelLayout?.layoutKind !== "layout_helper"
+      ) {
+        continue;
+      }
+      const parentBackplane = index.graph.occurrencesBySheetPlacement.get(
+        `${sheet.id}:${occurrence.panelLayout.backplanePlacementId}`
+      );
+      const representedPanel = occurrence.containerAssetId
+        ? sheet.occurrences.some(
+            (candidate) =>
+              candidate.role === "enclosure" &&
+              candidate.assetId === occurrence.containerAssetId
+          )
+        : false;
+      const relevantPanelIds = new Set(
+        [occurrence.containerAssetId, parentBackplane?.containerAssetId].filter(
+          (assetId): assetId is string => Boolean(assetId)
+        )
+      );
+      if (
+        !relevantPanelIds.has(index.panelAssetId) ||
+        (parentBackplane &&
+          occurrence.containerAssetId === parentBackplane.containerAssetId &&
+          representedPanel)
+      ) {
+        continue;
+      }
+      const location = locationForSheet(
+        index,
+        sheet.id,
+        "placement",
+        occurrence.placementId
+      );
+      addFinding(
+        findings,
+        makeFinding({
+          id: findingId(
+            "structured_terminal_strip_mount_context_mismatch",
+            sheet.id,
+            occurrence.placementId
+          ),
+          code: "structured_terminal_strip_mount_context_mismatch",
+          severity: "blocking_error",
+          category: "panel_context",
+          message: `${occurrence.tag} does not resolve to the same physical panel as its backplane and panel occurrence.`,
+          index,
+          assetId: occurrence.assetId,
+          locations: location ? [location] : []
+        })
+      );
+    }
+  }
+}
+
 function addDuplicateWireIds(
   index: PanelQualityIndex,
   findings: Map<string, PanelDrawingQualityFinding>
@@ -953,6 +1103,7 @@ export function runPanelDrawingQualityChecks(
   const findings = new Map<string, PanelDrawingQualityFinding>();
   addGraphFindings(index, findings);
   addDuplicateAssetTags(index, findings);
+  addStructuredTerminalStripMountFindings(index, findings);
   addDuplicateWireIds(index, findings);
   addLinkedOccurrenceFindings(index, findings);
   addDetailedSheetOccurrenceFindings(index, findings);
@@ -1001,6 +1152,17 @@ export function runPackagePanelDrawingQualityChecks(
     if (panelAssetId && !panelIds.has(panelAssetId)) {
       panelIds.set(panelAssetId, sheet.sheetNumber);
     }
+  }
+  for (const panelAssetId of structuredTerminalStripConflictPanelIds(graph)) {
+    if (panelIds.has(panelAssetId)) continue;
+    const firstOccurrence = graph.source.sheets
+      .flatMap((sheet) =>
+        sheet.occurrences.map((occurrence) => ({ sheet, occurrence }))
+      )
+      .find(
+        ({ occurrence }) => occurrence.containerAssetId === panelAssetId
+      );
+    panelIds.set(panelAssetId, firstOccurrence?.sheet.sheetNumber ?? Number.MAX_SAFE_INTEGER);
   }
   const reports = [...panelIds]
     .sort(

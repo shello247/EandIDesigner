@@ -48,6 +48,17 @@ export function detectPanelDiscoveryWarnings(
         assetId: asset.assetId
       });
     }
+
+    if (asset.panelSequenceWarning) {
+      findings.set(`asset_panel_sequence:${asset.assetId}`, {
+        id: `asset_panel_sequence:${asset.assetId}`,
+        severity: "warning",
+        code: "duplicate_physical_panel_layout_occurrence",
+        message: `${asset.tag}: ${asset.panelSequenceWarning}`,
+        panelAssetId: context.panelAssetId,
+        assetId: asset.assetId
+      });
+    }
   }
 
   const detailedSheet = context.graph.sheetsById.get(context.detailedSheetId);

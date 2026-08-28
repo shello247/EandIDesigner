@@ -281,9 +281,9 @@ describe("SVG symbol import", () => {
       physicalWidthMm: 54,
       physicalHeightMm: 90,
       mountingType: "din_rail",
-      panelCategory: "protection",
       resizable: false
     });
+    expect(metadata.panelCategory).toBeUndefined();
   });
 
   it("builds explicit network metadata without panel layout fields", () => {

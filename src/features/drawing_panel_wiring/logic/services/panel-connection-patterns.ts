@@ -12,6 +12,7 @@ import {
   type PanelPatternSettings,
   type PanelRecordOrigin,
   type PanelTerminalSideRef,
+  type PanelWireNumberSettings,
   type PanelWireSettings,
   type PanelWiringMutation,
   type PanelWiringSourcePackage
@@ -20,8 +21,14 @@ import type {
   PanelConnectionPatternRecord,
   PanelPatternCommandResult
 } from "../../types";
+import type { WireSpecificationSnapshot } from "@/features/wire_catalog/api/public";
 import { buildPackageConnectivityGraph } from "./connectivity-graph";
 import { allocateInternalWireId } from "./internal-panel-wires";
+import {
+  allocateInternalWireNumber,
+  createInternalWireRecordId,
+  deriveInternalWireIdFromSource
+} from "./internal-wire-identity";
 import {
   allocatePanelPatternId,
   type PanelPatternIdKind
@@ -36,6 +43,7 @@ type PatternMetadata = {
   description?: string;
   createdOnSheetId?: string;
   origin?: PanelRecordOrigin;
+  specification?: WireSpecificationSnapshot;
 };
 
 export type CreateTerminalJumperInput = PatternMetadata & {
@@ -98,6 +106,7 @@ function withPatternSettings(
       internalWires: source.panelWiring?.internalWires ?? [],
       bridges: source.panelWiring?.bridges ?? [],
       bonds: source.panelWiring?.bonds ?? [],
+      wireNumberSettings: source.panelWiring?.wireNumberSettings,
       panelSettings: source.panelWiring?.panelSettings,
       patternSettings: [
         ...current.filter((candidate) => candidate.panelAssetId !== settings.panelAssetId),
@@ -110,7 +119,8 @@ function withPatternSettings(
 function withWire(
   source: PanelWiringSourcePackage,
   wire: PanelInternalWireRecord,
-  settings: PanelWireSettings
+  settings?: PanelWireSettings,
+  wireNumberSettings?: PanelWireNumberSettings
 ): PanelWiringSourcePackage {
   const currentSettings = source.panelWiring?.panelSettings ?? [];
   return panelWiringSourcePackageSchema.parse({
@@ -121,10 +131,16 @@ function withWire(
       internalWires: [...(source.panelWiring?.internalWires ?? []), wire],
       bridges: source.panelWiring?.bridges ?? [],
       bonds: source.panelWiring?.bonds ?? [],
-      panelSettings: [
-        ...currentSettings.filter((candidate) => candidate.panelAssetId !== settings.panelAssetId),
-        settings
-      ],
+      wireNumberSettings:
+        wireNumberSettings ?? source.panelWiring?.wireNumberSettings,
+      panelSettings: settings
+        ? [
+            ...currentSettings.filter(
+              (candidate) => candidate.panelAssetId !== settings.panelAssetId
+            ),
+            settings
+          ]
+        : source.panelWiring?.panelSettings,
       patternSettings: source.panelWiring?.patternSettings
     }
   });
@@ -138,31 +154,52 @@ function createOwnedWire(
     domain: KnownElectricalDomain;
     from: PanelTerminalSideRef;
     to: PanelTerminalSideRef;
+    specification?: WireSpecificationSnapshot;
   }
 ): {
   source: PanelWiringSourcePackage;
   wire: PanelInternalWireRecord;
-  settings: PanelWireSettings;
+  settings?: PanelWireSettings;
+  wireNumberSettings?: PanelWireNumberSettings;
 } {
-  const allocation = allocateInternalWireId({
-    source,
-    panelAssetId: input.panelAssetId
-  });
+  const modernAllocation = input.specification
+    ? allocateInternalWireNumber(source)
+    : undefined;
+  const legacyAllocation = modernAllocation
+    ? undefined
+    : allocateInternalWireId({
+        source,
+        panelAssetId: input.panelAssetId
+      });
+  const wireNumber = modernAllocation?.wireNumber;
+  const wireId = wireNumber
+    ? deriveInternalWireIdFromSource(source, input.from, wireNumber)
+    : legacyAllocation!.wireId;
   const wire = panelInternalWireRecordSchema.parse({
-    id: `internal_wire:${encodeURIComponent(input.panelAssetId)}:${encodeURIComponent(allocation.wireId)}`,
+    id: wireNumber
+      ? createInternalWireRecordId(wireNumber)
+      : `internal_wire:${encodeURIComponent(input.panelAssetId)}:${encodeURIComponent(wireId)}`,
     panelAssetId: input.panelAssetId,
-    wireId: allocation.wireId,
+    wireNumber,
+    wireId,
     from: panelTerminalSideRefSchema.parse(input.from),
     to: panelTerminalSideRefSchema.parse(input.to),
     domain: input.domain,
     ownerPatternId: input.patternId,
-    attributes: allocation.settings.defaults,
+    specification: input.specification,
+    attributes: legacyAllocation?.settings.defaults,
     origin: "engineer"
   });
   return {
-    source: withWire(source, wire, allocation.settings),
+    source: withWire(
+      source,
+      wire,
+      legacyAllocation?.settings,
+      modernAllocation?.settings
+    ),
     wire,
-    settings: allocation.settings
+    settings: legacyAllocation?.settings,
+    wireNumberSettings: modernAllocation?.settings
   };
 }
 
@@ -183,12 +220,19 @@ function patternMutations(
   recordType: "bridge" | "bond",
   wires: PanelInternalWireRecord[],
   wireSettings: PanelWireSettings | undefined,
+  wireNumberSettings: PanelWireNumberSettings | undefined,
   patternSettings: PanelPatternSettings
 ): PanelWiringMutation[] {
   return [
     ...wires.map((wire): PanelWiringMutation => ({ kind: "upsert-internal-wire", wire })),
     ...(wireSettings
       ? [{ kind: "upsert-panel-wire-settings", settings: wireSettings } as PanelWiringMutation]
+      : []),
+    ...(wireNumberSettings
+      ? [{
+          kind: "upsert-wire-number-settings",
+          settings: wireNumberSettings
+        } as PanelWiringMutation]
       : []),
     recordType === "bridge"
       ? { kind: "upsert-bridge", bridge: record as PanelBridgeRecord }
@@ -201,12 +245,14 @@ function resultForPattern({
   pattern,
   wires,
   wireSettings,
+  wireNumberSettings,
   patternSettings,
   warnings
 }: {
   pattern: PanelConnectionPatternRecord;
   wires: PanelInternalWireRecord[];
   wireSettings?: PanelWireSettings;
+  wireNumberSettings?: PanelWireNumberSettings;
   patternSettings: PanelPatternSettings;
   warnings: PanelPatternCommandResult["warnings"];
 }): PanelPatternCommandResult {
@@ -216,6 +262,7 @@ function resultForPattern({
       pattern.recordType,
       wires,
       wireSettings,
+      wireNumberSettings,
       patternSettings
     ),
     warnings,
@@ -294,6 +341,7 @@ export function createDistributionGroup(
   let transient = preparePatternSource(source, allocation.settings);
   const wires: PanelInternalWireRecord[] = [];
   let lastWireSettings: PanelWireSettings | undefined;
+  let lastWireNumberSettings: PanelWireNumberSettings | undefined;
   let record: PanelBridgeRecord;
 
   if (input.topology === "daisy_chain") {
@@ -303,11 +351,13 @@ export function createDistributionGroup(
         patternId: allocation.id,
         domain: input.domain,
         from: input.members[index],
-        to: input.members[index + 1]
+        to: input.members[index + 1],
+        specification: input.specification
       });
       transient = created.source;
       wires.push(created.wire);
       lastWireSettings = created.settings;
+      lastWireNumberSettings = created.wireNumberSettings;
     }
     record = panelBridgeRecordSchema.parse({
       id: allocation.id,
@@ -334,11 +384,13 @@ export function createDistributionGroup(
         patternId: allocation.id,
         domain: input.domain,
         from: input.source,
-        to: input.targets[index]
+        to: input.targets[index],
+        specification: input.specification
       });
       transient = created.source;
       wires.push(created.wire);
       lastWireSettings = created.settings;
+      lastWireNumberSettings = created.wireNumberSettings;
       branches.push({
         id: `${allocation.id}:branch:${index + 1}`,
         target: input.targets[index],
@@ -367,21 +419,25 @@ export function createDistributionGroup(
         patternId: allocation.id,
         domain: input.domain,
         from: input.source,
-        to: branch.protectionInput
+        to: branch.protectionInput,
+        specification: input.specification
       });
       transient = feed.source;
       wires.push(feed.wire);
       lastWireSettings = feed.settings;
+      lastWireNumberSettings = feed.wireNumberSettings;
       const load = createOwnedWire(transient, {
         panelAssetId: input.panelAssetId,
         patternId: allocation.id,
         domain: input.domain,
         from: branch.protectionOutput,
-        to: branch.target
+        to: branch.target,
+        specification: input.specification
       });
       transient = load.source;
       wires.push(load.wire);
       lastWireSettings = load.settings;
+      lastWireNumberSettings = load.wireNumberSettings;
       branches.push({
         id: `${allocation.id}:branch:${index + 1}`,
         ...branch,
@@ -423,6 +479,7 @@ export function createDistributionGroup(
     pattern: { recordType: "bridge", record },
     wires,
     wireSettings: lastWireSettings,
+    wireNumberSettings: lastWireNumberSettings,
     patternSettings: allocation.settings,
     warnings
   });
@@ -430,7 +487,11 @@ export function createDistributionGroup(
 
 export function addTerminalToDistribution(
   inputSource: PanelWiringSourcePackage,
-  input: { patternId: string; target: PanelTerminalSideRef }
+  input: {
+    patternId: string;
+    target: PanelTerminalSideRef;
+    specification?: WireSpecificationSnapshot;
+  }
 ): PanelPatternCommandResult {
   const source = panelWiringSourcePackageSchema.parse(inputSource);
   const current = source.panelWiring?.bridges.find(
@@ -444,7 +505,8 @@ export function addTerminalToDistribution(
     patternId: current.id,
     domain: current.domain as KnownElectricalDomain,
     from: current.definition.source,
-    to: input.target
+    to: input.target,
+    specification: input.specification
   });
   const branchIndex = current.definition.branches.length + 1;
   const record = panelBridgeRecordSchema.parse({
@@ -472,7 +534,18 @@ export function addTerminalToDistribution(
   return {
     mutations: [
       { kind: "upsert-internal-wire", wire: created.wire },
-      { kind: "upsert-panel-wire-settings", settings: created.settings },
+      ...(created.settings
+        ? [{
+            kind: "upsert-panel-wire-settings" as const,
+            settings: created.settings
+          }]
+        : []),
+      ...(created.wireNumberSettings
+        ? [{
+            kind: "upsert-wire-number-settings" as const,
+            settings: created.wireNumberSettings
+          }]
+        : []),
       { kind: "upsert-bridge", bridge: record }
     ],
     warnings,

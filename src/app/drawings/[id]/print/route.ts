@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { listSymbolsForDrawing } from "@/features/symbol_registry/api/public";
+import { listDrawingRenderSymbols } from "@/features/symbol_registry/api/public";
 import { getDrawingDetail } from "@/features/drawing_canvas/data/queries";
 import { buildDrawingPdfPrintHtml } from "@/features/drawing_canvas/logic/services/drawing-pdf-export";
 import { toSheetCanvasModel } from "@/features/drawing_canvas/logic/commands/drawing-sheet-commands";
@@ -8,14 +8,22 @@ import { buildDrawingSectionIndex } from "@/features/drawing_canvas/logic/servic
 import { createPanelWiringSource } from "@/features/drawing_canvas/api/panel-wiring-contracts";
 import {
   buildPackageConnectivityGraph,
-  buildPanelExternalTerminationDisplayIndex
+  buildPlacementWireContextDisplayIndex
 } from "@/features/drawing_panel_wiring/api/public";
+import {
+  buildPlacementConnectionDisplayModeIndex,
+  collectPlacementWireContextRequests
+} from "@/features/drawing_canvas/logic/services/drawing-placement-connection-display";
 import {
   parsePanelDeliverableSearchParams,
   renderPanelScheduleForPrint
 } from "@/features/drawing_panel_reports/api/public";
 import { buildSavedPanelDeliverables } from "@/features/drawing_panel_reports/data/queries";
 import { collectDrawingSymbolVersionIds } from "@/features/drawing_canvas/logic/services/drawing-symbol-version-references";
+import {
+  buildConnectedWireScheduleIndex,
+  isConnectedWireScheduleAnnotation
+} from "@/features/drawing_connected_wire_schedule/api/public";
 
 export const dynamic = "force-dynamic";
 
@@ -29,20 +37,47 @@ export async function GET(
   if (!drawing) {
     notFound();
   }
-  const symbols = await listSymbolsForDrawing(
+  const symbols = await listDrawingRenderSymbols(
     collectDrawingSymbolVersionIds(drawing.model)
   );
 
   const sheetCount = drawing.model.sheets.length;
   const sectionIndex = buildDrawingSectionIndex(drawing.model);
-  const panelExternalTerminationsBySheetId = drawing.model.sheets.some(
-    (sheet) => Boolean(sheet.panelDrawingContext)
-  )
-    ? buildPanelExternalTerminationDisplayIndex(
-        buildPackageConnectivityGraph(
-          createPanelWiringSource(drawing.model, symbols)
-        )
+  const placementWireContextRequests = collectPlacementWireContextRequests(
+    drawing.model
+  );
+  const placementConnectionDisplayModes =
+    buildPlacementConnectionDisplayModeIndex(drawing.model);
+  const connectedWireSchedulesBySheetId = new Map(
+    drawing.model.sheets.map((sheet) => [
+      sheet.id,
+      sheet.annotations.filter(isConnectedWireScheduleAnnotation)
+    ])
+  );
+  const hasConnectedWireSchedules = [...connectedWireSchedulesBySheetId.values()].some(
+    (annotations) => annotations.length > 0
+  );
+  const needsConnectivityGraph =
+    hasConnectedWireSchedules ||
+    placementWireContextRequests.length > 0 ||
+    drawing.model.sheets.some((sheet) => Boolean(sheet.panelDrawingContext));
+  const connectivityGraph = needsConnectivityGraph
+    ? buildPackageConnectivityGraph(
+        createPanelWiringSource(drawing.model, symbols)
       )
+    : undefined;
+  const placementWireContextBySheetId = connectivityGraph
+    ? buildPlacementWireContextDisplayIndex({
+        graph: connectivityGraph,
+        requests: placementWireContextRequests
+      }).rowsBySheetId
+    : new Map();
+  const connectedWireScheduleIndex = connectivityGraph
+      ? buildConnectedWireScheduleIndex({
+          graph: connectivityGraph,
+          schedulesBySheetId: connectedWireSchedulesBySheetId,
+          displayModesBySheetPlacement: placementConnectionDisplayModes
+        })
     : new Map();
   const drawingPages = drawing.model.sheets.map((sheet, index) => {
     const sheetModel = toSheetCanvasModel(drawing.model, sheet.id);
@@ -81,9 +116,12 @@ export async function GET(
             record
           }))
         ],
-        panelExternalTerminations:
-          panelExternalTerminationsBySheetId.get(sheet.id) ?? [],
-        connectionVisibility: sheet.panelDrawingContext ? "panel_internal" : "field"
+        placementWireContextRows:
+          placementWireContextBySheetId.get(sheet.id) ?? [],
+        connectedWireScheduleProjections:
+          connectedWireScheduleIndex,
+        connectionVisibility: sheet.panelDrawingContext ? "panel_internal" : "field",
+        measurementUnit: drawing.model.measurementUnit ?? "mm"
       })
     };
   });

@@ -16,12 +16,22 @@ import {
   formatAssetTagConflictMessage,
   stepEngineeringTag
 } from "../../logic/services/drawing-asset-identity";
+import { listPanelConnectionViewSources } from "../../logic/services/drawing-panel-connection-views";
 
-export type AddPanelEnclosureSubmission = {
-  assetId: string;
-  tag: string;
-  title: string;
-};
+export type AddPanelEnclosureSubmission =
+  | {
+      mode: "create";
+      assetId: string;
+      tag: string;
+      title: string;
+    }
+  | {
+      mode: "reference";
+      assetId: string;
+      tag: string;
+      title: string;
+      sourceBackplanePlacementId: string;
+    };
 
 type AddMode = "create" | "reference";
 
@@ -66,6 +76,22 @@ export function AddPanelEnclosureDialog({
   const selectedPanel =
     existingPanels.find((panel) => panel.assetId === selectedAssetId) ??
     existingPanels[0];
+  const backplaneOptions = useMemo(
+    () =>
+      selectedPanel
+        ? listPanelConnectionViewSources(model, selectedPanel.assetId)
+        : [],
+    [model, selectedPanel]
+  );
+  const [selectedBackplaneId, setSelectedBackplaneId] = useState("");
+  const effectiveBackplaneId =
+    backplaneOptions.length === 1
+      ? backplaneOptions[0].placementId
+      : backplaneOptions.some(
+            (option) => option.placementId === selectedBackplaneId
+          )
+        ? selectedBackplaneId
+        : "";
   const displayTag = mode === "reference" ? selectedPanel?.tag ?? "" : tag;
   const displayTitle =
     mode === "reference" ? selectedPanel?.title ?? "" : panelTitle;
@@ -78,11 +104,21 @@ export function AddPanelEnclosureDialog({
         setError("Choose an existing panel to reference.");
         return;
       }
+      if (!effectiveBackplaneId) {
+        setError(
+          backplaneOptions.length === 0
+            ? "This panel does not have an authoritative physical backplane."
+            : "Choose the backplane this connection view represents."
+        );
+        return;
+      }
 
       onPlace({
+        mode: "reference",
         assetId: selectedPanel.assetId,
         tag: selectedPanel.tag,
-        title: selectedPanel.title
+        title: selectedPanel.title,
+        sourceBackplanePlacementId: effectiveBackplaneId
       });
       return;
     }
@@ -102,6 +138,7 @@ export function AddPanelEnclosureDialog({
     }
 
     onPlace({
+      mode: "create",
       assetId: createDrawingAssetId(),
       tag: normalizedTag,
       title: normalizePanelEnclosureTitle(panelTitle, "power_distribution_panel")
@@ -185,7 +222,7 @@ export function AddPanelEnclosureDialog({
                 Reference existing
               </span>
               <span className="mt-1 block text-slate-500">
-                Show the same physical panel on this sheet.
+                Add a compact schematic connection view linked to its backplane.
               </span>
             </button>
           </div>
@@ -285,6 +322,40 @@ export function AddPanelEnclosureDialog({
                   No panels exist yet in this drawing.
                 </div>
               )}
+              {selectedPanel && backplaneOptions.length === 1 ? (
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  <span className="font-bold text-slate-800">Linked backplane:</span>{" "}
+                  {backplaneOptions[0].label}
+                </div>
+              ) : null}
+              {selectedPanel && backplaneOptions.length > 1 ? (
+                <div>
+                  <label className="field-label" htmlFor="panel-reference-backplane">
+                    Linked backplane
+                  </label>
+                  <select
+                    id="panel-reference-backplane"
+                    className="field-input"
+                    value={effectiveBackplaneId}
+                    onChange={(event) => {
+                      setSelectedBackplaneId(event.currentTarget.value);
+                      setError(null);
+                    }}
+                  >
+                    <option value="">Choose a backplane</option>
+                    {backplaneOptions.map((option) => (
+                      <option key={option.placementId} value={option.placementId}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+              {selectedPanel && backplaneOptions.length === 0 ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                  This panel has no authoritative physical backplane to reference.
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -303,6 +374,10 @@ export function AddPanelEnclosureDialog({
             type="button"
             className="icon-button icon-button-primary"
             onClick={placePanel}
+            disabled={
+              mode === "reference" &&
+              (!selectedPanel || backplaneOptions.length === 0)
+            }
           >
             <PackagePlus aria-hidden="true" size={14} />
             Place panel

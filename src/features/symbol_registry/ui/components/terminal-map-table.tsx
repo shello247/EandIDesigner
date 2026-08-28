@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
   AlertCircle,
@@ -13,7 +12,6 @@ import {
   X
 } from "lucide-react";
 import {
-  updateSymbolTerminalMapAction,
   verifyTerminalMapWithAiAction
 } from "../../api/actions";
 import type {
@@ -136,13 +134,14 @@ function VerificationReport({
 export function TerminalMapTable({
   versionId,
   metadata,
-  readOnly = false
+  readOnly = false,
+  onChange
 }: {
   versionId: string;
   metadata: SymbolMetadata;
   readOnly?: boolean;
+  onChange: (terminals: SymbolTerminal[]) => void;
 }) {
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [draftTerminals, setDraftTerminals] = useState<SymbolTerminal[]>(
@@ -190,22 +189,10 @@ export function TerminalMapTable({
   };
 
   const saveTerminalMap = () => {
-    startTransition(async () => {
-      const result = await updateSymbolTerminalMapAction({
-        versionId,
-        terminals: draftTerminals.map(normalizeTerminal)
-      });
-
-      if (!result.ok) {
-        setMessage(result.error);
-        return;
-      }
-
-      setMessage("Terminal map updated. Validation was refreshed.");
-      setVerificationReport(null);
-      setIsEditorOpen(false);
-      router.refresh();
-    });
+    onChange(draftTerminals.map(normalizeTerminal));
+    setMessage("Terminal changes are ready. Use Save changes to persist them.");
+    setVerificationReport(null);
+    setIsEditorOpen(false);
   };
 
   const verifyWithAi = () => {
@@ -502,7 +489,7 @@ export function TerminalMapTable({
                   disabled={isPending}
                 >
                   <Save aria-hidden="true" size={14} />
-                  Save terminal map
+                  Apply to draft
                 </button>
               </div>
             </div>

@@ -4,6 +4,13 @@ import {
   BOM_ITEM_KEY_SCOPE,
   parseBomItemKeySequence
 } from "../src/features/bom_creator/logic/services/bom-item-key";
+import {
+  normalizeSymbolCategoryName,
+  PROTECTED_SYMBOL_CATEGORY_NAME,
+  resolveLegacySymbolCategoryName,
+  resolveLegacySymbolTechnicalKind,
+  SYMBOL_CATEGORY_SEEDS
+} from "../src/features/symbol_categories/api/public";
 
 async function execute(sql: string) {
   await prisma.$executeRawUnsafe(sql);
@@ -55,6 +62,99 @@ async function initializeBomItemKeySequence() {
   `;
 }
 
+async function initializeSymbolCategories() {
+  await prisma.$transaction(async (transaction) => {
+    const categories = new Map<string, string>();
+
+    for (const name of SYMBOL_CATEGORY_SEEDS) {
+      const normalizedName = normalizeSymbolCategoryName(name);
+      const category = await transaction.symbolCategory.upsert({
+        where: { normalizedName },
+        update: {
+          name,
+          isProtected: name === PROTECTED_SYMBOL_CATEGORY_NAME
+        },
+        create: {
+          id: `symbol_category_${normalizedName.replace(/[^a-z0-9]+/g, "_")}`,
+          name,
+          normalizedName,
+          isProtected: name === PROTECTED_SYMBOL_CATEGORY_NAME
+        },
+        select: { id: true }
+      });
+      categories.set(normalizedName, category.id);
+    }
+
+    const symbols = await transaction.symbol.findMany({
+      select: {
+        id: true,
+        category: true,
+        categoryId: true,
+        versions: {
+          orderBy: { versionNumber: "desc" },
+          take: 1,
+          select: { metadataJson: true }
+        }
+      }
+    });
+
+    for (const symbol of symbols) {
+      let panelCategory: string | undefined;
+      const metadataJson = symbol.versions[0]?.metadataJson;
+      if (metadataJson) {
+        try {
+          const metadata = JSON.parse(metadataJson) as {
+            panelCategory?: unknown;
+          };
+          panelCategory =
+            typeof metadata.panelCategory === "string"
+              ? metadata.panelCategory
+              : undefined;
+        } catch {
+          panelCategory = undefined;
+        }
+      }
+
+      const categoryName = resolveLegacySymbolCategoryName({
+        panelCategory,
+        technicalKind: symbol.category
+      });
+      const technicalKind = resolveLegacySymbolTechnicalKind({
+        panelCategory,
+        technicalKind: symbol.category
+      });
+      const categoryId =
+        symbol.categoryId ??
+        categories.get(normalizeSymbolCategoryName(categoryName));
+
+      if (!categoryId) {
+        throw new Error(
+          `Could not resolve a managed category for symbol ${symbol.id}.`
+        );
+      }
+
+      if (
+        symbol.categoryId !== categoryId ||
+        symbol.category !== technicalKind
+      ) {
+        await transaction.symbol.update({
+          where: { id: symbol.id },
+          data: { categoryId, category: technicalKind }
+        });
+      }
+    }
+
+    const unassignedCount = await transaction.symbol.count({
+      where: { categoryId: null }
+    });
+    if (unassignedCount > 0) {
+      throw new Error(
+        `${unassignedCount} symbol${unassignedCount === 1 ? "" : "s"} could not be assigned a managed category.`
+      );
+    }
+  });
+}
+
 type SeedSymbolInput = {
   symbolKey: string;
   displayName: string;
@@ -102,6 +202,15 @@ async function seedApprovedSymbol(input: SeedSymbolInput) {
       manufacturer: input.manufacturer,
       model: input.model,
       category: input.category,
+      managedCategory: {
+        connect: {
+          normalizedName: normalizeSymbolCategoryName(
+            resolveLegacySymbolCategoryName({
+              technicalKind: input.category
+            })
+          )
+        }
+      },
       status: "approved",
       versions: {
         create: {
@@ -120,6 +229,58 @@ async function main() {
   await execute("PRAGMA foreign_keys = ON;");
 
   await execute(`
+    CREATE TABLE IF NOT EXISTS "SymbolCategory" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "name" TEXT NOT NULL,
+      "normalizedName" TEXT NOT NULL,
+      "description" TEXT,
+      "isProtected" BOOLEAN NOT NULL DEFAULT false,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL
+    );
+  `);
+
+  await execute(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "SymbolCategory_normalizedName_key"
+    ON "SymbolCategory"("normalizedName");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "SymbolCategory_name_idx"
+    ON "SymbolCategory"("name");
+  `);
+
+  await execute(`
+    CREATE TABLE IF NOT EXISTS "WireCatalogEntry" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "name" TEXT NOT NULL,
+      "normalizedName" TEXT NOT NULL,
+      "wireType" TEXT NOT NULL,
+      "size" TEXT NOT NULL,
+      "color" TEXT NOT NULL,
+      "notes" TEXT,
+      "isDefault" BOOLEAN NOT NULL DEFAULT false,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL
+    );
+  `);
+
+  await execute(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "WireCatalogEntry_normalizedName_key"
+    ON "WireCatalogEntry"("normalizedName");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "WireCatalogEntry_name_idx"
+    ON "WireCatalogEntry"("name");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "WireCatalogEntry_isDefault_idx"
+    ON "WireCatalogEntry"("isDefault");
+  `);
+
+  await execute(`
     CREATE TABLE IF NOT EXISTS "Symbol" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "symbolKey" TEXT NOT NULL,
@@ -127,11 +288,21 @@ async function main() {
       "manufacturer" TEXT,
       "model" TEXT,
       "category" TEXT NOT NULL,
+      "categoryId" TEXT,
       "status" TEXT NOT NULL DEFAULT 'draft',
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updatedAt" DATETIME NOT NULL
+      "updatedAt" DATETIME NOT NULL,
+      CONSTRAINT "Symbol_categoryId_fkey"
+        FOREIGN KEY ("categoryId") REFERENCES "SymbolCategory" ("id")
+        ON DELETE RESTRICT ON UPDATE CASCADE
     );
   `);
+
+  await addColumnIfMissing(
+    "Symbol",
+    "categoryId",
+    '"categoryId" TEXT REFERENCES "SymbolCategory"("id") ON DELETE RESTRICT ON UPDATE CASCADE'
+  );
 
   await execute(`
     CREATE UNIQUE INDEX IF NOT EXISTS "Symbol_symbolKey_key"
@@ -146,6 +317,11 @@ async function main() {
   await execute(`
     CREATE INDEX IF NOT EXISTS "Symbol_category_idx"
     ON "Symbol"("category");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "Symbol_categoryId_idx"
+    ON "Symbol"("categoryId");
   `);
 
   await execute(`
@@ -174,6 +350,8 @@ async function main() {
     CREATE INDEX IF NOT EXISTS "SymbolVersion_symbolId_status_idx"
     ON "SymbolVersion"("symbolId", "status");
   `);
+
+  await initializeSymbolCategories();
 
   await execute(`
     CREATE TABLE IF NOT EXISTS "SymbolValidationIssue" (
@@ -623,43 +801,6 @@ async function main() {
   await execute(`
     CREATE INDEX IF NOT EXISTS "NetworkMap_updatedAt_idx"
     ON "NetworkMap"("updatedAt");
-  `);
-
-  await execute(`
-    CREATE TABLE IF NOT EXISTS "DrawingSheetTemplate" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "templateKey" TEXT NOT NULL,
-      "name" TEXT NOT NULL,
-      "description" TEXT,
-      "category" TEXT,
-      "status" TEXT NOT NULL DEFAULT 'active',
-      "modelJson" TEXT NOT NULL,
-      "metadataJson" TEXT NOT NULL,
-      "sourceDrawingId" TEXT,
-      "sourceSheetId" TEXT,
-      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updatedAt" DATETIME NOT NULL
-    );
-  `);
-
-  await execute(`
-    CREATE UNIQUE INDEX IF NOT EXISTS "DrawingSheetTemplate_templateKey_key"
-    ON "DrawingSheetTemplate"("templateKey");
-  `);
-
-  await execute(`
-    CREATE INDEX IF NOT EXISTS "DrawingSheetTemplate_status_idx"
-    ON "DrawingSheetTemplate"("status");
-  `);
-
-  await execute(`
-    CREATE INDEX IF NOT EXISTS "DrawingSheetTemplate_updatedAt_idx"
-    ON "DrawingSheetTemplate"("updatedAt");
-  `);
-
-  await execute(`
-    CREATE INDEX IF NOT EXISTS "DrawingSheetTemplate_category_idx"
-    ON "DrawingSheetTemplate"("category");
   `);
 
   await execute(`

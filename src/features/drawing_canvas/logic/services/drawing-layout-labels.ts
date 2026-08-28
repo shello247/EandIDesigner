@@ -31,7 +31,88 @@ export type ResolvedLayoutLabel = {
   alignWithRotation: boolean;
 };
 
-function isDinRailSymbol(symbol: ApprovedDrawingSymbol | undefined): boolean {
+export type LayoutLabelPoint = {
+  x: number;
+  y: number;
+  textAnchor: "start" | "middle" | "end";
+};
+
+export function getLayoutLabelPoint({
+  placement,
+  position
+}: {
+  placement: DrawingPlacement;
+  position: LayoutLabelPosition;
+}): LayoutLabelPoint {
+  if (placement.labelPosition) {
+    return {
+      x: placement.labelPosition.x,
+      y: placement.labelPosition.y,
+      textAnchor: "middle"
+    };
+  }
+
+  const width = placement.layoutDimensions?.lengthMm ?? 0;
+  const height = placement.layoutDimensions?.widthMm ?? 0;
+  const left = placement.x;
+  const top = placement.y;
+  const right = placement.x + width;
+  const bottom = placement.y + height;
+  const inset = 1.2;
+  const outsideOffset = 1.35;
+  const baselineCenterOffset = 0.75;
+  const baselineBottomOffset = 3;
+
+  switch (position) {
+    case "center":
+      return {
+        x: Number((left + width / 2).toFixed(2)),
+        y: Number((top + height / 2 + baselineCenterOffset).toFixed(2)),
+        textAnchor: "middle"
+      };
+    case "top-left":
+      return {
+        x: Number((left + inset).toFixed(2)),
+        y: Number((top - outsideOffset).toFixed(2)),
+        textAnchor: "start"
+      };
+    case "top-right":
+      return {
+        x: Number((right - inset).toFixed(2)),
+        y: Number((top - outsideOffset).toFixed(2)),
+        textAnchor: "end"
+      };
+    case "bottom-left":
+      return {
+        x: Number((left + inset).toFixed(2)),
+        y: Number((bottom + baselineBottomOffset).toFixed(2)),
+        textAnchor: "start"
+      };
+    case "bottom-center":
+      return {
+        x: Number((left + width / 2).toFixed(2)),
+        y: Number((bottom + baselineBottomOffset).toFixed(2)),
+        textAnchor: "middle"
+      };
+    case "bottom-right":
+      return {
+        x: Number((right - inset).toFixed(2)),
+        y: Number((bottom + baselineBottomOffset).toFixed(2)),
+        textAnchor: "end"
+      };
+    case "top-center":
+    default:
+      return {
+        x: Number((left + width / 2).toFixed(2)),
+        y: Number((top - outsideOffset).toFixed(2)),
+        textAnchor: "middle"
+      };
+  }
+}
+
+export function isDinRailSymbol(
+  symbol: ApprovedDrawingSymbol | undefined
+): boolean {
   if (!symbol) {
     return false;
   }
@@ -41,6 +122,7 @@ function isDinRailSymbol(symbol: ApprovedDrawingSymbol | undefined): boolean {
   }`.toLowerCase();
 
   return (
+    (symbol.technicalKind ?? symbol.category) === "rail" ||
     symbol.metadata.panelCategory === "rail" ||
     descriptor.includes("din rail") ||
     descriptor.includes("din_rail")
@@ -80,11 +162,14 @@ function defaultLayoutLabelVisible({
     return false;
   }
 
-  return Boolean(
-    placement.assetId ||
-      isGeneratedWireTraySymbolReference(placement) ||
-      isDinRailSymbol(symbol)
-  );
+  if (
+    isGeneratedWireTraySymbolReference(placement) ||
+    isDinRailSymbol(symbol)
+  ) {
+    return false;
+  }
+
+  return Boolean(placement.assetId);
 }
 
 export function resolveLayoutLabel({

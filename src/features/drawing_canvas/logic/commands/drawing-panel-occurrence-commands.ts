@@ -36,6 +36,11 @@ export type PlacePanelAssetOccurrenceResult = {
   placement: DrawingPlacement;
 };
 
+export type PlacePanelAssetOccurrencesResult = {
+  model: DrawingModel;
+  placements: DrawingPlacement[];
+};
+
 export type RemovePanelAssetOccurrenceResult = {
   model: DrawingModel;
   assetId: string;
@@ -340,7 +345,8 @@ function createRepresentationPlacement({
     : source;
   const sourceSymbol = getRenderableSymbolForPlacement(
     effectiveSource,
-    symbols
+    symbols,
+    [asset]
   );
   const scale =
     sourceOccurrenceKind === "layout"
@@ -363,6 +369,7 @@ function createRepresentationPlacement({
     y: 0,
     rotation: 0,
     scale,
+    connectionDisplayMode: "external_connected",
     terminalBlock
   };
 }
@@ -427,7 +434,11 @@ export function placePanelAssetOccurrence({
     id: createOccurrencePlacementId(),
     symbols
   });
-  const draftSymbol = getRenderableSymbolForPlacement(draft, symbols);
+  const draftSymbol = getRenderableSymbolForPlacement(
+    draft,
+    symbols,
+    model.assets
+  );
 
   if (!draftSymbol || draftSymbol.metadata.terminals.length === 0) {
     throw new Error(
@@ -438,7 +449,7 @@ export function placePanelAssetOccurrence({
   const position = findNextPanelOccurrencePosition({
     sheet,
     placement: draft,
-    symbols
+    symbols: draftSymbol ? [...symbols, draftSymbol] : symbols
   });
   const placement = { ...draft, ...position };
   const nextModel = {
@@ -454,6 +465,39 @@ export function placePanelAssetOccurrence({
     model: drawingPackageModelSchema.parse(nextModel),
     placement
   };
+}
+
+export function placePanelAssetOccurrences({
+  model: inputModel,
+  sheetId,
+  assetIds,
+  symbols = []
+}: {
+  model: DrawingModel;
+  sheetId: string;
+  assetIds: string[];
+  symbols?: ApprovedDrawingSymbol[];
+}): PlacePanelAssetOccurrencesResult {
+  const uniqueAssetIds = [...new Set(assetIds)];
+  if (uniqueAssetIds.length === 0) {
+    throw new Error("Select at least one panel asset to add to the sheet.");
+  }
+
+  let model = drawingPackageModelSchema.parse(inputModel);
+  const placements: DrawingPlacement[] = [];
+
+  for (const assetId of uniqueAssetIds) {
+    const result = placePanelAssetOccurrence({
+      model,
+      sheetId,
+      assetId,
+      symbols
+    });
+    model = result.model;
+    placements.push(result.placement);
+  }
+
+  return { model, placements };
 }
 
 export function removePanelAssetOccurrence({

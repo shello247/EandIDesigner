@@ -6,7 +6,6 @@ import {
 import {
   addDrawingSheet,
   addSectionTitlePage,
-  duplicateSheet,
   toSheetCanvasModel
 } from "../logic/commands/drawing-sheet-commands";
 import {
@@ -102,34 +101,6 @@ describe("drawing package sections", () => {
     expect(merged.sheets.some((sheet) => sheet.name === "Panel 1")).toBe(true);
     expect(mergedIndex.sections).toHaveLength(1);
     expect(mergedIndex.sections[0].memberSheetIds).toContain("sheet_7");
-  });
-
-  it("duplicates a title page as a new empty section after its complete block", () => {
-    const model = sectionedModel();
-    const source = buildDrawingSectionIndex(model).sections[0];
-    const result = duplicateSheet(model, source.id, [], {
-      name: "Field Wiring Copy"
-    });
-    const duplicate = result.model.sheets.find(
-      (sheet) => sheet.id === result.sheetId
-    );
-    const sections = buildDrawingSectionIndex(result.model).sections;
-
-    expect(result.model.sheets.map((sheet) => sheet.name)).toEqual([
-      "Sheet 1",
-      "Index",
-      "Field Wiring Title Page",
-      "Field 1",
-      "Field 2",
-      "Field Wiring Copy",
-      "Panel Details Title Page",
-      "Panel 1"
-    ]);
-    expect(duplicate?.placements).toEqual([]);
-    expect(duplicate?.connections).toEqual([]);
-    expect(duplicate?.annotations).toEqual([]);
-    expect(duplicate?.sectionTitlePage?.sectionNumber).toBeUndefined();
-    expect(sections[1].memberSheetIds).toEqual([]);
   });
 
   it("renders derived section numbers instead of legacy stored values", () => {

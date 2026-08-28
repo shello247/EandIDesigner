@@ -1,0 +1,40 @@
+# PLAN-002-TASK-016 — Load catalogue details on demand
+
+PlanId: PLAN-002
+TaskId: PLAN-002-TASK-016
+Stage: 4
+Priority: P1
+Status: done
+Test impact: add
+Started: 2026-08-26 16:23
+Completed: 2026-08-26 16:30
+Duration: approximately 7 minutes
+Timezone: America/Port_of_Spain
+
+## Done when
+
+- [x] Deduplicated full-record loads; explicit error/retry; no partial insertion; summary loads do not invalidate graph.
+- [x] Focused tests, affected browser checks and necessary broader gates recorded.
+- [x] Compared with verified predecessor; original failures/outliers retained.
+- [x] Source-only checkpoint reviewed, pushed and remote SHA verified.
+
+## Execution
+
+1. Confirm source/run identity and isolated test target.
+2. Reproduce the stated behavior or measurement; retain negative tests.
+3. Make one coherent change within the approved plan; split further if needed to keep reviewable 30–90-minute batches.
+4. Verify, measure serially, review the diff and document risks.
+5. Complete the task report, checkpoint and continue only when its gates pass.
+
+## Files expected
+
+- drawing symbol library and picker UI
+- symbol actions
+
+## Verification
+
+Use the guarded runner for focused Vitest/Playwright and lint/type/build checks as appropriate. No live database tests. Exact commands, source/fixture hashes and raw results belong in the task report. The stage gate may remain stricter than an individual task gate.
+
+## Report
+
+delivery/reports/PLAN-002-TASK-016-lazy-catalogue.md

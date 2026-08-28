@@ -1,12 +1,31 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
+  ArrowRight,
+  BatteryCharging,
+  Box,
+  Boxes,
+  Cable,
+  ChevronRight,
+  CircuitBoard,
+  Cpu,
+  Earth,
+  Gauge,
+  Network,
   PackagePlus,
+  PanelsTopLeft,
   Plus,
+  Repeat2,
+  Rows3,
   Search,
+  ShieldCheck,
+  ToggleLeft,
   Trash2,
+  Workflow,
+  Zap,
+  type LucideIcon,
   X
 } from "lucide-react";
 import type {
@@ -14,6 +33,7 @@ import type {
   DrawingAssetType,
   DrawingModel
 } from "@/features/drawing_canvas/api/asset-contracts";
+import type { DrawingSymbolCatalogSummary } from "@/features/symbol_registry/api/public";
 import {
   findAssetTagConflict,
   formatAssetTagConflictMessage,
@@ -30,37 +50,125 @@ import type {
   ManagedAssetCreateInput,
   ManagedAssetUpdateInput
 } from "../../data/schema";
+import { applyStructuredTerminalStripMemberOrders } from "@/features/drawing_terminal_blocks/api/public";
+import {
+  ENGINEERING_ATTRIBUTE_DEFINITION_BY_KEY,
+  formatEngineeringAttributeValue
+} from "@/features/engineering_attributes/api/public";
+import {
+  EngineeringAttributesCard,
+  type EngineeringAttributeChange
+} from "@/features/engineering_attributes/ui/public";
 
 const ASSET_GROUPS: Array<{
   type: DrawingAssetType;
   title: string;
+  icon: LucideIcon;
 }> = [
-  { type: "instrument", title: "Level Devices / Instruments" },
-  { type: "controller", title: "Controllers / Monitors" },
-  { type: "panel", title: "Panels / Enclosures" },
-  { type: "junction_box", title: "Junction Boxes" },
-  { type: "terminal_block", title: "Terminal Blocks" },
-  { type: "breaker", title: "Breakers" },
-  { type: "fuse", title: "Fuses" },
-  { type: "relay", title: "Relays" },
-  { type: "power_supply", title: "Power Supplies" },
-  { type: "isolator", title: "Isolators" },
-  { type: "converter", title: "Converters" },
-  { type: "io_module", title: "I/O Modules" },
-  { type: "earth_bar", title: "Earth Bars" },
-  { type: "cable", title: "Cables" },
-  { type: "other", title: "Other Assets" }
+  { type: "instrument", title: "Level Devices / Instruments", icon: Gauge },
+  { type: "controller", title: "Controllers / Monitors", icon: Cpu },
+  { type: "panel", title: "Panels / Enclosures", icon: PanelsTopLeft },
+  { type: "junction_box", title: "Junction Boxes", icon: Box },
+  { type: "terminal_block", title: "Terminal Blocks", icon: Rows3 },
+  { type: "breaker", title: "Breakers", icon: ToggleLeft },
+  { type: "fuse", title: "Fuses", icon: Zap },
+  { type: "relay", title: "Relays", icon: Workflow },
+  { type: "power_supply", title: "Power Supplies", icon: BatteryCharging },
+  { type: "isolator", title: "Isolators", icon: ShieldCheck },
+  { type: "converter", title: "Converters", icon: Repeat2 },
+  { type: "io_module", title: "I/O Modules", icon: CircuitBoard },
+  { type: "network_device", title: "Network Devices", icon: Network },
+  { type: "earth_bar", title: "Earth Bars", icon: Earth },
+  { type: "cable", title: "Cables", icon: Cable },
+  { type: "other", title: "Other Assets", icon: Boxes }
 ];
 
-function uniqueSheetLabels(asset: ManagedAssetCatalogItem): string[] {
+function AssetDetailSection({
+  assetId,
+  sectionKey,
+  sectionNumber,
+  title,
+  subtitle,
+  children
+}: {
+  assetId: string;
+  sectionKey: string;
+  sectionNumber: number;
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const contentId = `asset-manager-${assetId}-${sectionKey}`;
+
+  return (
+    <section className="tool-panel overflow-hidden">
+      <button
+        type="button"
+        className="group flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
+        aria-expanded={expanded}
+        aria-controls={contentId}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span className="min-w-0">
+          <span className="flex min-w-0 items-center gap-2.5">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-sky-200 bg-sky-50 text-[10px] font-bold tabular-nums text-sky-700">
+              {sectionNumber}
+            </span>
+            <span className="truncate text-sm font-bold text-slate-950">
+              {title}
+            </span>
+          </span>
+          <span className="mt-1 block pl-[30px] text-xs text-slate-500">
+            {subtitle}
+          </span>
+        </span>
+        <span
+          aria-hidden="true"
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors ${
+            expanded
+              ? "border-sky-200 bg-sky-50 text-sky-700"
+              : "border-slate-200 bg-white text-slate-500 group-hover:border-slate-300 group-hover:text-slate-700"
+          }`}
+        >
+          <ChevronRight
+            size={17}
+            strokeWidth={2.25}
+            className={`transition-transform ${expanded ? "rotate-90" : ""}`}
+          />
+        </span>
+      </button>
+      {expanded ? (
+        <div
+          id={contentId}
+          className="space-y-4 border-t border-slate-200 bg-slate-50 p-4"
+        >
+          {children}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function uniqueSheetReferences(asset: ManagedAssetCatalogItem): Array<{
+  sheetId: string;
+  label: string;
+}> {
   return [
     ...new Map(
       asset.sheetRefs.map((reference) => [
         reference.sheetId,
-        `Sheet ${reference.sheetNumber} - ${reference.sheetName}`
+        {
+          sheetId: reference.sheetId,
+          label: `Sheet ${reference.sheetNumber} - ${reference.sheetName}`
+        }
       ])
     ).values()
   ];
+}
+
+function uniqueSheetLabels(asset: ManagedAssetCatalogItem): string[] {
+  return uniqueSheetReferences(asset).map((reference) => reference.label);
 }
 
 function installedComponentNames(
@@ -101,6 +209,11 @@ function assetMatchesSearch(
     asset.description ?? "",
     asset.symbolName ?? "",
     asset.symbolKey ?? "",
+    ...(asset.engineeringAttributes?.values.flatMap((value) => [
+      ENGINEERING_ATTRIBUTE_DEFINITION_BY_KEY.get(value.definitionKey)?.label ??
+        value.definitionKey,
+      formatEngineeringAttributeValue(value)
+    ]) ?? []),
     ...uniqueSheetLabels(asset)
   ]
     .join(" ")
@@ -108,25 +221,46 @@ function assetMatchesSearch(
     .includes(normalizedQuery);
 }
 
-function symbolOptionLabel(symbol: ApprovedDrawingSymbol): string {
+function symbolOptionLabel(
+  symbol: Pick<DrawingSymbolCatalogSummary, "displayName" | "symbolKey">
+): string {
   return `${symbol.displayName} (${symbol.symbolKey})`;
 }
 
 export function AssetManagerDialog({
   model,
   symbols,
+  symbolCatalogSummaries,
   initialAssetId,
   onCancel,
   onCreateAsset,
   onUpdateAsset,
+  onLoadSheet,
+  onLoadSymbol,
   onDeleteAsset
 }: {
   model: DrawingModel;
   symbols: ApprovedDrawingSymbol[];
+  symbolCatalogSummaries: DrawingSymbolCatalogSummary[];
   initialAssetId?: string;
   onCancel: () => void;
-  onCreateAsset: (input: ManagedAssetCreateInput) => void;
-  onUpdateAsset: (assetId: string, updates: ManagedAssetUpdateInput) => void;
+  onCreateAsset: (input: ManagedAssetCreateInput) => {
+    id: string;
+    tag: string;
+    title: string;
+  };
+  onUpdateAsset: (
+    assetId: string,
+    updates: ManagedAssetUpdateInput,
+    engineeringAttributeChange?: EngineeringAttributeChange
+  ) => void;
+  onLoadSheet: (sheetId: string) => void;
+  onLoadSymbol: (
+    versionId: string
+  ) => Promise<
+    | { ok: true; symbol: ApprovedDrawingSymbol }
+    | { ok: false; error: string }
+  >;
   onDeleteAsset: (assetId: string) => { ok: true } | { ok: false; error: string };
 }) {
   const titleId = "asset-manager-dialog-title";
@@ -135,11 +269,18 @@ export function AssetManagerDialog({
     () => buildManagedAssetCatalog(model, symbols),
     [model, symbols]
   );
+  const initialSelectedAsset = initialAssetId
+    ? catalog.find((asset) => asset.id === initialAssetId)
+    : undefined;
   const [query, setQuery] = useState("");
   const [selectedAssetId, setSelectedAssetId] = useState(
-    initialAssetId && catalog.some((asset) => asset.id === initialAssetId)
-      ? initialAssetId
-      : catalog[0]?.id ?? ""
+    initialSelectedAsset?.id ?? ""
+  );
+  const [expandedGroups, setExpandedGroups] = useState<Set<DrawingAssetType>>(
+    () =>
+      initialSelectedAsset
+        ? new Set<DrawingAssetType>([initialSelectedAsset.type])
+        : new Set<DrawingAssetType>()
   );
   const [isCreating, setIsCreating] = useState(catalog.length === 0);
   const [createType, setCreateType] = useState<DrawingAssetType>("instrument");
@@ -153,22 +294,32 @@ export function AssetManagerDialog({
     tag: string;
     title: string;
   }>({
-    assetId: catalog[0]?.id ?? "",
-    tag: catalog[0]?.tag ?? "",
-    title: catalog[0]?.title ?? ""
+    assetId: initialSelectedAsset?.id ?? "",
+    tag: initialSelectedAsset?.tag ?? "",
+    title: initialSelectedAsset?.title ?? ""
   });
   const [error, setError] = useState<string | null>(null);
+  const [isLoadingCreateSymbol, setIsLoadingCreateSymbol] = useState(false);
   const filteredCatalog = useMemo(
     () => catalog.filter((asset) => assetMatchesSearch(asset, query)),
     [catalog, query]
   );
-  const selectedAsset =
-    catalog.find((asset) => asset.id === selectedAssetId) ?? catalog[0];
+  const groupedCatalog = useMemo(
+    () =>
+      ASSET_GROUPS.map((group) => ({
+        ...group,
+        assets: filteredCatalog.filter((asset) => asset.type === group.type),
+        totalCount: catalog.filter((asset) => asset.type === group.type).length
+      })).filter((group) => group.assets.length > 0),
+    [catalog, filteredCatalog]
+  );
+  const isSearching = query.trim().length > 0;
+  const selectedAsset = catalog.find((asset) => asset.id === selectedAssetId);
   const deletionBlockers = selectedAsset
     ? getAssetDeletionBlockers(model, selectedAsset.id)
     : [];
-  const selectedSheetLabels = selectedAsset
-    ? uniqueSheetLabels(selectedAsset)
+  const selectedSheetReferences = selectedAsset
+    ? uniqueSheetReferences(selectedAsset)
     : [];
   const selectedDraft =
     selectedAsset && draftState.assetId === selectedAsset.id
@@ -180,7 +331,7 @@ export function AssetManagerDialog({
         };
   const decrementedTag = stepEngineeringTag(selectedDraft.tag, -1);
   const incrementedTag = stepEngineeringTag(selectedDraft.tag, 1);
-  const selectedCreateSymbol = symbols.find(
+  const selectedCreateSymbol = symbolCatalogSummaries.find(
     (symbol) => `${symbol.symbolId}:${symbol.versionId}` === createSymbolKey
   );
 
@@ -204,7 +355,29 @@ export function AssetManagerDialog({
     setError(null);
   };
 
-  const submitCreate = () => {
+  const beginCreatingAsset = () => {
+    setCreateTag(allocateNextManagedAssetTag(model, createType));
+    setCreateTitle(assetTypeLabel(createType));
+    setCreateSymbolKey("");
+    setIsCreating(true);
+    setError(null);
+  };
+
+  const toggleGroup = (type: DrawingAssetType) => {
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
+
+      return next;
+    });
+  };
+
+  const submitCreate = async () => {
     const normalizedTag = createTag.trim();
     const normalizedTitle = createTitle.trim();
 
@@ -220,14 +393,42 @@ export function AssetManagerDialog({
       return;
     }
 
+    setIsLoadingCreateSymbol(Boolean(selectedCreateSymbol));
+    const loadedSymbol = selectedCreateSymbol
+      ? await onLoadSymbol(selectedCreateSymbol.versionId)
+      : undefined;
+    setIsLoadingCreateSymbol(false);
+
+    if (loadedSymbol && !loadedSymbol.ok) {
+      setError(loadedSymbol.error);
+      return;
+    }
+
     try {
-      onCreateAsset({
+      const createdAsset = onCreateAsset({
         type: createType,
         tag: normalizedTag,
         title: normalizedTitle || assetTypeLabel(createType),
-        symbolId: selectedCreateSymbol?.symbolId,
-        versionId: selectedCreateSymbol?.versionId
+        symbolId: loadedSymbol?.symbol.symbolId,
+        versionId: loadedSymbol?.symbol.versionId
       });
+      setSelectedAssetId(createdAsset.id);
+      setExpandedGroups((current) => {
+        if (current.has(createType)) {
+          return current;
+        }
+
+        const next = new Set(current);
+        next.add(createType);
+        return next;
+      });
+      setDraftState({
+        assetId: createdAsset.id,
+        tag: createdAsset.tag,
+        title: createdAsset.title
+      });
+      setIsCreating(false);
+      setCreateSymbolKey("");
     } catch (error) {
       setError(
         error instanceof Error ? error.message : "Asset could not be created."
@@ -235,19 +436,19 @@ export function AssetManagerDialog({
       return;
     }
 
-    setCreateTag(allocateNextManagedAssetTag(model, createType));
-    setCreateTitle(assetTypeLabel(createType));
-    setCreateSymbolKey("");
     setError(null);
   };
 
-  const updateSelectedAsset = (updates: ManagedAssetUpdateInput) => {
+  const updateSelectedAsset = (
+    updates: ManagedAssetUpdateInput,
+    engineeringAttributeChange?: EngineeringAttributeChange
+  ) => {
     if (!selectedAsset) {
       return;
     }
 
     try {
-      onUpdateAsset(selectedAsset.id, updates);
+      onUpdateAsset(selectedAsset.id, updates, engineeringAttributeChange);
       setError(null);
     } catch (error) {
       setError(
@@ -334,12 +535,26 @@ export function AssetManagerDialog({
             <PackagePlus aria-hidden="true" size={18} />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="text-sm font-semibold text-slate-950">
-              Asset Manager
-            </h2>
-            <p id={descriptionId} className="mt-1 text-xs leading-5 text-slate-600">
-              Drawing package assets only. Sheet occurrences are edited on the
-              drawing sheet.
+            <div className="flex min-h-6 items-center gap-2">
+              <h2 id={titleId} className="text-sm font-semibold text-slate-950">
+                Asset Manager
+              </h2>
+              <button
+                type="button"
+                className="icon-button icon-button-primary h-6 w-6 shrink-0 !min-h-6 !p-0"
+                onClick={beginCreatingAsset}
+                aria-label="Create asset"
+                title="Create asset"
+              >
+                <Plus aria-hidden="true" size={14} strokeWidth={2.25} />
+              </button>
+            </div>
+            <p
+              id={descriptionId}
+              className="mt-0.5 text-xs leading-4 text-slate-600"
+            >
+              Create and manage package assets, engineering data, and sheet
+              associations.
             </p>
           </div>
           <button
@@ -354,7 +569,7 @@ export function AssetManagerDialog({
 
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(320px,0.95fr)_minmax(420px,1.05fr)]">
           <div className="flex min-h-0 flex-col border-r border-slate-200 bg-slate-50">
-            <div className="space-y-3 border-b border-slate-200 p-4">
+            <div className="border-b border-slate-200 p-4">
               <div className="relative">
                 <Search
                   aria-hidden="true"
@@ -369,17 +584,6 @@ export function AssetManagerDialog({
                   aria-label="Search drawing assets"
                 />
               </div>
-              <button
-                type="button"
-                className="icon-button icon-button-primary w-full"
-                onClick={() => {
-                  setIsCreating(true);
-                  setError(null);
-                }}
-              >
-                <Plus aria-hidden="true" size={14} />
-                Create asset
-              </button>
             </div>
 
             <div className="min-h-0 flex-1 overflow-auto p-3">
@@ -388,75 +592,144 @@ export function AssetManagerDialog({
                   No assets in this drawing yet.
                 </div>
               ) : (
-                ASSET_GROUPS.map((group) => {
-                  const groupAssets = filteredCatalog.filter(
-                    (asset) => asset.type === group.type
-                  );
+                <>
+                  <div
+                    className="grid grid-cols-5 gap-2"
+                    role="group"
+                    aria-label="Asset categories"
+                  >
+                    {groupedCatalog.map((group) => {
+                      const isExpanded =
+                        isSearching || expandedGroups.has(group.type);
+                      const contentId = `asset-manager-group-${group.type}`;
+                      const GroupIcon = group.icon;
+                      const assetCountLabel =
+                        group.totalCount === 1 ? "asset" : "assets";
 
-                  if (groupAssets.length === 0) {
-                    return null;
-                  }
-
-                  return (
-                    <section key={group.type} className="mb-4">
-                      <h3 className="mb-2 text-[11px] font-bold uppercase text-slate-500">
-                        {group.title}
-                      </h3>
-                      <div className="space-y-2">
-                        {groupAssets.map((asset) => (
-                          <button
-                            key={asset.id}
-                            type="button"
-                            className={[
-                              "w-full rounded-md border px-3 py-2 text-left text-xs transition",
-                              selectedAsset?.id === asset.id && !isCreating
-                                ? "border-sky-300 bg-sky-50"
-                                : "border-slate-200 bg-white hover:bg-slate-50"
-                            ].join(" ")}
-                            onClick={() => {
-                              setSelectedAssetId(asset.id);
-                              setDraftState({
-                                assetId: asset.id,
-                                tag: asset.tag,
-                                title: asset.title
-                              });
-                              setIsCreating(false);
-                              setError(null);
-                            }}
+                      return (
+                        <button
+                          key={group.type}
+                          type="button"
+                          className={[
+                            "relative flex min-h-14 items-center justify-center rounded-lg border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1",
+                            isExpanded
+                              ? "border-sky-300 bg-sky-50 text-sky-700 shadow-sm ring-1 ring-sky-100"
+                              : "border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+                          ].join(" ")}
+                          aria-label={`${group.title}, ${group.totalCount} ${assetCountLabel}`}
+                          aria-expanded={isExpanded}
+                          aria-controls={contentId}
+                          title={group.title}
+                          onClick={() => toggleGroup(group.type)}
+                        >
+                          <GroupIcon
+                            aria-hidden="true"
+                            size={22}
+                            strokeWidth={1.8}
+                          />
+                          <span
+                            aria-hidden="true"
+                            className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-slate-200 bg-white px-1 text-[9px] font-bold leading-none tabular-nums text-slate-500"
                           >
-                            <span className="flex items-start justify-between gap-3">
-                              <span className="min-w-0">
-                                <span className="block truncate font-bold text-slate-950">
-                                  {asset.tag}
+                            {group.totalCount}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-4 space-y-4">
+                    {groupedCatalog.map((group) => {
+                      const isExpanded =
+                        isSearching || expandedGroups.has(group.type);
+
+                      if (!isExpanded) {
+                        return null;
+                      }
+
+                      const contentId = `asset-manager-group-${group.type}`;
+
+                      return (
+                        <section key={group.type} id={contentId}>
+                          <h3 className="mb-2 flex items-center justify-between px-1 text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                            <span>{group.title}</span>
+                            <span className="text-[10px] font-semibold tabular-nums text-slate-400">
+                              {group.assets.length}
+                            </span>
+                          </h3>
+                          <div className="space-y-2">
+                            {group.assets.map((asset) => (
+                              <button
+                                key={asset.id}
+                                type="button"
+                                className={[
+                                  "w-full rounded-md border px-3 py-2 text-left text-xs transition",
+                                  selectedAsset?.id === asset.id && !isCreating
+                                    ? "border-sky-300 bg-sky-50"
+                                    : "border-slate-200 bg-white hover:bg-slate-50"
+                                ].join(" ")}
+                                onClick={() => {
+                                  setSelectedAssetId(asset.id);
+                                  setExpandedGroups((current) => {
+                                    if (current.has(group.type)) {
+                                      return current;
+                                    }
+
+                                    const next = new Set(current);
+                                    next.add(group.type);
+                                    return next;
+                                  });
+                                  setDraftState({
+                                    assetId: asset.id,
+                                    tag: asset.tag,
+                                    title: asset.title
+                                  });
+                                  setIsCreating(false);
+                                  setError(null);
+                                }}
+                              >
+                                <span className="flex items-start justify-between gap-3">
+                                  <span className="min-w-0">
+                                    <span className="block truncate font-bold text-slate-950">
+                                      {asset.tag}
+                                    </span>
+                                    <span className="mt-0.5 block truncate text-slate-500">
+                                      {asset.title}
+                                    </span>
+                                    {asset.componentSelections?.length ? (
+                                      <span className="mt-1 block text-[11px] text-violet-700">
+                                        Components:{" "}
+                                        {installedComponentNames(
+                                          asset,
+                                          symbols
+                                        ).join(" · ")}
+                                      </span>
+                                    ) : null}
+                                    {asset.terminalStrip ? (
+                                      <span className="mt-1 block text-[11px] text-teal-700">
+                                        Terminal strip:{" "}
+                                        {asset.terminalStrip.members.length} members
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                  <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-500">
+                                    {asset.occurrenceCount}
+                                  </span>
                                 </span>
-                                <span className="mt-0.5 block truncate text-slate-500">
-                                  {asset.title}
-                                </span>
-                                {asset.componentSelections?.length ? (
-                                  <span className="mt-1 block text-[11px] text-violet-700">
-                                    Components:{" "}
-                                    {installedComponentNames(asset, symbols).join(
-                                      " · "
-                                    )}
+                                {asset.warnings.length > 0 ? (
+                                  <span className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+                                    <AlertTriangle aria-hidden="true" size={12} />
+                                    Needs review
                                   </span>
                                 ) : null}
-                              </span>
-                              <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-500">
-                                {asset.occurrenceCount}
-                              </span>
-                            </span>
-                            {asset.warnings.length > 0 ? (
-                              <span className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-amber-700">
-                                <AlertTriangle aria-hidden="true" size={12} />
-                                Needs review
-                              </span>
-                            ) : null}
-                          </button>
-                        ))}
-                      </div>
-                    </section>
-                  );
-                })
+                              </button>
+                            ))}
+                          </div>
+                        </section>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -530,7 +803,7 @@ export function AssetManagerDialog({
                     }
                   >
                     <option value="">No symbol selected yet</option>
-                    {symbols.map((symbol) => (
+                    {symbolCatalogSummaries.map((symbol) => (
                       <option
                         key={`${symbol.symbolId}:${symbol.versionId}`}
                         value={`${symbol.symbolId}:${symbol.versionId}`}
@@ -561,10 +834,11 @@ export function AssetManagerDialog({
                   <button
                     type="button"
                     className="icon-button icon-button-primary"
-                    onClick={submitCreate}
+                    disabled={isLoadingCreateSymbol}
+                    onClick={() => void submitCreate()}
                   >
                     <Plus aria-hidden="true" size={14} />
-                    Create asset
+                    {isLoadingCreateSymbol ? "Loading symbol..." : "Create asset"}
                   </button>
                 </div>
               </div>
@@ -598,8 +872,16 @@ export function AssetManagerDialog({
                   </button>
                 </div>
 
-                <div className="grid gap-4 rounded-md border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
-                  <div>
+                <AssetDetailSection
+                  key={`identity:${selectedAsset.id}`}
+                  assetId={selectedAsset.id}
+                  sectionKey="identity"
+                  sectionNumber={1}
+                  title="Identity"
+                  subtitle="Tag, category, title, and description"
+                >
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
                     <label className="field-label" htmlFor="selected-asset-tag">
                       Tag
                     </label>
@@ -688,7 +970,7 @@ export function AssetManagerDialog({
                       className="field-label"
                       htmlFor="selected-asset-description"
                     >
-                      Description
+                      General description
                     </label>
                     <textarea
                       id="selected-asset-description"
@@ -702,49 +984,126 @@ export function AssetManagerDialog({
                         })
                       }
                     />
-                  </div>
-                </div>
-
-                {selectedAsset.terminalBlock ? (
-                  <section className="border-y border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
-                    <div className="font-bold uppercase text-slate-500">
-                      Terminal block group
                     </div>
-                    <div className="mt-1 font-semibold text-slate-900">
-                      {selectedAsset.terminalBlock.count} terminals / range{" "}
-                      {selectedAsset.terminalBlock.startNumber} -{" "}
-                      {selectedAsset.terminalBlock.startNumber +
-                        selectedAsset.terminalBlock.count -
-                        1}
-                    </div>
-                  </section>
-                ) : null}
-
-                <section className="rounded-md border border-slate-200">
-                  <div className="border-b border-slate-200 px-4 py-3">
-                    <h4 className="text-sm font-bold text-slate-950">
-                      Sheet associations
-                    </h4>
                   </div>
-                  <div className="p-4">
-                    {selectedSheetLabels.length > 0 ? (
-                      <div className="grid gap-2">
-                        {selectedSheetLabels.map((label) => (
-                          <div
-                            key={label}
-                            className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700"
-                          >
-                            {label}
-                          </div>
-                        ))}
+
+                  {selectedAsset.terminalBlock ? (
+                    <section className="rounded-md border border-slate-200 bg-white px-4 py-3 text-xs text-slate-700">
+                      <div className="font-bold uppercase text-slate-500">
+                        Terminal block group
                       </div>
-                    ) : (
-                      <p className="text-sm text-slate-500">
-                        This asset is not placed on any sheet.
-                      </p>
-                    )}
-                  </div>
-                </section>
+                      <div className="mt-1 font-semibold text-slate-900">
+                        {selectedAsset.terminalBlock.count} terminals / range{" "}
+                        {selectedAsset.terminalBlock.startNumber} -{" "}
+                        {selectedAsset.terminalBlock.startNumber +
+                          selectedAsset.terminalBlock.count -
+                          1}
+                      </div>
+                    </section>
+                  ) : null}
+
+                  {selectedAsset.terminalStrip ? (
+                    <section className="overflow-hidden rounded-md border border-slate-200 bg-white">
+                      <div className="border-b border-slate-200 px-4 py-3">
+                        <h4 className="text-sm font-bold text-slate-950">
+                          Terminal strip members
+                        </h4>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Nested under {selectedAsset.tag}; members are not
+                          separate assets.
+                        </p>
+                      </div>
+                      <div className="max-h-64 overflow-auto p-3">
+                        <div className="space-y-2">
+                          {applyStructuredTerminalStripMemberOrders(
+                            selectedAsset.terminalStrip
+                          ).members.map((member) => {
+                            const memberSymbol = symbols.find(
+                              (symbol) =>
+                                symbol.symbolId === member.symbolId &&
+                                symbol.versionId === member.versionId
+                            );
+                            return (
+                              <div
+                                key={member.id}
+                                className="grid grid-cols-[64px_80px_minmax(0,1fr)] gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs"
+                              >
+                                <span className="font-bold text-slate-700">
+                                  {member.token}
+                                </span>
+                                <span className="text-slate-600">
+                                  {member.designation ??
+                                    member.role.replace("_", " ")}
+                                </span>
+                                <span className="min-w-0">
+                                  <span className="block truncate font-medium text-slate-900">
+                                    {memberSymbol?.displayName ??
+                                      "Pinned symbol unavailable"}
+                                  </span>
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </section>
+                  ) : null}
+                </AssetDetailSection>
+
+                <EngineeringAttributesCard
+                  key={`engineering-attributes:${selectedAsset.id}`}
+                  assetId={selectedAsset.id}
+                  assetType={selectedAsset.type}
+                  container={selectedAsset.engineeringAttributes}
+                  onChange={(engineeringAttributes, change) =>
+                    updateSelectedAsset({ engineeringAttributes }, change)
+                  }
+                  sectionNumber={2}
+                  title="Engineering Attributes"
+                  defaultExpanded={false}
+                />
+
+                <AssetDetailSection
+                  key={`sheet-associations:${selectedAsset.id}`}
+                  assetId={selectedAsset.id}
+                  sectionKey="sheet-associations"
+                  sectionNumber={3}
+                  title="Sheet Associations"
+                  subtitle={`${selectedSheetReferences.length} associated ${selectedSheetReferences.length === 1 ? "sheet" : "sheets"}`}
+                >
+                  {selectedSheetReferences.length > 0 ? (
+                    <div className="grid gap-2">
+                      {selectedSheetReferences.map((reference) => (
+                        <div
+                          key={reference.sheetId}
+                          className="flex min-h-9 items-center gap-3 rounded-md border border-slate-200 bg-white py-1 pl-3 pr-1 text-xs font-medium text-slate-700"
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            {reference.label}
+                          </span>
+                          <button
+                            type="button"
+                            className="icon-button h-8 shrink-0 px-2.5 text-[11px] font-semibold"
+                            aria-label={`Load ${reference.label}`}
+                            title={`Load ${reference.label}`}
+                            onClick={() => onLoadSheet(reference.sheetId)}
+                          >
+                            Load sheet
+                            <ArrowRight
+                              aria-hidden="true"
+                              size={13}
+                              strokeWidth={2.25}
+                            />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">
+                      This asset is not placed on any sheet.
+                    </p>
+                  )}
+                </AssetDetailSection>
 
                 {selectedAsset.warnings.length > 0 ? (
                   <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
@@ -769,8 +1128,23 @@ export function AssetManagerDialog({
                 ) : null}
               </div>
             ) : (
-              <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                Select or create an asset.
+              <div className="flex h-full items-center justify-center px-8 text-center">
+                <div className="max-w-sm">
+                  <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                    <Boxes aria-hidden="true" size={20} strokeWidth={1.8} />
+                  </div>
+                  <h3 className="mt-3 text-sm font-bold text-slate-950">
+                    Select an asset
+                  </h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Choose a category, then select an asset to view or edit its
+                    engineering details.
+                  </p>
+                  <p className="mt-2 text-[11px] leading-4 text-slate-400">
+                    Use the plus button beside Asset Manager to create a new
+                    package asset.
+                  </p>
+                </div>
               </div>
             )}
           </div>

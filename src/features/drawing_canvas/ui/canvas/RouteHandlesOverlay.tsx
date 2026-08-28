@@ -54,6 +54,7 @@ export function RouteHandlesOverlay({
               onPointerMove={onRoutePointPointerMove}
               onPointerUp={onRoutePointPointerEnd}
               onPointerCancel={onRoutePointPointerCancel}
+              onLostPointerCapture={onRoutePointPointerCancel}
             >
               <title>
                 Drag route point. Press Delete or use the red x to remove.

@@ -1,10 +1,16 @@
 import { z } from "zod";
-import { terminalBlockPlacementSchema } from "@/features/drawing_terminal_blocks/data/schema";
 import {
+  structuredTerminalStripSchema,
+  terminalBlockPlacementSchema
+} from "@/features/drawing_terminal_blocks/data/schema";
+import {
+  panelConnectionDisplayModeSchema,
   panelDrawingContextSchema,
   panelWiringPackageDataSchema
 } from "@/features/drawing_panel_wiring/api/contracts";
 import { drawingComponentSelectionsSchema } from "@/features/symbol_components/api/public";
+import { connectedWireScheduleAnnotationSchema } from "@/features/drawing_connected_wire_schedule/api/public";
+import { engineeringAttributeContainerSchema } from "@/features/engineering_attributes/api/public";
 
 export const drawingStatusSchema = z.enum([
   "draft",
@@ -34,6 +40,7 @@ export const drawingAssetTypeSchema = z.enum([
   "isolator",
   "converter",
   "io_module",
+  "network_device",
   "earth_bar",
   "cable",
   "other"
@@ -54,7 +61,9 @@ export const drawingAssetRecordSchema = z.object({
       symbolKey: z.string().trim().max(160).optional()
     })
     .optional(),
-  terminalBlock: terminalBlockPlacementSchema.optional()
+  terminalBlock: terminalBlockPlacementSchema.optional(),
+  terminalStrip: structuredTerminalStripSchema.optional(),
+  engineeringAttributes: engineeringAttributeContainerSchema.optional()
 });
 
 export const drawingEndpointSchema = z.object({
@@ -88,6 +97,14 @@ export const drawingPlacementSchema = z.object({
   containerAssetId: z.string().trim().min(1).optional(),
   layoutKind: z.enum(["backplane", "layout_helper"]).optional(),
   layoutParentId: z.string().trim().min(1).optional(),
+  panelConnectionView: z
+    .object({
+      kind: z.literal("schematic_reference"),
+      sourceBackplanePlacementId: z.string().trim().min(1),
+      displayWidth: z.number().positive(),
+      displayHeight: z.number().positive()
+    })
+    .optional(),
   panelReference: z
     .object({
       panelAssetId: z.string().trim().min(1),
@@ -104,6 +121,7 @@ export const drawingPlacementSchema = z.object({
       visible: z.boolean().default(true)
     })
     .optional(),
+  connectionDisplayMode: panelConnectionDisplayModeSchema.optional(),
   symbolId: z.string().trim().min(1),
   versionId: z.string().trim().min(1),
   role: placementRoleSchema,
@@ -225,7 +243,7 @@ export const drawingConnectionSchema = z.object({
   route: drawingConnectionRouteSchema.optional()
 });
 
-export const drawingAnnotationSchema = z.object({
+const drawingTextAnnotationSchema = z.object({
   id: z.string().trim().min(1),
   title: z.string().trim().max(120).optional(),
   text: z.string().max(400),
@@ -243,6 +261,22 @@ export const drawingAnnotationSchema = z.object({
   kind: z.enum(["note", "callout", "title"])
 });
 
+export const drawingAnnotationSchema = z.union([
+  drawingTextAnnotationSchema,
+  connectedWireScheduleAnnotationSchema
+]);
+
+export const drawingListPageSchema = z
+  .string()
+  .regex(/^[1-9]\d*$/)
+  .transform(Number)
+  .pipe(z.number().int().positive().max(Number.MAX_SAFE_INTEGER))
+  .catch(1);
+
+export function parseDrawingListPage(input: unknown): number {
+  return drawingListPageSchema.parse(input);
+}
+
 export const drawingTitleBlockSchema = z.object({
   client: z.string().trim().max(160).optional(),
   project: z.string().trim().max(200).optional(),
@@ -251,6 +285,14 @@ export const drawingTitleBlockSchema = z.object({
   preparedBy: z.string().trim().max(120).optional(),
   checkedBy: z.string().trim().max(120).optional(),
   date: z.string().trim().max(40).optional()
+});
+
+export const drawingMeasurementUnitSchema = z.enum(["mm", "in"]);
+
+export const drawingSettingsDraftSchema = z.object({
+  title: z.string().trim().min(1, "Enter a drawing title.").max(200),
+  titleBlock: drawingTitleBlockSchema,
+  measurementUnit: drawingMeasurementUnitSchema
 });
 
 export const drawingSheetPageSchema = z.object({
@@ -306,8 +348,17 @@ export const drawingPackageSheetSchema = drawingPackageSheetInputSchema.transfor
   })
 );
 
+export const sheetSettingsDraftSchema = z.object({
+  name: z.string().trim().min(1, "Enter a sheet name.").max(120),
+  description: z.string().trim().max(400).optional(),
+  sectionTitlePage: drawingSectionTitlePageSchema.optional(),
+  targetSectionId: z.string().trim().min(1).optional(),
+  panelAssetId: z.string().trim().min(1).optional()
+});
+
 export const drawingPackageModelSchema = z.object({
   version: z.literal(2),
+  measurementUnit: drawingMeasurementUnitSchema.default("mm"),
   titleBlock: drawingTitleBlockSchema,
   assets: z.array(drawingAssetRecordSchema).default([]),
   panelWiring: panelWiringPackageDataSchema.optional(),
@@ -333,6 +384,11 @@ export const saveDrawingInputSchema = z.object({
 });
 
 export type DrawingStatus = z.infer<typeof drawingStatusSchema>;
+export type DrawingMeasurementUnit = z.infer<
+  typeof drawingMeasurementUnitSchema
+>;
+export type DrawingSettingsDraft = z.infer<typeof drawingSettingsDraftSchema>;
+export type SheetSettingsDraft = z.infer<typeof sheetSettingsDraftSchema>;
 export type DrawingAssetType = z.infer<typeof drawingAssetTypeSchema>;
 export type DrawingAssetRecord = z.infer<typeof drawingAssetRecordSchema>;
 export type DrawingPlacementRole = z.infer<typeof placementRoleSchema>;
@@ -386,6 +442,7 @@ export function createDefaultDrawingSheet({
 export function createDefaultDrawingModel(): DrawingModel {
   return {
     version: 2,
+    measurementUnit: "mm",
     titleBlock: {
       revision: "A",
       date: new Date().toISOString().slice(0, 10)
@@ -398,6 +455,7 @@ export function createDefaultDrawingModel(): DrawingModel {
 export function migrateDrawingModelV1ToV2(model: LegacyDrawingModel): DrawingModel {
   return {
     version: 2,
+    measurementUnit: "mm",
     titleBlock: model.sheet.titleBlock,
     assets: [],
     sheets: [

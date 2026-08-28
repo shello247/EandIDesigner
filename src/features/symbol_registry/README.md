@@ -43,10 +43,28 @@ because symbols are the controlled source of geometry, terminals, and anchors.
   validation, and approval.
 - `/symbols/documents/[documentId]/download` - document download.
 
+## Metadata Editing
+
+The latest non-archived version exposes one controlled metadata draft and one
+**Save changes** action. Approved metadata updates are validated and written to
+the current version in place without changing its approved status or creating a
+new version.
+
+Registry name and description are editable. SVG artwork, viewBox data, anchors,
+symbol key, registry category, and Figma-authored component geometry remain
+controlled. Replacing those assets requires the SVG import workflow. Archived
+and historical versions remain read-only. Physical dimension changes require
+confirmation because drawings pinned to the current version may consume the
+updated size.
+
 ## Drawing Canvas Relationship
 
-The drawing canvas consumes approved symbols with latest approved versions. It
-uses each symbol's metadata to:
+The drawing canvas receives lightweight latest-approved catalogue summaries
+for browsing and complete exact-version records only for the drawing model's
+pinned dependency closure. Selecting a new catalogue item loads that immutable
+version on demand; save validation, preview, print, PDF, and panel deliverables
+use the same exact-version path and never substitute the latest version for a
+missing historical reference. It uses each resolved symbol's metadata to:
 
 - render placements.
 - expose anchor hover data.
@@ -88,15 +106,15 @@ The canvas should not bypass this module to read symbol internals directly.
   a structured port table, and network-port hotspots over the SVG preview.
 - Network symbols do not mount panel-layout, terminal-map, or AI terminal review
   controls. Electrical categories retain those existing workflows.
-- Engineers can correct network identity and port metadata while a version is
-  `draft` or `needs_review`; saving refreshes validation issues.
+- Engineers can correct network identity and port metadata on the latest
+  non-archived version; saving refreshes validation issues.
 - Every network device type requires at least one valid port for approval.
   Portless profiles remain valid review drafts but produce the blocking
   `NETWORK_PORT_REQUIRED` approval issue.
 - Duplicate keys, missing or non-network anchors, malformed port values, and
   out-of-bounds anchors block approval.
-- Approved and archived versions are immutable. Validation can be refreshed on
-  an approved version without rewriting its SVG or metadata.
+- Approved metadata can be updated without changing approval. Archived versions
+  remain immutable.
 - Anchor coordinates and SVG geometry are not editable in the review workspace;
   correcting either requires re-importing the SVG as a new version.
 
@@ -144,3 +162,15 @@ npm run lint
 npm run test
 $env:DATABASE_URL='file:./dev.db'; npm run build
 ```
+# Permanent Electrical Topology
+
+Approved symbol metadata may include `electricalTopology.version = 1` with
+permanent continuity groups. Group keys and logical terminal keys are canonical
+identity. Terminal row order, labels, functions, and SVG coordinates are
+presentation and must never be used to infer electrical continuity.
+
+The Registry editor accepts only permanent factory-installed passive
+conductors. It rejects missing terminal keys, singleton groups, duplicate or
+overlapping membership, duplicate group keys, and explicitly incompatible
+electrical domains. Fuses, breakers, relay contacts, and controlled paths must
+remain separate until a future typed functional-topology model exists.

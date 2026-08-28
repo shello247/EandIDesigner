@@ -10,12 +10,22 @@ import {
 } from "../../logic/services/drawing-annotations";
 import type { AnnotationDragState, AnnotationLeaderDragState } from "./types";
 import { toSvgPoint } from "./utils/canvasGeometry";
+import { isConnectedWireScheduleAnnotation } from "@/features/drawing_connected_wire_schedule/api/public";
+
+type TextDrawingAnnotation = Exclude<
+  DrawingAnnotation,
+  { kind: "connected_wire_schedule" }
+>;
 
 const TARGET_CURSOR =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%23a78bfa' stroke='%236d28d9' stroke-width='2'/%3E%3Cpath d='M12 5v14M5 12h14M9 8l3-3 3 3M9 16l3 3 3-3M8 9l-3 3 3 3M16 9l3 3-3 3' stroke='%231f2937' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\") 12 12, move";
 
-function visibleNoteAnnotations(model: DrawingModel): DrawingAnnotation[] {
-  return model.annotations.filter((annotation) => annotation.kind !== "title");
+function visibleNoteAnnotations(model: DrawingModel): TextDrawingAnnotation[] {
+  return model.annotations.filter(
+    (annotation): annotation is TextDrawingAnnotation =>
+      annotation.kind !== "title" &&
+      !isConnectedWireScheduleAnnotation(annotation)
+  );
 }
 
 export function NoteBlockOverlay({
@@ -62,7 +72,7 @@ export function NoteBlockOverlay({
   const leaderDragStateRef = useRef<AnnotationLeaderDragState | null>(null);
 
   const startDrag = (
-    annotation: DrawingAnnotation,
+    annotation: TextDrawingAnnotation,
     event: PointerEvent<SVGRectElement>
   ) => {
     if (event.button !== 0) {
@@ -166,7 +176,7 @@ export function NoteBlockOverlay({
   };
 
   const startLeaderDrag = (
-    annotation: DrawingAnnotation,
+    annotation: TextDrawingAnnotation,
     event: PointerEvent<SVGCircleElement>
   ) => {
     if (event.button !== 0) {
@@ -197,7 +207,11 @@ export function NoteBlockOverlay({
       (candidate) => candidate.id === dragState.annotationId
     );
 
-    if (!annotation?.leader) {
+    if (
+      !annotation ||
+      isConnectedWireScheduleAnnotation(annotation) ||
+      !annotation.leader
+    ) {
       return;
     }
 

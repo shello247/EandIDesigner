@@ -18,6 +18,10 @@ import {
   type DrawingPlacement
 } from "@/features/drawing_canvas/api/asset-contracts";
 import {
+  isNetworkDeviceDrawingSymbol,
+  normalizeNetworkDeviceDrawingAssets
+} from "@/features/drawing_canvas/logic/services/drawing-network-device-assets";
+import {
   managedAssetCreateInputSchema,
   managedAssetUpdateInputSchema,
   type ManagedAssetCreateInput,
@@ -60,6 +64,7 @@ const ASSET_TYPE_LABELS: Record<DrawingAssetType, string> = {
   isolator: "Isolator",
   converter: "Converter",
   io_module: "I/O Module",
+  network_device: "Network Device",
   earth_bar: "Earth Bar",
   cable: "Cable",
   other: "Asset"
@@ -78,6 +83,7 @@ const ASSET_TYPE_PREFIXES: Record<DrawingAssetType, string> = {
   isolator: "ISO",
   converter: "CV",
   io_module: "IO",
+  network_device: "SW",
   earth_bar: "EB",
   cable: "C",
   other: "EQ"
@@ -96,6 +102,7 @@ const ASSET_TYPE_STARTS: Record<DrawingAssetType, number> = {
   isolator: 101,
   converter: 101,
   io_module: 101,
+  network_device: 101,
   earth_bar: 101,
   cable: 101,
   other: 101
@@ -131,6 +138,10 @@ export function classifyManagedAssetFromPlacement(
 
   if (isGeneratedTerminalBlockReference(placement)) {
     return "terminal_block";
+  }
+
+  if (isNetworkDeviceDrawingSymbol(symbol)) {
+    return "network_device";
   }
 
   if (symbol?.metadata.panelWiring) {
@@ -234,6 +245,7 @@ export function buildManagedAssetCatalog(
   model: DrawingModel,
   symbols: ApprovedDrawingSymbol[]
 ): ManagedAssetCatalogItem[] {
+  model = normalizeNetworkDeviceDrawingAssets(model, symbols);
   const catalog = new Map<string, ManagedAssetCatalogItem>();
   const nonAssetLayoutHelperIds = new Set(
     model.sheets.flatMap((sheet) =>
@@ -382,10 +394,11 @@ export function reconcileDrawingAssets(
   model: DrawingModel,
   symbols: ApprovedDrawingSymbol[]
 ): DrawingModel {
-  const catalog = buildManagedAssetCatalog(model, symbols);
+  const normalizedModel = normalizeNetworkDeviceDrawingAssets(model, symbols);
+  const catalog = buildManagedAssetCatalog(normalizedModel, symbols);
 
   return {
-    ...model,
+    ...normalizedModel,
     assets: catalog.map((asset) => ({
       id: asset.id,
       tag: asset.tag,
@@ -396,7 +409,9 @@ export function reconcileDrawingAssets(
       versionId: asset.versionId,
       metadata: asset.metadata,
       terminalBlock: asset.terminalBlock,
-      componentSelections: asset.componentSelections
+      terminalStrip: asset.terminalStrip,
+      componentSelections: asset.componentSelections,
+      engineeringAttributes: asset.engineeringAttributes
     }))
   };
 }

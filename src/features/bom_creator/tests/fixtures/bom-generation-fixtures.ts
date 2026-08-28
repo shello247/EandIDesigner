@@ -128,6 +128,7 @@ export function createBomGenerationFixture(
     drawingTitle: "BOM Performance Drawing",
     model: {
       version: 2,
+      measurementUnit: "mm",
       titleBlock: {},
       assets,
       sheets

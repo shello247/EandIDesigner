@@ -7,6 +7,8 @@ import type {
 } from "../../data/schema";
 import { isNonAssetDrawingPlacement } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
+import { cloneStructuredTerminalStrip } from "@/features/drawing_terminal_blocks/api/public";
+import { cloneEngineeringAttributesForNewAsset } from "@/features/engineering_attributes/api/public";
 import {
   allocateNextPlacementTag,
   assertUniqueAssetTag,
@@ -20,6 +22,10 @@ import {
   type DrawingAssetPlacementRef
 } from "./drawing-asset-identity";
 import { deriveWireId } from "./drawing-identification";
+import {
+  structuredTerminalStripSymbolId,
+  structuredTerminalStripVersionId
+} from "./drawing-generated-symbols";
 
 export type AssetDuplicateMode = "same-system" | "new-system";
 
@@ -39,6 +45,7 @@ export type CopiedAssetResolutionMap = Map<
   {
     assetId: string;
     tag: string;
+    sourceAssetId?: string;
   }
 >;
 
@@ -49,22 +56,47 @@ export function preserveMappedDrawingAssets(
   const assets = [...(model.assets ?? [])];
   const existingIds = new Set(assets.map((asset) => asset.id));
 
-  for (const [sourceAssetId, target] of assetMapping) {
+  for (const [mappingKey, target] of assetMapping) {
     if (existingIds.has(target.assetId)) {
       continue;
     }
 
+    const sourceAssetId = target.sourceAssetId ?? mappingKey;
     const source = assets.find((asset) => asset.id === sourceAssetId);
 
     if (!source) {
       continue;
     }
 
-    assets.push({
-      ...source,
-      id: target.assetId,
-      tag: target.tag
-    });
+    const copiedAsset = source.terminalStrip
+      ? {
+          ...source,
+          id: target.assetId,
+          tag: target.tag,
+          symbolId: structuredTerminalStripSymbolId(target.assetId),
+          versionId: structuredTerminalStripVersionId(target.assetId),
+          metadata: {
+            ...source.metadata,
+            generatedKind: "structured_terminal_strip" as const,
+            symbolKey: `structured_terminal_strip_${target.assetId}`
+          },
+          terminalStrip: cloneStructuredTerminalStrip(source.terminalStrip),
+          engineeringAttributes: cloneEngineeringAttributesForNewAsset({
+            container: source.engineeringAttributes,
+            assetType: source.type
+          })
+        }
+      : {
+          ...source,
+          id: target.assetId,
+          tag: target.tag,
+          engineeringAttributes: cloneEngineeringAttributesForNewAsset({
+            container: source.engineeringAttributes,
+            assetType: source.type
+          })
+        };
+
+    assets.push(copiedAsset);
     existingIds.add(target.assetId);
   }
 
@@ -199,7 +231,8 @@ export function resolveCopiedPlacementAsset({
   duplicateMode,
   reservedTags,
   assetMapping,
-  newPlacementId
+  newPlacementId,
+  createNewPhysicalAsset = false
 }: {
   model: DrawingModel;
   placement: DrawingPlacement;
@@ -208,12 +241,24 @@ export function resolveCopiedPlacementAsset({
   reservedTags: Set<string>;
   assetMapping: CopiedAssetResolutionMap;
   newPlacementId: string;
+  createNewPhysicalAsset?: boolean;
 }): CopiedAssetResolution {
   if (isNonAssetDrawingPlacement(placement)) {
     return {
       assetId: undefined,
       tag: placement.tag,
       linked: true
+    };
+  }
+
+  const sourceAssetId = placementAssetId(placement);
+  const mapped = assetMapping.get(sourceAssetId);
+
+  if (mapped) {
+    reservedTags.add(mapped.tag);
+    return {
+      ...mapped,
+      linked: false
     };
   }
 
@@ -231,13 +276,20 @@ export function resolveCopiedPlacementAsset({
     symbol,
     duplicateMode
   });
-  const sourceAssetId = placementAssetId(placement);
-  const mapped = assetMapping.get(sourceAssetId);
+  if (createNewPhysicalAsset) {
+    const tag = allocateNextPlacementTag(model, placement, symbols, { reservedTags });
+    const next = {
+      assetId: createDrawingAssetId(newPlacementId),
+      tag,
+      sourceAssetId
+    };
 
-  if (mapped) {
-    reservedTags.add(mapped.tag);
+    assetMapping.set(`physical-copy:${newPlacementId}`, next);
+    reservedTags.add(tag);
+
     return {
-      ...mapped,
+      assetId: next.assetId,
+      tag: next.tag,
       linked: false
     };
   }
@@ -377,13 +429,50 @@ export function relinkPlacementsToNewAsset(
 
   assertUniqueAssetTag(model, newTag);
 
-  return applyAssetRelink({
+  const newAssetId = createDrawingAssetId();
+  const sourceAssetId = targets
+    .map((target) =>
+      model.sheets
+        .find((sheet) => sheet.id === target.sheetId)
+        ?.placements.find((placement) => placement.id === target.placementId)
+        ?.assetId
+    )
+    .find((assetId): assetId is string => Boolean(assetId));
+  const sourceAsset = model.assets?.find((asset) => asset.id === sourceAssetId);
+
+  const relinked = applyAssetRelink({
     model,
     targets,
-    assetId: createDrawingAssetId(),
+    assetId: newAssetId,
     tag: newTag,
     symbols
   });
+
+  if (!sourceAsset) {
+    return relinked;
+  }
+
+  if (sourceAsset.terminalStrip) {
+    throw new Error(
+      "Use Reuse terminal strip to create an independent physical terminal strip."
+    );
+  }
+
+  return {
+    ...relinked,
+    assets: [
+      ...(relinked.assets ?? []),
+      {
+        ...sourceAsset,
+        id: newAssetId,
+        tag: newTag.trim(),
+        engineeringAttributes: cloneEngineeringAttributesForNewAsset({
+          container: sourceAsset.engineeringAttributes,
+          assetType: sourceAsset.type
+        })
+      }
+    ]
+  };
 }
 
 export function createNewAssetFromPlacement(

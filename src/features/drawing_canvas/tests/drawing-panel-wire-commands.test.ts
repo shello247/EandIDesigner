@@ -12,10 +12,6 @@ import {
   deleteInternalWireRouteOccurrence,
   updateInternalPanelWireCommand
 } from "../logic/commands/drawing-panel-wire-commands";
-import {
-  applySheetDuplicatePlan,
-  buildSheetDuplicatePlan
-} from "../logic/services/drawing-sheet-duplication";
 
 const PANEL_ID = "asset_panel";
 const ASSET_A = "asset_device_a";
@@ -144,6 +140,47 @@ describe("Detailed Panel internal-wire commands", () => {
     expect(result.connection.wireId).toBeUndefined();
   });
 
+  it("persists engineer-authored Detailed Panel waypoints as one manual route", () => {
+    const symbol = deviceSymbol();
+    const waypoints = [
+      { id: "bend_1", x: 110, y: 130 },
+      { id: "bend_2", x: 150, y: 130 }
+    ];
+    const result = createInternalPanelWireRoute({
+      model: fixture(),
+      symbols: [symbol],
+      sheetId: SHEET_A,
+      from: { assetId: ASSET_A, terminalKey: "OUT", side: "single" },
+      to: { assetId: ASSET_B, terminalKey: "IN", side: "single" },
+      routeWaypoints: waypoints
+    });
+
+    expect(result.connection.route?.mode).toBe("manual");
+    expect(result.connection.route?.points).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ x: 110, y: 130 }),
+        expect.objectContaining({ x: 150, y: 130 })
+      ])
+    );
+    expect(result.model.panelWiring?.internalWires).toEqual([result.wire]);
+    expect(
+      result.model.sheets.find((sheet) => sheet.id === SHEET_A)?.connections
+    ).toEqual([result.connection]);
+  });
+
+  it("keeps Detailed Panel routes automatic when no waypoint is authored", () => {
+    const result = createInternalPanelWireRoute({
+      model: fixture(),
+      symbols: [deviceSymbol()],
+      sheetId: SHEET_A,
+      from: { assetId: ASSET_A, terminalKey: "OUT", side: "single" },
+      to: { assetId: ASSET_B, terminalKey: "IN", side: "single" },
+      routeWaypoints: []
+    });
+
+    expect(result.connection.route?.mode).toBe("auto");
+  });
+
   it("updates canonical properties and keeps route occurrences lightweight", () => {
     const symbol = deviceSymbol();
     const created = createInternalPanelWireRoute({
@@ -224,33 +261,4 @@ describe("Detailed Panel internal-wire commands", () => {
     expect(deleted.sheets.flatMap((sheet) => sheet.connections)).toHaveLength(0);
   });
 
-  it("duplicates route occurrences while preserving one physical wire record", () => {
-    const symbol = deviceSymbol();
-    const created = createInternalPanelWireRoute({
-      model: fixture(),
-      symbols: [symbol],
-      sheetId: SHEET_A,
-      from: { assetId: ASSET_A, terminalKey: "OUT", side: "single" },
-      to: { assetId: ASSET_B, terminalKey: "IN", side: "single" }
-    });
-    const plan = buildSheetDuplicatePlan({
-      model: created.model,
-      symbols: [symbol],
-      sourceSheetId: SHEET_A
-    });
-    const duplicated = applySheetDuplicatePlan({
-      model: created.model,
-      symbols: [symbol],
-      plan
-    });
-    const duplicateSheet = duplicated.model.sheets.find(
-      (sheet) => sheet.id === duplicated.sheetId
-    );
-
-    expect(duplicated.model.panelWiring?.internalWires).toHaveLength(1);
-    expect(duplicateSheet?.connections).toEqual([
-      expect.objectContaining({ panelConnectionId: created.wire.id })
-    ]);
-    expect(duplicateSheet?.connections[0].id).not.toBe(created.connection.id);
-  });
 });

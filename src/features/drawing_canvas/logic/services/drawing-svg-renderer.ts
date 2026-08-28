@@ -1,6 +1,7 @@
 import type {
   DrawingAnnotation,
   DrawingAssetRecord,
+  DrawingMeasurementUnit,
   DrawingPackageSheetKind,
   DrawingSectionTitlePage,
   DrawingSheetCanvasModel as DrawingModel
@@ -8,9 +9,16 @@ import type {
 import type { ApprovedDrawingSymbol } from "../../types";
 import type {
   PanelConnectionPatternRecord,
-  PanelExternalTerminationDisplayRow,
+  PlacementWireContextDisplayRow,
   PanelWirePhysicalPosition
 } from "@/features/drawing_panel_wiring/api/public";
+import { getPanelWireDisplayLabel } from "@/features/drawing_panel_wiring/api/public";
+import {
+  createConnectedWireScheduleLayout,
+  isConnectedWireScheduleAnnotation,
+  renderConnectedWireScheduleSvg,
+  type ConnectedWireScheduleProjection
+} from "@/features/drawing_connected_wire_schedule/api/public";
 import {
   getAnchorWorldPoint,
   getPlacementScaleFactors,
@@ -27,7 +35,7 @@ import {
   shouldShowPlacementTitle
 } from "./placement-title-labels";
 import {
-  getPanelEnclosureBounds,
+  getPanelEnclosureDisplayBounds,
   getPanelEnclosureTitle,
   isGeneratedPanelEnclosurePlacement
 } from "./drawing-asset-containment";
@@ -38,10 +46,12 @@ import {
   renderBackplanePlacement
 } from "./drawing-backplane-layouts";
 import {
+  getParentPanelForBackplane,
   resolveDrawingBackplaneScaleLabel,
   resolveLayoutHelperDisplayPlacement
 } from "./drawing-backplane-scale";
 import {
+  buildRenderableDrawingSymbols,
   getRenderableSymbolForPlacement,
   isGeneratedTerminalBlockPlacement
 } from "./drawing-generated-symbols";
@@ -49,8 +59,10 @@ import {
   isGeneratedWireTraySymbolReference,
   renderWireTraySvg
 } from "./drawing-wire-tray-layouts";
+import { renderDinRailSvg } from "./drawing-din-rail-layouts";
 import {
-  type LayoutLabelPosition,
+  getLayoutLabelPoint,
+  isDinRailSymbol,
   resolveLayoutLabel
 } from "./drawing-layout-labels";
 import {
@@ -60,6 +72,11 @@ import {
 import {
   isGeneratedPanelPatternLegendPlacement
 } from "./drawing-panel-reference-symbols";
+import {
+  getPanelConnectionViewBounds,
+  getPanelConnectionViewInnerBounds,
+  isPanelConnectionViewPlacement
+} from "./drawing-panel-connection-views";
 import {
   renderPanelConnectionPatternSvg,
   renderPanelPatternLegendSvg
@@ -124,7 +141,6 @@ function cadText(params: {
     weight = 500,
     anchor = "start"
   } = params;
-
   return `<text x="${x}" y="${y}" font-family="Arial, Helvetica, sans-serif" font-size="${size}" font-weight="${weight}" text-anchor="${anchor}" fill="#111827">${escapeXml(truncateText(value, maxLength))}</text>`;
 }
 
@@ -529,7 +545,6 @@ function renderTitleBlock(
 }
 
 function renderSheetFrame(model: DrawingModel, showGrid: boolean): string {
-  const outerMargin = 4;
   const innerMargin = 6;
   const gridFill = showGrid
     ? `<rect x="0" y="0" width="${model.sheet.width}" height="${model.sheet.height}" fill="url(#ei-grid)"/>`
@@ -538,8 +553,7 @@ function renderSheetFrame(model: DrawingModel, showGrid: boolean): string {
   return `
     <rect x="0" y="0" width="${model.sheet.width}" height="${model.sheet.height}" fill="white"/>
     ${gridFill}
-    <rect x="${outerMargin}" y="${outerMargin}" width="${model.sheet.width - outerMargin * 2}" height="${model.sheet.height - outerMargin * 2}" fill="none" stroke="#111827" stroke-width="0.78"/>
-    <rect x="${innerMargin}" y="${innerMargin}" width="${model.sheet.width - innerMargin * 2}" height="${model.sheet.height - innerMargin * 2}" fill="none" stroke="#111827" stroke-width="0.32"/>
+    <rect data-sheet-frame="technical" x="${innerMargin}" y="${innerMargin}" width="${model.sheet.width - innerMargin * 2}" height="${model.sheet.height - innerMargin * 2}" fill="none" stroke="#475569" stroke-width="0.32"/>
   `;
 }
 
@@ -554,75 +568,6 @@ function stripSvgText(svg: string): string {
   return svg
     .replace(/<text\b[\s\S]*?<\/text>/gi, "")
     .replace(/<tspan\b[\s\S]*?<\/tspan>/gi, "");
-}
-
-function labelPointForPosition({
-  placement,
-  position
-}: {
-  placement: DrawingModel["placements"][number];
-  position: LayoutLabelPosition;
-}): {
-  x: number;
-  y: number;
-  textAnchor: "start" | "middle" | "end";
-} {
-  const width = placement.layoutDimensions?.lengthMm ?? 0;
-  const height = placement.layoutDimensions?.widthMm ?? 0;
-  const left = placement.x;
-  const top = placement.y;
-  const right = placement.x + width;
-  const bottom = placement.y + height;
-  const inset = 1.2;
-  const outsideOffset = 1.35;
-  const baselineCenterOffset = 0.75;
-  const baselineBottomOffset = 3;
-
-  switch (position) {
-    case "center":
-      return {
-        x: Number((left + width / 2).toFixed(2)),
-        y: Number((top + height / 2 + baselineCenterOffset).toFixed(2)),
-        textAnchor: "middle"
-      };
-    case "top-left":
-      return {
-        x: Number((left + inset).toFixed(2)),
-        y: Number((top - outsideOffset).toFixed(2)),
-        textAnchor: "start"
-      };
-    case "top-right":
-      return {
-        x: Number((right - inset).toFixed(2)),
-        y: Number((top - outsideOffset).toFixed(2)),
-        textAnchor: "end"
-      };
-    case "bottom-left":
-      return {
-        x: Number((left + inset).toFixed(2)),
-        y: Number((bottom + baselineBottomOffset).toFixed(2)),
-        textAnchor: "start"
-      };
-    case "bottom-center":
-      return {
-        x: Number((left + width / 2).toFixed(2)),
-        y: Number((bottom + baselineBottomOffset).toFixed(2)),
-        textAnchor: "middle"
-      };
-    case "bottom-right":
-      return {
-        x: Number((right - inset).toFixed(2)),
-        y: Number((bottom + baselineBottomOffset).toFixed(2)),
-        textAnchor: "end"
-      };
-    case "top-center":
-    default:
-      return {
-        x: Number((left + width / 2).toFixed(2)),
-        y: Number((top - outsideOffset).toFixed(2)),
-        textAnchor: "middle"
-      };
-  }
 }
 
 function layoutLabelRotation(placement: DrawingModel["placements"][number]): number {
@@ -651,7 +596,7 @@ function layoutHelperTagLabel({
     return "";
   }
 
-  const labelPoint = labelPointForPosition({
+  const labelPoint = getLayoutLabelPoint({
     placement,
     position: label.position
   });
@@ -792,6 +737,9 @@ function wrapText(value: string, maxCharacters: number): string[] {
 }
 
 function renderAnnotation(annotation: DrawingAnnotation): string {
+  if (isConnectedWireScheduleAnnotation(annotation)) {
+    return "";
+  }
   if (annotation.kind === "title") {
     return `<text x="${annotation.x}" y="${annotation.y}" font-family="Arial" font-size="5" font-weight="700" fill="#111827">${escapeXml(annotation.text)}</text>`;
   }
@@ -927,12 +875,15 @@ function renderSectionTitlePage(params: {
   `;
 }
 
-function renderPanelEnclosure(placement: DrawingModel["placements"][number]): string {
+function renderPanelEnclosure(
+  placement: DrawingModel["placements"][number],
+  sheet: DrawingModel["sheet"]
+): string {
   if (!isGeneratedPanelEnclosurePlacement(placement)) {
     return "";
   }
 
-  const bounds = getPanelEnclosureBounds(placement);
+  const bounds = getPanelEnclosureDisplayBounds(sheet, placement);
   const headerHeight = Math.min(12, Math.max(8, bounds.height * 0.12));
   const label = `${placement.tag}  ${getPanelEnclosureTitle(placement).toUpperCase()}`;
 
@@ -966,27 +917,62 @@ function inferredExternalTerminationPosition(input: {
   return deltaY >= 0 ? "bottom" : "top";
 }
 
-function externalTerminationLabel(
-  termination: PanelExternalTerminationDisplayRow
+function renderPanelConnectionView(
+  placement: DrawingModel["placements"][number]
 ): string {
-  const wireId = termination.wireId?.trim();
-
-  if (wireId) {
-    return wireId;
-  }
-
-  const cableReference = [
-    termination.cableTag?.trim(),
-    termination.conductorKey?.trim()
-  ].filter(Boolean);
-
-  return cableReference.length > 0 ? cableReference.join("/") : "FIELD";
+  if (!isPanelConnectionViewPlacement(placement)) return "";
+  const bounds = getPanelConnectionViewBounds(placement);
+  const inner = getPanelConnectionViewInnerBounds(placement);
+  const label = `${placement.tag}  ${(placement.title?.trim() || placement.tag).toUpperCase()}`;
+  return `
+    <g data-placement-id="${escapeXml(placement.id)}" data-panel-connection-view="true" pointer-events="none">
+      <rect x="${bounds.x}" y="${bounds.y}" width="${bounds.width}" height="${bounds.height}" fill="#f8fafc" fill-opacity="0.28" stroke="#475569" stroke-width="0.48"/>
+      <rect x="${bounds.x}" y="${bounds.y}" width="${bounds.width}" height="10" fill="#eff6ff" fill-opacity="0.72" stroke="#475569" stroke-width="0.42"/>
+      <text x="${bounds.x + 4}" y="${bounds.y + 6.7}" font-family="Arial, Helvetica, sans-serif" font-size="3.4" font-weight="700" fill="#0f172a">${escapeXml(label)}</text>
+      <rect x="${inner.x}" y="${inner.y}" width="${inner.width}" height="${inner.height}" fill="#ffffff" fill-opacity="0.28" stroke="#94a3b8" stroke-width="0.32" stroke-dasharray="2 2"/>
+    </g>
+  `;
 }
 
-function renderPanelExternalTerminationStubs(input: {
+function resolvePlacementForSheetDisplay({
+  model,
+  placement,
+  symbol
+}: {
+  model: DrawingModel;
+  placement: DrawingModel["placements"][number];
+  symbol: ApprovedDrawingSymbol;
+}): DrawingModel["placements"][number] {
+  const parentBackplane =
+    isLayoutHelperPlacement(placement) && placement.layoutParentId
+      ? model.placements.find(
+          (candidate) =>
+            candidate.id === placement.layoutParentId &&
+            isBackplanePlacement(candidate)
+        )
+      : undefined;
+  const normalizedPlacement = normalizeLayoutHelperDimensionsForSymbol(
+    placement,
+    symbol
+  );
+
+  return parentBackplane
+    ? resolveLayoutHelperDisplayPlacement({
+        sheet: model.sheet,
+        placement: normalizedPlacement,
+        backplane: parentBackplane,
+        parentPanel: getParentPanelForBackplane(
+          model.placements,
+          parentBackplane
+        )
+      })
+    : normalizedPlacement;
+}
+
+function renderPlacementWireContextStubs(input: {
   model: DrawingModel;
   approvedSymbols: ApprovedDrawingSymbol[];
-  terminations: PanelExternalTerminationDisplayRow[];
+  rows: PlacementWireContextDisplayRow[];
 }): string {
   const placementsById = new Map(
     input.model.placements.map((placement) => [placement.id, placement])
@@ -1002,29 +988,49 @@ function renderPanelExternalTerminationStubs(input: {
   };
   const lineLength = 32;
 
-  return input.terminations
-    .map((termination) => {
-      const placement = placementsById.get(termination.placementId);
+  return input.rows
+    .map((row) => {
+      const placement = placementsById.get(row.placementId);
       const symbol = placement
         ? getRenderableSymbolForPlacement(placement, input.approvedSymbols)
         : undefined;
       const anchor = symbol?.metadata.anchors.find(
-        (candidate) => candidate.key === termination.anchorKey
+        (candidate) => candidate.key === row.anchorKey
       );
 
       if (!placement || !symbol || !anchor) {
         return "";
       }
 
-      const start = getAnchorWorldPoint(placement, symbol.metadata, anchor);
+      const displayPlacement = resolvePlacementForSheetDisplay({
+        model: input.model,
+        placement,
+        symbol
+      });
+      const start = getAnchorWorldPoint(
+        displayPlacement,
+        symbol.metadata,
+        anchor
+      );
       const position =
-        termination.physicalPosition ??
+        row.physicalPosition ??
         inferredExternalTerminationPosition({
-          placement,
+          placement: displayPlacement,
           symbol,
           anchorPoint: start
         });
-      const vector = directionVectors[position];
+      const localVector = directionVectors[position];
+      const rotationRadians = row.physicalPosition
+        ? (displayPlacement.rotation * Math.PI) / 180
+        : 0;
+      const vector = {
+        x:
+          localVector.x * Math.cos(rotationRadians) -
+          localVector.y * Math.sin(rotationRadians),
+        y:
+          localVector.x * Math.sin(rotationRadians) +
+          localVector.y * Math.cos(rotationRadians)
+      };
       const end = {
         x: Number((start.x + vector.x * lineLength).toFixed(2)),
         y: Number((start.y + vector.y * lineLength).toFixed(2))
@@ -1033,27 +1039,59 @@ function renderPanelExternalTerminationStubs(input: {
         x: Number((start.x + vector.x * lineLength * 0.6).toFixed(2)),
         y: Number((start.y + vector.y * lineLength * 0.6).toFixed(2))
       };
-      const label = externalTerminationLabel(termination);
-      const isVertical = position === "top" || position === "bottom";
+      const isVertical = Math.abs(vector.y) > Math.abs(vector.x);
       const labelTransform = isVertical
         ? ` transform="rotate(-90 ${labelPoint.x} ${labelPoint.y})"`
         : "";
+      const stroke =
+        row.canonicalKind === "internal_wire" ? "#1f4e79" : "#0f766e";
+      const labelFill =
+        row.canonicalKind === "internal_wire" ? "#1f4e79" : "#0f5f59";
+      const directionLabel = row.direction === "incoming" ? "Incoming" : "Outgoing";
+      const oppositeLabel = row.direction === "incoming" ? "From" : "To";
       const tooltip = [
-        `External field termination ${label}`,
-        termination.cableTag ? `Cable ${termination.cableTag}` : undefined,
-        termination.conductorKey
-          ? `Conductor ${termination.conductorKey}`
+        row.canonicalKind === "field_connection" && row.externalTerminationId
+          ? `External field termination ${row.wireId}`
+          : `${directionLabel} ${row.wireId}`,
+        row.canonicalKind === "field_connection" && row.cableTag
+          ? `Cable ${row.cableTag}`
           : undefined,
-        `Source Sheet ${termination.sourceSheet.number} - ${termination.sourceSheet.name}`
+        row.canonicalKind === "field_connection" && row.conductorKey
+          ? `Conductor ${row.conductorKey}`
+          : undefined,
+        `${oppositeLabel} ${row.oppositeEndpoint.assetTag}:${row.oppositeEndpoint.terminalKey}`,
+        row.sourceSheet
+          ? `Source Sheet ${row.sourceSheet.number} - ${row.sourceSheet.name}`
+          : undefined
       ]
         .filter(Boolean)
         .join(" / ");
+      const canonicalDataAttribute =
+        row.canonicalKind === "internal_wire"
+          ? `data-panel-wire-id="${escapeXml(row.canonicalId)}"`
+          : `data-field-connection-key="${escapeXml(row.canonicalId)}"`;
+      const legacyExternalAttributes =
+        row.canonicalKind === "field_connection"
+          ? [
+              row.externalTerminationId
+                ? `data-external-termination-id="${escapeXml(row.externalTerminationId)}"`
+                : undefined,
+              row.fieldConnectionId
+                ? `data-field-connection-id="${escapeXml(row.fieldConnectionId)}"`
+                : undefined,
+              row.wireId
+                ? `data-field-wire-id="${escapeXml(row.wireId)}"`
+                : undefined
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "";
 
       return `
-        <g data-external-termination-id="${escapeXml(termination.terminationId)}" data-field-connection-id="${escapeXml(termination.source.connectionId)}" data-placement-id="${escapeXml(termination.placementId)}"${termination.wireId ? ` data-field-wire-id="${escapeXml(termination.wireId)}"` : ""} pointer-events="none">
+        <g data-placement-wire-context="true" data-placement-id="${escapeXml(row.placementId)}" data-wire-direction="${row.direction}" ${canonicalDataAttribute}${legacyExternalAttributes ? ` ${legacyExternalAttributes}` : ""} pointer-events="none">
           <title>${escapeXml(tooltip)}</title>
-          <line x1="${start.x}" y1="${start.y}" x2="${end.x}" y2="${end.y}" stroke="#0f766e" stroke-width="0.58" stroke-linecap="square"/>
-          <text x="${labelPoint.x}" y="${labelPoint.y}"${labelTransform} text-anchor="middle" dominant-baseline="central" font-family="Inter, Poppins, Arial, Helvetica, sans-serif" font-size="3" font-weight="650" fill="#0f5f59" stroke="#ffffff" stroke-width="1.25" paint-order="stroke" stroke-linejoin="round">${escapeXml(label)}</text>
+          <line x1="${start.x}" y1="${start.y}" x2="${end.x}" y2="${end.y}" stroke="${stroke}" stroke-width="0.58" stroke-linecap="square"/>
+          <text x="${labelPoint.x}" y="${labelPoint.y}"${labelTransform} text-anchor="middle" dominant-baseline="central" font-family="Inter, Poppins, Arial, Helvetica, sans-serif" font-size="3" font-weight="650" fill="${labelFill}" stroke="#ffffff" stroke-width="1.25" paint-order="stroke" stroke-linejoin="round">${escapeXml(row.wireId)}</text>
         </g>
       `;
     })
@@ -1073,10 +1111,19 @@ export function renderDrawingToSvg(params: {
   sheetKind?: DrawingPackageSheetKind;
   sectionTitlePage?: DrawingSectionTitlePage;
   derivedSectionNumber?: number;
-  panelInternalWires?: Array<{ id: string; wireId: string }>;
+  panelInternalWires?: Array<{
+    id: string;
+    wireId: string;
+    wireNumber?: number;
+  }>;
   panelConnectionPatterns?: PanelConnectionPatternRecord[];
-  panelExternalTerminations?: PanelExternalTerminationDisplayRow[];
+  placementWireContextRows?: PlacementWireContextDisplayRow[];
+  connectedWireScheduleProjections?: ReadonlyMap<
+    string,
+    ConnectedWireScheduleProjection
+  >;
   connectionVisibility?: "all" | "field" | "panel_internal";
+  measurementUnit?: DrawingMeasurementUnit;
 }): string {
   const {
     model,
@@ -1093,9 +1140,16 @@ export function renderDrawingToSvg(params: {
     derivedSectionNumber,
     panelInternalWires = [],
     panelConnectionPatterns = [],
-    panelExternalTerminations = [],
-    connectionVisibility = "all"
+    placementWireContextRows = [],
+    connectedWireScheduleProjections = new Map(),
+    connectionVisibility = "all",
+    measurementUnit = "mm"
   } = params;
+  const renderSymbols = buildRenderableDrawingSymbols({
+    placements: model.placements,
+    approvedSymbols,
+    assets
+  });
   const panelWireById = new Map(panelInternalWires.map((wire) => [wire.id, wire]));
   const panelPatternById = new Map(
     panelConnectionPatterns.map((pattern) => [pattern.record.id, pattern])
@@ -1105,9 +1159,22 @@ export function renderDrawingToSvg(params: {
   const panelPlacements = model.placements.filter(
     isGeneratedPanelEnclosurePlacement
   );
+  const panelConnectionViews = model.placements.filter(
+    isPanelConnectionViewPlacement
+  );
   const backplanePlacements = model.placements.filter(isBackplanePlacement);
   const backplaneById = new Map(
     backplanePlacements.map((placement) => [placement.id, placement])
+  );
+  const parentPanelByBackplaneId = new Map(
+    backplanePlacements.flatMap((placement) => {
+      const parentPanel = getParentPanelForBackplane(
+        model.placements,
+        placement
+      );
+
+      return parentPanel ? [[placement.id, parentPanel] as const] : [];
+    })
   );
   const renderPlacementForSheet = (
     placement: DrawingModel["placements"][number],
@@ -1126,13 +1193,15 @@ export function renderDrawingToSvg(params: {
       ? resolveLayoutHelperDisplayPlacement({
           sheet: model.sheet,
           placement: normalizedPlacement,
-          backplane: parentBackplane
+          backplane: parentBackplane,
+          parentPanel: parentPanelByBackplaneId.get(parentBackplane.id)
         })
       : normalizedPlacement;
   };
   const normalPlacements = model.placements.filter(
     (placement) =>
       !isGeneratedPanelEnclosurePlacement(placement) &&
+      !isPanelConnectionViewPlacement(placement) &&
       !isBackplanePlacement(placement)
   );
 
@@ -1170,7 +1239,7 @@ export function renderDrawingToSvg(params: {
           return pattern
             ? renderPanelConnectionPatternSvg({
                 model,
-                symbols: approvedSymbols,
+                symbols: renderSymbols,
                 connection,
                 pattern,
                 wire,
@@ -1178,9 +1247,9 @@ export function renderDrawingToSvg(params: {
               })
             : renderConnectionRouteSvg({
                 model,
-                symbols: approvedSymbols,
+                symbols: renderSymbols,
                 connection: wire
-                  ? { ...connection, wireId: wire.wireId }
+                  ? { ...connection, wireId: getPanelWireDisplayLabel(wire) }
                   : connection,
                 stroke: connection.panelConnectionId ? "#1f4e79" : undefined,
                 strokeWidth: connection.panelConnectionId ? 0.52 : undefined,
@@ -1189,22 +1258,34 @@ export function renderDrawingToSvg(params: {
         })
         .join("")
     : "";
-  const externalTerminationStubs = renderPanelExternalTerminationStubs({
+  const placementWireContextStubs = renderPlacementWireContextStubs({
     model,
-    approvedSymbols,
-    terminations: panelExternalTerminations
+    approvedSymbols: renderSymbols,
+    rows: placementWireContextRows
   });
 
-  const panelEnclosures = panelPlacements.map(renderPanelEnclosure).join("");
+  const panelEnclosures = panelPlacements
+    .map((placement) => renderPanelEnclosure(placement, model.sheet))
+    .join("");
+  const panelConnectionFrames = panelConnectionViews
+    .map(renderPanelConnectionView)
+    .join("");
   const backplanes = backplanePlacements
-    .map((placement) => renderBackplanePlacement(placement, model.sheet))
+    .map((placement) =>
+      renderBackplanePlacement(
+        placement,
+        model.sheet,
+        parentPanelByBackplaneId.get(placement.id)
+      )
+    )
     .join("");
 
   const placements = normalPlacements
         .map((placement) => {
       const symbol = getRenderableSymbolForPlacement(
         placement,
-        approvedSymbols
+        renderSymbols,
+        assets
       );
 
       if (!symbol) {
@@ -1242,7 +1323,8 @@ export function renderDrawingToSvg(params: {
             ${renderLayoutDimensionSvg({
               model,
               sourcePlacement: placement,
-              backplane: parentBackplane
+              backplane: parentBackplane,
+              measurementUnit
             })}
           </g>
         `;
@@ -1268,6 +1350,8 @@ export function renderDrawingToSvg(params: {
             ${
               isGeneratedWireTraySymbolReference(placement)
                 ? renderWireTraySvg({ placement, model })
+                : isLayoutHelperPlacement(placement) && isDinRailSymbol(symbol)
+                  ? renderDinRailSvg({ placement, symbol })
                 : isLayoutHelperPlacement(placement) &&
               !isGeneratedTerminalBlockPlacement(placement)
                 ? stripSvgText(stripSvgRoot(symbol.svg))
@@ -1278,7 +1362,7 @@ export function renderDrawingToSvg(params: {
             placement: renderPlacement,
             parentSymbol: symbol,
             assets,
-            symbols: approvedSymbols
+            symbols: renderSymbols
           })}
           ${anchors}
         </g>
@@ -1292,7 +1376,8 @@ export function renderDrawingToSvg(params: {
       }
       const symbol = getRenderableSymbolForPlacement(
         placement,
-        approvedSymbols
+        renderSymbols,
+        assets
       );
 
       if (!symbol) {
@@ -1311,7 +1396,11 @@ export function renderDrawingToSvg(params: {
 
       const showPlacementTitle = shouldShowPlacementTitle(renderPlacement, symbol);
       const placementLabelPoints = showPlacementTitle
-        ? getPlacementLabelPoints(renderPlacement)
+        ? getPlacementLabelPoints({
+            placement: renderPlacement,
+            symbol,
+            sheet: model.sheet
+          })
         : undefined;
       const placementTitleText = getPlacementDisplayTitle(renderPlacement, symbol);
       const tagPoint = placementLabelPoints?.tagPoint ?? {
@@ -1333,6 +1422,26 @@ export function renderDrawingToSvg(params: {
         .join("");
 
   const annotations = model.annotations.map(renderAnnotation).join("");
+  const connectedWireSchedules = model.annotations
+    .filter(isConnectedWireScheduleAnnotation)
+    .map((annotation) => {
+      const projection = connectedWireScheduleProjections.get(annotation.id);
+      if (!projection) return "";
+      const assetTag =
+        assets.find((asset) => asset.id === annotation.schedule.assetId)?.tag ??
+        annotation.schedule.assetId;
+      return renderConnectedWireScheduleSvg({
+        layout: createConnectedWireScheduleLayout({
+          annotation,
+          projection,
+          sheet: model.sheet
+        }),
+        assetTag,
+        linkedOccurrenceAvailable: projection.linkedOccurrenceAvailable,
+        unresolvedCount: projection.unresolvedCount
+      });
+    })
+    .join("");
   const sectionTitlePageContent = isSectionTitlePage
     ? renderSectionTitlePage({
         model,
@@ -1354,13 +1463,15 @@ export function renderDrawingToSvg(params: {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${model.sheet.width}mm" height="${model.sheet.height}mm" viewBox="0 0 ${model.sheet.width} ${model.sheet.height}">
     ${grid}
     ${panelEnclosures}
+    ${panelConnectionFrames}
     ${backplanes}
     ${placements}
-    ${externalTerminationStubs}
+    ${placementWireContextStubs}
     ${connections}
     ${placementLabels}
     ${sectionTitlePageContent}
     ${annotations}
+    ${connectedWireSchedules}
     ${titleBlock}
   </svg>`;
 }

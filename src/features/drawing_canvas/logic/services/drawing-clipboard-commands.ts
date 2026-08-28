@@ -1,10 +1,10 @@
 import type {
-  DrawingConnection,
   DrawingModel,
   DrawingPackageSheet,
   DrawingPlacement,
   DrawingSheetCanvasModel
 } from "../../data/schema";
+import { isNonAssetDrawingPlacement } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import { isTerminalBlockModuleSymbol } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
 import { replaceSheetFromCanvasModel, toSheetCanvasModel } from "../commands/drawing-sheet-commands";
@@ -14,7 +14,7 @@ import {
   type AssetDuplicateMode,
   type CopiedAssetResolutionMap
 } from "./drawing-asset-resolution";
-import { deriveWireId } from "./drawing-identification";
+import { placementAssetId } from "./drawing-asset-identity";
 import { remapLayoutDimensionAttachmentPlacementIds } from "./drawing-layout-dimensions";
 import {
   EMPTY_CANVAS_SELECTION,
@@ -27,7 +27,6 @@ export type DrawingCanvasClipboard = {
   version: 1;
   sourceSheetId: string;
   placements: DrawingPlacement[];
-  connections: DrawingConnection[];
   annotations: DrawingSheetCanvasModel["annotations"];
 };
 
@@ -44,95 +43,32 @@ function createPasteIdPrefix(sheet: DrawingPackageSheet): string {
   return `paste_${sanitizeIdPart(sheet.id)}_${Date.now()}`;
 }
 
-function remapEndpoint(
-  connection: DrawingConnection,
-  placementIdMap: Map<string, string>
-): DrawingConnection {
-  return {
-    ...connection,
-    from: {
-      ...connection.from,
-      placementId:
-        placementIdMap.get(connection.from.placementId) ??
-        connection.from.placementId
-    },
-    to: {
-      ...connection.to,
-      placementId:
-        placementIdMap.get(connection.to.placementId) ?? connection.to.placementId
-    },
-    cablePlacementId: connection.cablePlacementId
-      ? placementIdMap.get(connection.cablePlacementId) ??
-        connection.cablePlacementId
-      : undefined
-  };
-}
-
-function connectionIsInternal(
-  connection: DrawingConnection,
-  placementIds: ReadonlySet<string>
-): boolean {
-  return (
-    placementIds.has(connection.from.placementId) &&
-    placementIds.has(connection.to.placementId) &&
-    (!connection.cablePlacementId || placementIds.has(connection.cablePlacementId))
-  );
-}
-
-function toCanvasModel(
-  model: DrawingModel,
-  sheet: DrawingPackageSheet,
-  overrides: {
-    placements?: DrawingPlacement[];
-    connections?: DrawingConnection[];
-  } = {}
-): DrawingSheetCanvasModel {
-  return {
-    sheet: {
-      ...sheet.page,
-      titleBlock: model.titleBlock
-    },
-    placements: overrides.placements ?? sheet.placements,
-    connections: overrides.connections ?? sheet.connections,
-    annotations: sheet.annotations
-  };
-}
-
-function shouldRegenerateCopiedWireId(
-  wireId: string | undefined,
-  oldDerivedWireId: string | undefined
-): boolean {
-  return Boolean(
-    wireId &&
-      oldDerivedWireId &&
-      wireId.trim().toUpperCase() === oldDerivedWireId.trim().toUpperCase()
-  );
-}
-
-function connectionCablePlacementId(
-  connection: DrawingConnection,
-  placements: DrawingPlacement[]
-): string | undefined {
-  if (connection.cablePlacementId) {
-    return connection.cablePlacementId;
+function isSamePanelPhysicalCopy({
+  source,
+  target,
+  placement
+}: {
+  source?: DrawingPackageSheet;
+  target: DrawingPackageSheet;
+  placement: DrawingPlacement;
+}): boolean {
+  if (
+    !source ||
+    source.id !== target.id ||
+    !placement.containerAssetId ||
+    placement.layoutKind ||
+    placement.role === "enclosure" ||
+    isNonAssetDrawingPlacement(placement)
+  ) {
+    return false;
   }
 
-  const fromPlacement = placements.find(
-    (placement) => placement.id === connection.from.placementId
+  return target.placements.some(
+    (candidate) =>
+      candidate.role === "enclosure" &&
+      !isNonAssetDrawingPlacement(candidate) &&
+      placementAssetId(candidate) === placement.containerAssetId
   );
-  const toPlacement = placements.find(
-    (placement) => placement.id === connection.to.placementId
-  );
-
-  if (fromPlacement?.role === "cable_assembly") {
-    return fromPlacement.id;
-  }
-
-  if (toPlacement?.role === "cable_assembly") {
-    return toPlacement.id;
-  }
-
-  return undefined;
 }
 
 function remapLayoutParentId(
@@ -184,9 +120,6 @@ export function copySelectionToClipboard(params: {
     placements: source.placements.filter((placement) =>
       placementIds.has(placement.id)
     ),
-    connections: source.connections.filter((connection) =>
-      connectionIsInternal(connection, placementIds)
-    ),
     annotations: source.annotations.filter((annotation) =>
       annotationIds.has(annotation.id)
     )
@@ -211,6 +144,21 @@ export function pasteClipboardToSheet(params: {
     };
   }
 
+  const containsStructuredTerminalStrip = params.clipboard.placements.some(
+    (placement) =>
+      Boolean(
+        placement.assetId &&
+          params.model.assets.find((asset) => asset.id === placement.assetId)
+            ?.terminalStrip
+      )
+  );
+
+  if (containsStructuredTerminalStrip) {
+    throw new Error(
+      "Use Reuse terminal strip in Properties to copy or represent this assembly."
+    );
+  }
+
   const copiedSingularTerminalModule = params.clipboard.placements.find(
     (placement) => {
       const symbol = params.symbols.find(
@@ -225,7 +173,7 @@ export function pasteClipboardToSheet(params: {
 
   if (copiedSingularTerminalModule) {
     throw new Error(
-      "Individual terminal modules cannot be pasted. Use Terminal Block Group."
+      "Individual terminal modules cannot be pasted. Use Terminal Strip."
     );
   }
 
@@ -237,33 +185,10 @@ export function pasteClipboardToSheet(params: {
   );
   const targetPanelAssetId = target.panelDrawingContext?.panelAssetId;
   const sourcePanelAssetId = source?.panelDrawingContext?.panelAssetId;
-  const copiedPatternIds = new Set(
-    params.clipboard.connections.flatMap((connection) =>
-      connection.panelPatternId ? [connection.panelPatternId] : []
-    )
-  );
-
-  if (copiedPatternIds.size > 0) {
-    if (!targetPanelAssetId || targetPanelAssetId !== sourcePanelAssetId) {
-      throw new Error(
-        "Connection patterns can only be represented on another Detailed Panel Drawing for the same physical panel."
-      );
-    }
-    const duplicatePattern = target.connections.find(
-      (connection) =>
-        connection.panelPatternId && copiedPatternIds.has(connection.panelPatternId)
-    );
-    if (duplicatePattern) {
-      throw new Error(
-        "This physical connection pattern is already represented on the target sheet."
-      );
-    }
-  }
-
   if (copiedAssetPlacements.length > 0 && (targetPanelAssetId || sourcePanelAssetId)) {
     if (!targetPanelAssetId || !sourcePanelAssetId) {
       throw new Error(
-        "Detailed Panel equipment must already exist in the panel inventory. Add it from the Panel Work Queue."
+        "Detailed Panel equipment must already exist in the panel inventory. Add it from the Panel Engineering Workbench."
       );
     }
     if (targetPanelAssetId !== sourcePanelAssetId) {
@@ -273,7 +198,7 @@ export function pasteClipboardToSheet(params: {
     }
     if (target.id === source?.id) {
       throw new Error(
-        "A physical asset can appear only once on a Detailed Panel Drawing. Choose another existing asset from the Panel Work Queue."
+        "A physical asset can appear only once on a Detailed Panel Drawing. Choose another existing asset from the Panel Engineering Workbench."
       );
     }
     const targetAssetIds = new Set(
@@ -330,7 +255,12 @@ export function pasteClipboardToSheet(params: {
       duplicateMode,
       reservedTags,
       assetMapping,
-      newPlacementId: id
+      newPlacementId: id,
+      createNewPhysicalAsset: isSamePanelPhysicalCopy({
+        source,
+        target,
+        placement
+      })
     });
 
     return remapLayoutDimensionAttachmentPlacementIds({
@@ -347,54 +277,6 @@ export function pasteClipboardToSheet(params: {
     );
   });
 
-  const pastedConnections = params.clipboard.connections.map(
-    (connection, connectionIndex) => {
-      const remappedConnection = remapEndpoint(connection, placementIdMap);
-      const oldCablePlacementId = connectionCablePlacementId(
-        connection,
-        params.clipboard.placements
-      );
-      const oldCablePlacement = oldCablePlacementId
-        ? params.clipboard.placements.find(
-            (placement) => placement.id === oldCablePlacementId
-          )
-        : undefined;
-      const oldCanvas = toCanvasModel(params.model, target, {
-        placements: params.clipboard.placements,
-        connections: params.clipboard.connections
-      });
-      const newCanvas = toCanvasModel(params.model, target, {
-        placements,
-        connections: [remappedConnection]
-      });
-      const oldDerivedWireId = oldCablePlacement
-        ? deriveWireId(oldCanvas, params.symbols, connection)
-        : undefined;
-      const newDerivedWireId = oldCablePlacement
-        ? deriveWireId(newCanvas, params.symbols, remappedConnection)
-        : undefined;
-
-      return {
-        ...remappedConnection,
-        id: `conn_${idPrefix}_${connectionIndex + 1}`,
-        wireId: shouldRegenerateCopiedWireId(
-          remappedConnection.wireId,
-          oldDerivedWireId
-        )
-          ? newDerivedWireId
-          : remappedConnection.wireId,
-        route: remappedConnection.route
-          ? {
-              ...remappedConnection.route,
-              points: remappedConnection.route.points.map((point, pointIndex) => ({
-                ...point,
-                id: `rt_${idPrefix}_${connectionIndex + 1}_${pointIndex + 1}`
-              }))
-            }
-          : undefined
-      };
-    }
-  );
   const annotations = params.clipboard.annotations.map((annotation, index) => ({
     ...annotation,
     id: `ann_${idPrefix}_${index + 1}`
@@ -403,7 +285,6 @@ export function pasteClipboardToSheet(params: {
   const nextCanvasModel: DrawingSheetCanvasModel = {
     ...targetCanvasModel,
     placements: [...targetCanvasModel.placements, ...placements],
-    connections: [...targetCanvasModel.connections, ...pastedConnections],
     annotations: [...targetCanvasModel.annotations, ...annotations]
   };
 

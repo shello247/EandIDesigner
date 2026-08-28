@@ -5,6 +5,7 @@ import type {
 import {
   getBackplanePhysicalBounds,
   getBackplanePhysicalUsableBounds,
+  getBackplaneDisplayOrigin,
   getLayoutPosition,
   resolveBackplaneLayoutScale
 } from "./drawing-backplane-scale";
@@ -485,15 +486,21 @@ export function resolveLayoutDimensionSnap({
 export function resolveDimensionSnapToleranceMm({
   sheet,
   backplane,
+  parentPanel,
   screenScale,
   screenTolerancePx = 8
 }: {
   sheet: DrawingSheetCanvasModel["sheet"];
   backplane: DrawingPlacement;
+  parentPanel?: DrawingPlacement;
   screenScale: number;
   screenTolerancePx?: number;
 }): number {
-  const layoutScale = resolveBackplaneLayoutScale(sheet, backplane).factor;
+  const layoutScale = resolveBackplaneLayoutScale(
+    sheet,
+    backplane,
+    parentPanel
+  ).factor;
   const pixelsPerPhysicalMm = Math.max(0.001, screenScale * layoutScale);
 
   return round(clamp(screenTolerancePx / pixelsPerPhysicalMm, 1, 10));
@@ -502,14 +509,25 @@ export function resolveDimensionSnapToleranceMm({
 export function dimensionSnapTargetSheetValue({
   sheet,
   backplane,
+  parentPanel,
   target
 }: {
   sheet: DrawingSheetCanvasModel["sheet"];
   backplane: DrawingPlacement;
+  parentPanel?: DrawingPlacement;
   target: DimensionSnapTarget;
 }): number {
-  const factor = resolveBackplaneLayoutScale(sheet, backplane).factor;
-  const origin = target.axis === "x" ? backplane.x : backplane.y;
+  const factor = resolveBackplaneLayoutScale(
+    sheet,
+    backplane,
+    parentPanel
+  ).factor;
+  const displayOrigin = getBackplaneDisplayOrigin({
+    sheet,
+    backplane,
+    parentPanel
+  });
+  const origin = target.axis === "x" ? displayOrigin.x : displayOrigin.y;
 
   return round(origin + target.valueMm * factor);
 }
@@ -517,16 +535,23 @@ export function dimensionSnapTargetSheetValue({
 export function dimensionAttachmentPointToSheet({
   sheet,
   backplane,
+  parentPanel,
   pointMm
 }: {
   sheet: DrawingSheetCanvasModel["sheet"];
   backplane: DrawingPlacement;
+  parentPanel?: DrawingPlacement;
   pointMm: { x: number; y: number };
 }): { x: number; y: number } {
-  const factor = resolveBackplaneLayoutScale(sheet, backplane).factor;
+  const factor = resolveBackplaneLayoutScale(
+    sheet,
+    backplane,
+    parentPanel
+  ).factor;
+  const origin = getBackplaneDisplayOrigin({ sheet, backplane, parentPanel });
 
   return {
-    x: round(backplane.x + pointMm.x * factor),
-    y: round(backplane.y + pointMm.y * factor)
+    x: round(origin.x + pointMm.x * factor),
+    y: round(origin.y + pointMm.y * factor)
   };
 }

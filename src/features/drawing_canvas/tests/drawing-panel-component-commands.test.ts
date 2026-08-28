@@ -12,10 +12,6 @@ import {
   removePanelComponentOccurrence
 } from "../logic/commands/drawing-panel-component-commands";
 import {
-  applySheetDuplicatePlan,
-  buildSheetDuplicatePlan
-} from "../logic/services/drawing-sheet-duplication";
-import {
   copySelectionToClipboard,
   pasteClipboardToSheet
 } from "../logic/services/drawing-clipboard-commands";
@@ -207,32 +203,6 @@ describe("Detailed Panel component commands", () => {
         .find((sheet) => sheet.id === DETAIL_ID)
         ?.placements.some((placement) => placement.id === placed.placement.id)
     ).toBe(false);
-  });
-
-  it("duplicates a Detailed Panel sheet while preserving physical asset IDs", () => {
-    const { placed, symbol } = representedFixture();
-    const plan = buildSheetDuplicatePlan({
-      model: placed.model,
-      symbols: [symbol],
-      sourceSheetId: DETAIL_ID
-    });
-    const result = applySheetDuplicatePlan({
-      model: placed.model,
-      symbols: [symbol],
-      plan
-    });
-    const duplicate = result.model.sheets.find(
-      (sheet) => sheet.id === result.sheetId
-    );
-
-    expect(plan.preserveAssetReferences).toBe(true);
-    expect(plan.assetRows.every((row) => row.action === "reference")).toBe(true);
-    expect(result.model.assets).toEqual(placed.model.assets);
-    expect(duplicate?.panelDrawingContext).toEqual(
-      placed.model.sheets.find((sheet) => sheet.id === DETAIL_ID)
-        ?.panelDrawingContext
-    );
-    expect(duplicate?.placements[0].assetId).toBe(placed.asset.id);
   });
 
   it("blocks same-sheet component paste and permits one same-panel cross-sheet reference", () => {

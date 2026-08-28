@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./drawing-test";
 import {
   createE2eSectionedDrawingPackage,
   deleteE2eDrawing
@@ -15,8 +15,15 @@ test("deletes the first front-matter sheet from the Sheet Loader", async ({
     await page.getByRole("button", { name: "Open sheet loader" }).click();
 
     const loader = page.getByRole("dialog", { name: "Sheet Loader" });
+    const collapsedGroups = loader.getByRole("button", { name: /^Expand / });
+    await expect(collapsedGroups).toHaveCount(3);
+    await expect(collapsedGroups.first()).toHaveAttribute("aria-expanded", "false");
+    await loader.getByRole("button", { name: "Expand Front Matter" }).click();
     const coverRow = loader.getByRole("row").filter({ hasText: "Package Cover" });
-    await coverRow.getByRole("button", { name: "Delete Package Cover" }).click();
+    await coverRow
+      .getByRole("button", { name: "Actions for Package Cover" })
+      .click();
+    await coverRow.getByRole("menuitem", { name: "Delete" }).click();
 
     const confirmation = page.getByRole("dialog", { name: "Delete sheet" });
     await expect(confirmation).toContainText("Sheet 1 of 6");
@@ -26,7 +33,6 @@ test("deletes the first front-matter sheet from the Sheet Loader", async ({
 
     await expect(loader.getByText("Package Cover", { exact: true })).toHaveCount(0);
     await expect(loader.getByText("Front Matter", { exact: true })).toHaveCount(0);
-    await loader.getByRole("button", { name: "Close sheet loader" }).click();
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByTestId("drawing-toast")).toContainText("Drawing saved.");
@@ -77,7 +83,10 @@ test("organizes drawing package sections without duplicating numbers or deleting
       name: /Panel Layout 1 Drawing/
     });
     await panelLayoutRow
-      .getByRole("button", { name: "Move Panel Layout 1 to another section" })
+      .getByRole("button", { name: "Actions for Panel Layout 1" })
+      .click();
+    await panelLayoutRow
+      .getByRole("menuitem", { name: "Move to another section" })
       .click();
 
     const moveDialog = page.getByRole("dialog", {
@@ -103,7 +112,16 @@ test("organizes drawing package sections without duplicating numbers or deleting
       .filter({ hasText: "Field Drawings" });
     await fieldSectionHeader.getByRole("button", { name: "Load title" }).click();
 
-    await page.getByRole("button", { name: "Delete active sheet" }).click();
+    await page.getByRole("button", { name: "Open sheet loader" }).click();
+    const sectionLoader = page.getByRole("dialog", { name: "Sheet Loader" });
+    const activeSectionHeader = sectionLoader
+      .getByRole("row")
+      .filter({ hasText: "Section 2" })
+      .filter({ hasText: "Field Drawings" });
+    await activeSectionHeader
+      .getByRole("button", { name: "Actions for Field Drawings" })
+      .click();
+    await activeSectionHeader.getByRole("menuitem", { name: "Delete" }).click();
     const deleteDialog = page.getByRole("dialog", {
       name: "Remove section divider"
     });
@@ -126,7 +144,8 @@ test("organizes drawing package sections without duplicating numbers or deleting
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByTestId("drawing-toast")).toContainText("Drawing saved.");
     await page.reload();
-    await page.getByRole("button", { name: "Package Preview" }).click();
+    await page.getByRole("button", { name: "Preview", exact: true }).click();
+    await page.getByRole("menuitem", { name: /Package Preview/ }).click();
 
     await page
       .getByTestId("drawing-package-preview-page")

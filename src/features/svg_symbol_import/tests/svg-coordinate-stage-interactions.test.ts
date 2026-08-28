@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SymbolMetadata } from "@/features/symbol_registry/data/schema";
 import { SvgPreviewPanel } from "@/features/symbol_registry/ui/components/svg-preview-panel";
+import { getAdaptiveSvgMarkerDiameterPx } from "@/shared/svg/svg-coordinate-geometry";
 import { ImportAnchorReviewCanvas } from "../ui/components/import-anchor-review-canvas";
 
 const viewBox = { x: 0, y: 0, width: 42, height: 143 };
@@ -74,7 +75,7 @@ describe("SVG coordinate-stage interactions", () => {
   let root: Root;
 
   beforeEach(() => {
-    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal("ResizeObserver", TestResizeObserver);
     vi.stubGlobal("PointerEvent", TestPointerEvent);
     vi.spyOn(SVGSVGElement.prototype, "getBoundingClientRect").mockReturnValue({
@@ -124,10 +125,9 @@ describe("SVG coordinate-stage interactions", () => {
     container.remove();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
-    globalThis.IS_REACT_ACT_ENVIRONMENT = false;
   });
 
-  it("uses one aligned stage and keeps Registry markers at 18 screen pixels", async () => {
+  it("uses one aligned stage and adapts dense Registry markers in screen pixels", async () => {
     await act(async () => {
       root.render(createElement(SvgPreviewPanel, { svg, metadata }));
     });
@@ -146,7 +146,9 @@ describe("SVG coordinate-stage interactions", () => {
     expect(stage).not.toBeNull();
     expect(artwork?.parentElement).toBe(stage);
     expect(overlay?.parentElement).toBe(stage);
-    expect(Number(marker?.getAttribute("r")) * 2 * stageScale).toBeCloseTo(18);
+    expect(Number(marker?.getAttribute("r")) * 2 * stageScale).toBeCloseTo(
+      getAdaptiveSvgMarkerDiameterPx(metadata.anchors, 2, stageScale)
+    );
   });
 
   it("selects the nearest marker, pins it, clears it, and supports the keyboard", async () => {

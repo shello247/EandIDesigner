@@ -15,6 +15,18 @@ import {
   isBackplanePlacement
 } from "@/features/drawing_canvas/logic/services/drawing-backplane-layouts";
 import {
+  createGeneratedStructuredTerminalStripSymbol,
+  getRenderableSymbolForPlacement,
+  structuredTerminalStripSymbolId,
+  structuredTerminalStripVersionId
+} from "@/features/drawing_canvas/logic/services/drawing-generated-symbols";
+import {
+  getPanelConnectionViewChildren,
+  getPanelConnectionViewInnerBounds,
+  isPanelConnectionViewPlacement
+} from "@/features/drawing_canvas/logic/services/drawing-panel-connection-views";
+import { getRotatedPlacementBounds } from "@/features/drawing_canvas/logic/services/drawing-geometry";
+import {
   getBackplaneDisplayUsableBounds,
   resolveBackplaneLayoutScale
 } from "@/features/drawing_canvas/logic/services/drawing-backplane-scale";
@@ -51,9 +63,18 @@ export type AssociatedPanelAssetCatalogItem = {
   }>;
 };
 
+export type PanelAssetPlacementTarget =
+  | { kind: "physical_backplane"; placementId: string }
+  | { kind: "connection_reference"; placementId: string };
+
 export type PanelAssetLayoutResolution = {
   symbol: ApprovedDrawingSymbol;
   layoutDimensions: NonNullable<DrawingPlacement["layoutDimensions"]>;
+  terminalBlock?: TerminalBlockPlacement;
+};
+
+export type PanelAssetSchematicResolution = {
+  symbol: ApprovedDrawingSymbol;
   terminalBlock?: TerminalBlockPlacement;
 };
 
@@ -64,6 +85,7 @@ const ASSET_TYPE_ORDER: DrawingAssetType[] = [
   "breaker",
   "terminal_block",
   "controller",
+  "network_device",
   "instrument",
   "other"
 ];
@@ -88,12 +110,14 @@ function canBePanelLayoutAsset(asset: DrawingAssetRecord): boolean {
 
 function isSourceAssociationPlacement(
   placement: DrawingPlacement,
-  panelAssetId: string
+  panelAssetId: string,
+  asset?: DrawingAssetRecord
 ): boolean {
   return Boolean(
-    !placement.layoutKind &&
-      placement.containerAssetId === panelAssetId &&
-      placementAssetId(placement) !== panelAssetId
+    placement.containerAssetId === panelAssetId &&
+      placementAssetId(placement) !== panelAssetId &&
+      (!placement.layoutKind ||
+        (Boolean(asset?.terminalStrip) && placement.layoutKind === "layout_helper"))
   );
 }
 
@@ -105,6 +129,17 @@ function isPlacedOnBackplane(
   return (
     placement.layoutKind === "layout_helper" &&
     placement.layoutParentId === backplaneId &&
+    placementAssetId(placement) === assetId
+  );
+}
+
+function isPlacedOnTarget(
+  placement: DrawingPlacement,
+  assetId: string,
+  targetPlacementId: string
+): boolean {
+  return (
+    placement.layoutParentId === targetPlacementId &&
     placementAssetId(placement) === assetId
   );
 }
@@ -151,8 +186,8 @@ function terminalLayoutModuleSize(
 
   const terminalModule = symbols.find(
     (symbol) =>
-      symbol.category === "terminal_block" &&
-      symbol.metadata.panelCategory === "termination" &&
+      ((symbol.technicalKind ?? symbol.category) === "terminal_block" ||
+        (symbol.technicalKind ?? symbol.category) === "termination") &&
       typeof symbol.metadata.physicalWidthMm === "number" &&
       symbol.metadata.physicalWidthMm > 0 &&
       typeof symbol.metadata.physicalHeightMm === "number" &&
@@ -217,7 +252,7 @@ function generatedTerminalBlockSymbol(
       module: resolvedModule,
       instanceId
     }),
-    metadata: terminalBlockMetadata(normalized)
+    metadata: terminalBlockMetadata(normalized, resolvedModule)
   };
 }
 
@@ -246,6 +281,37 @@ export function resolvePanelAssetLayout(
   model: DrawingModel,
   symbols: ApprovedDrawingSymbol[]
 ): PanelAssetLayoutResolution | undefined {
+  if (asset.terminalStrip) {
+    const placement: DrawingPlacement = {
+      id: `structured_terminal_strip_layout_${asset.id}`,
+      assetId: asset.id,
+      symbolId: structuredTerminalStripSymbolId(asset.id),
+      versionId: structuredTerminalStripVersionId(asset.id),
+      role: "terminal_block",
+      tag: asset.tag,
+      title: asset.title,
+      x: 0,
+      y: 0,
+      rotation: 0,
+      scale: 1
+    };
+    const symbol = createGeneratedStructuredTerminalStripSymbol(
+      placement,
+      symbols,
+      model.assets
+    );
+
+    if (!symbol) return undefined;
+
+    return {
+      symbol,
+      layoutDimensions: {
+        lengthMm: symbol.metadata.physicalWidthMm!,
+        widthMm: symbol.metadata.physicalHeightMm!
+      }
+    };
+  }
+
   const terminalBlockConfig =
     asset.type === "terminal_block"
       ? findTerminalBlockConfigForAsset(model, asset.id)
@@ -289,6 +355,28 @@ export function resolvePanelAssetLayout(
   };
 }
 
+export function resolvePanelAssetSchematic(
+  asset: DrawingAssetRecord,
+  model: DrawingModel,
+  symbols: ApprovedDrawingSymbol[]
+): PanelAssetSchematicResolution | undefined {
+  const layoutResolution = resolvePanelAssetLayout(asset, model, symbols);
+  if (layoutResolution) {
+    return {
+      symbol: layoutResolution.symbol,
+      terminalBlock: layoutResolution.terminalBlock
+    };
+  }
+
+  const symbol = symbols.find(
+    (candidate) =>
+      candidate.symbolId === asset.symbolId &&
+      candidate.versionId === asset.versionId
+  );
+
+  return symbol ? { symbol } : undefined;
+}
+
 export function isPanelLayoutAssetPlacedOnBackplane(
   model: DrawingModel,
   assetId: string,
@@ -309,15 +397,21 @@ export function buildAssociatedPanelAssetCatalog(
 ): AssociatedPanelAssetCatalogItem[] {
   const assetById = new Map((model.assets ?? []).map((asset) => [asset.id, asset]));
   const catalog = new Map<string, AssociatedPanelAssetCatalogItem>();
+  const targetIsConnectionView = model.sheets.some((sheet) =>
+    sheet.placements.some(
+      (placement) =>
+        placement.id === backplaneId && isPanelConnectionViewPlacement(placement)
+    )
+  );
 
   model.sheets.forEach((sheet, sheetIndex) => {
     sheet.placements.forEach((placement) => {
-      if (!isSourceAssociationPlacement(placement, panelAssetId)) {
-        return;
-      }
-
       const assetId = placementAssetId(placement);
       const asset = assetById.get(assetId) ?? fallbackAssetFromPlacement(placement);
+
+      if (!isSourceAssociationPlacement(placement, panelAssetId, asset)) {
+        return;
+      }
 
       if (!canBePanelLayoutAsset(asset)) {
         return;
@@ -343,12 +437,14 @@ export function buildAssociatedPanelAssetCatalog(
     .map((item) => {
       const asset = assetById.get(item.assetId);
       const layout = asset
-        ? resolvePanelAssetLayout(asset, model, symbols)
+        ? targetIsConnectionView
+          ? resolvePanelAssetSchematic(asset, model, symbols)
+          : resolvePanelAssetLayout(asset, model, symbols)
         : undefined;
       const placedPlacement = model.sheets
         .flatMap((sheet) => sheet.placements)
         .find((placement) =>
-          isPlacedOnBackplane(placement, item.assetId, backplaneId)
+          isPlacedOnTarget(placement, item.assetId, backplaneId)
         );
 
       if (placedPlacement) {
@@ -363,7 +459,9 @@ export function buildAssociatedPanelAssetCatalog(
         return {
           ...item,
           status: "disabled" as const,
-          disabledReason: "Needs layout-ready symbol"
+          disabledReason: targetIsConnectionView
+            ? "Needs a resolvable drawing symbol"
+            : "Needs layout-ready symbol"
         };
       }
 
@@ -511,6 +609,11 @@ export function placeAssociatedPanelAssetOnBackplane({
       ...sheet.page,
       titleBlock: model.titleBlock
     },
+    parentPanel: sheet.placements.find(
+      (placement) =>
+        placement.role === "enclosure" &&
+        placement.assetId === backplane.containerAssetId
+    ),
     placement: {
       id: placementId,
       assetId: asset.id,
@@ -549,6 +652,149 @@ export function placeAssociatedPanelAssetOnBackplane({
               ...candidate,
               placements: [...candidate.placements, placement]
             }
+          : candidate
+      )
+    }
+  };
+}
+
+
+function round(value: number): number {
+  return Number(value.toFixed(2));
+}
+
+function overlaps(
+  first: { x: number; y: number; width: number; height: number },
+  second: { x: number; y: number; width: number; height: number },
+  gap = 4
+): boolean {
+  return !(
+    first.x + first.width + gap <= second.x ||
+    second.x + second.width + gap <= first.x ||
+    first.y + first.height + gap <= second.y ||
+    second.y + second.height + gap <= first.y
+  );
+}
+
+export function placeAssociatedPanelAssetOnConnectionView({
+  model,
+  sheetId,
+  connectionViewId,
+  assetId,
+  symbols,
+  placementId = `pcv_asset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}: {
+  model: DrawingModel;
+  sheetId: string;
+  connectionViewId: string;
+  assetId: string;
+  symbols: ApprovedDrawingSymbol[];
+  placementId?: string;
+}): { model: DrawingModel; placement: DrawingPlacement } {
+  const sheet = model.sheets.find((candidate) => candidate.id === sheetId);
+  const asset = model.assets.find((candidate) => candidate.id === assetId);
+  if (!sheet) throw new Error("Active sheet was not found.");
+  if (!asset) throw new Error("Asset was not found in this drawing.");
+
+  const connectionView = sheet.placements.find(
+    (placement) =>
+      placement.id === connectionViewId &&
+      isPanelConnectionViewPlacement(placement)
+  );
+  if (
+    !connectionView ||
+    !isPanelConnectionViewPlacement(connectionView) ||
+    !connectionView.assetId
+  ) {
+    throw new Error("Select a panel connection reference first.");
+  }
+  const sourceBackplanePlacementId =
+    connectionView.panelConnectionView.sourceBackplanePlacementId;
+  const sourceBackplaneExists = model.sheets.some((candidate) =>
+    candidate.placements.some(
+      (placement) =>
+        placement.id === sourceBackplanePlacementId &&
+        isBackplanePlacement(placement) &&
+        placement.containerAssetId === connectionView.assetId
+    )
+  );
+  if (!sourceBackplaneExists) {
+    throw new Error("The linked physical backplane is no longer available.");
+  }
+  const catalogItem = buildAssociatedPanelAssetCatalog(
+    model,
+    symbols,
+    connectionView.assetId,
+    connectionView.id
+  ).find((item) => item.assetId === assetId);
+  if (!catalogItem) throw new Error("Asset is not associated with this panel.");
+  if (catalogItem.status === "placed") {
+    throw new Error(`${catalogItem.tag} is already represented in this panel view.`);
+  }
+
+  const schematic = resolvePanelAssetSchematic(asset, model, symbols);
+  if (!schematic) {
+    throw new Error(`${asset.tag} does not have a resolvable drawing symbol.`);
+  }
+  const inner = getPanelConnectionViewInnerBounds(connectionView);
+  const children = getPanelConnectionViewChildren(
+    { placements: sheet.placements },
+    connectionView.id
+  );
+  const viewBox = schematic.symbol.metadata.viewBox;
+  const fraction = children.length === 0 ? 0.82 : 0.42;
+  const scale = Math.min(
+    (inner.width * fraction) / viewBox.width,
+    (inner.height * fraction) / viewBox.height
+  );
+  const width = viewBox.width * scale;
+  const height = viewBox.height * scale;
+  const occupied = children.flatMap((child) => {
+    const symbol = getRenderableSymbolForPlacement(child, symbols, model.assets);
+    return symbol ? [getRotatedPlacementBounds(child, symbol.metadata)] : [];
+  });
+  const centered = {
+    x: round(inner.x + (inner.width - width) / 2),
+    y: round(inner.y + (inner.height - height) / 2)
+  };
+  const candidates = [centered];
+  for (let y = inner.y; y <= inner.y + inner.height - height; y += 6) {
+    for (let x = inner.x; x <= inner.x + inner.width - width; x += 6) {
+      candidates.push({ x: round(x), y: round(y) });
+    }
+  }
+  const position = candidates.find((candidate) =>
+      occupied.every(
+        (bounds) => !overlaps({ ...candidate, width, height }, bounds)
+      )
+    );
+  if (!position) {
+    throw new Error("There is not enough clear space inside this panel reference.");
+  }
+  const placement: DrawingPlacement = {
+    id: placementId,
+    assetId: asset.id,
+    containerAssetId: connectionView.assetId,
+    layoutParentId: connectionView.id,
+    symbolId: schematic.symbol.symbolId,
+    versionId: schematic.symbol.versionId,
+    role: roleForAssetType(asset.type),
+    tag: asset.tag,
+    title: asset.title,
+    x: position.x,
+    y: position.y,
+    rotation: 0,
+    scale: round(scale),
+    terminalBlock: schematic.terminalBlock
+  };
+
+  return {
+    placement,
+    model: {
+      ...model,
+      sheets: model.sheets.map((candidate) =>
+        candidate.id === sheet.id
+          ? { ...candidate, placements: [...candidate.placements, placement] }
           : candidate
       )
     }

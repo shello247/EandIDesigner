@@ -13,7 +13,7 @@ import {
 
 describe("sheet loader rows", () => {
   it("summarizes sheet rows with type labels and counts", () => {
-    let model = createDefaultDrawingModel("Test Drawing");
+    let model = createDefaultDrawingModel();
     model = {
       ...model,
       sheets: [
@@ -134,7 +134,7 @@ describe("sheet loader rows", () => {
   });
 
   it("uses the saved section subtitle for legacy rows without a sheet description", () => {
-    const model = createDefaultDrawingModel("Section Package");
+    const model = createDefaultDrawingModel();
     const sectionResult = addSectionTitlePage(model, {
       name: "Panel Details",
       title: "Panel Details",
@@ -155,7 +155,7 @@ describe("sheet loader rows", () => {
   });
 
   it("classifies detailed panel sheets and counts their context asset", () => {
-    const model = createDefaultDrawingModel("Panel Package");
+    const model = createDefaultDrawingModel();
     const detailedSheet = {
       ...model.sheets[0],
       name: "JB001 Detailed Panel Drawing",
@@ -178,7 +178,7 @@ describe("sheet loader rows", () => {
   });
 
   it("groups front matter and section members and preserves section context while filtering", () => {
-    let model = createDefaultDrawingModel("Grouped Package");
+    let model = createDefaultDrawingModel();
     model = addSectionTitlePage(model, {
       title: "Field Wiring",
       subtitle: "Field connection sheets"

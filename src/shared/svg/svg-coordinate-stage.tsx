@@ -13,11 +13,14 @@ import {
 } from "react";
 import type { SvgViewBox } from "./svg-inspector";
 import {
+  getContainedSvgStageDimensions,
   getMaximumSvgStageDimensions,
   getRenderedPixelsPerUserUnit,
   transformClientPoint,
   type SvgPoint
 } from "./svg-coordinate-geometry";
+
+export type SvgCoordinateStageFitMode = "width" | "container";
 
 type SvgCoordinateStageEvents = {
   onPointerMove?: PointerEventHandler<SVGSVGElement>;
@@ -106,6 +109,7 @@ export function SvgCoordinateStage({
   overlayChildren,
   htmlOverlay,
   overlayClassName = "",
+  fitMode = "width",
   onStageKeyDown,
   ...overlayEvents
 }: {
@@ -116,17 +120,89 @@ export function SvgCoordinateStage({
   overlayChildren?: ReactNode;
   htmlOverlay?: ReactNode;
   overlayClassName?: string;
+  fitMode?: SvgCoordinateStageFitMode;
   onStageKeyDown?: KeyboardEventHandler<HTMLDivElement>;
 } & SvgCoordinateStageEvents) {
   const maximumSize = getMaximumSvgStageDimensions(viewBox);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [availableSize, setAvailableSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    if (fitMode !== "container") {
+      return;
+    }
+
+    const container = stageRef.current?.parentElement;
+    if (!container) {
+      return;
+    }
+
+    const updateSize = (width: number, height: number) => {
+      setAvailableSize((current) =>
+        current &&
+        Math.abs(current.width - width) < 0.5 &&
+        Math.abs(current.height - height) < 0.5
+          ? current
+          : { width, height }
+      );
+    };
+    const measure = () => {
+      const styles = window.getComputedStyle(container);
+      const horizontalPadding =
+        Number.parseFloat(styles.paddingLeft) +
+        Number.parseFloat(styles.paddingRight);
+      const verticalPadding =
+        Number.parseFloat(styles.paddingTop) +
+        Number.parseFloat(styles.paddingBottom);
+
+      updateSize(
+        Math.max(0, container.clientWidth - horizontalPadding),
+        Math.max(0, container.clientHeight - verticalPadding)
+      );
+    };
+
+    measure();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (entry) {
+              updateSize(entry.contentRect.width, entry.contentRect.height);
+            }
+          });
+    resizeObserver?.observe(container);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [fitMode]);
+
+  const containedSize =
+    fitMode === "container" && availableSize
+      ? getContainedSvgStageDimensions(viewBox, availableSize)
+      : null;
 
   return (
     <div
+      ref={stageRef}
       data-testid="svg-coordinate-stage"
       className="relative w-full shrink-0"
       style={{
         aspectRatio: `${viewBox.width} / ${viewBox.height}`,
-        maxWidth: `${maximumSize.width}px`
+        maxWidth: `${maximumSize.width}px`,
+        ...(containedSize && containedSize.width > 0
+          ? {
+              height: `${containedSize.height}px`,
+              width: `${containedSize.width}px`
+            }
+          : {})
       }}
       onKeyDown={onStageKeyDown}
     >

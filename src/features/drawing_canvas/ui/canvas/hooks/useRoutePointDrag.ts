@@ -1,15 +1,24 @@
-import { useCallback, useRef, type PointerEvent } from "react";
-import type { DrawingSheetCanvasModel as DrawingModel } from "../../../data/schema";
 import {
-  removeRouteControlPoint,
-  updateRoutePoint
-} from "../../../logic/services/connection-route-geometry";
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent
+} from "react";
+import type { DrawingSheetCanvasModel as DrawingModel } from "../../../data/schema";
+import { removeRouteControlPoint } from "../../../logic/services/connection-route-geometry";
+import {
+  resolveRoutePointDrag,
+  type RouteAlignmentFeedback
+} from "../../../logic/services/connection-route-alignment";
 import type { ConnectionSegment, RouteDragState } from "../types";
-import { toSvgPoint } from "../utils/canvasGeometry";
+import {
+  getSvgPixelsPerUnit,
+  toSvgPoint
+} from "../utils/canvasGeometry";
 
 export function useRoutePointDrag({
   model,
-  connectionSegments,
   selectedConnectionSegment,
   onFocusCanvas,
   onConnectionSelect,
@@ -20,7 +29,6 @@ export function useRoutePointDrag({
   onGestureCancel
 }: {
   model: DrawingModel;
-  connectionSegments: ConnectionSegment[];
   selectedConnectionSegment: ConnectionSegment | null;
   onFocusCanvas: () => void;
   onConnectionSelect: (connectionId: string | undefined) => void;
@@ -34,6 +42,14 @@ export function useRoutePointDrag({
   onGestureCancel: () => void;
 }) {
   const routeDragStateRef = useRef<RouteDragState | null>(null);
+  const [alignmentFeedback, setAlignmentFeedback] = useState<
+    RouteAlignmentFeedback[]
+  >([]);
+
+  const clearRoutePointGesture = useCallback(() => {
+    routeDragStateRef.current = null;
+    setAlignmentFeedback([]);
+  }, []);
 
   const updateDraggedRoutePoint = useCallback(
     (event: PointerEvent<SVGElement>) => {
@@ -43,31 +59,50 @@ export function useRoutePointDrag({
         return;
       }
 
-      const segment = connectionSegments.find(
-        (candidate) => candidate.connection.id === routeDragState.connectionId
-      );
-
-      if (!segment) {
-        return;
+      event.preventDefault();
+      const pointer = toSvgPoint(event, model.sheet);
+      if (!event.shiftKey) {
+        routeDragState.axisLock = undefined;
+      } else if (!routeDragState.axisLock) {
+        const deltaX =
+          Math.abs(pointer.x - routeDragState.startPointer.x) *
+          routeDragState.pixelsPerUnit.x;
+        const deltaY =
+          Math.abs(pointer.y - routeDragState.startPointer.y) *
+          routeDragState.pixelsPerUnit.y;
+        if (Math.hypot(deltaX, deltaY) >= 3) {
+          routeDragState.axisLock = deltaX >= deltaY ? "x" : "y";
+        }
       }
 
-      event.preventDefault();
-      onConnectionRouteChange(
-        routeDragState.connectionId,
-        updateRoutePoint({
-          route: segment.route,
-          pointId: routeDragState.pointId,
-          point: toSvgPoint(event, model.sheet),
-          sheet: model.sheet
-        })
-      );
+      const result = resolveRoutePointDrag({
+        route: routeDragState.startRoute,
+        pointId: routeDragState.pointId,
+        proposedPoint: pointer,
+        startPoint: routeDragState.startPoint,
+        sheet: model.sheet,
+        pixelsPerUnit: routeDragState.pixelsPerUnit,
+        activeSnapState: routeDragState.activeSnapState,
+        axisLock: routeDragState.axisLock,
+        bypassSnapping: event.altKey
+      });
+      routeDragState.activeSnapState = result.snapState;
+      setAlignmentFeedback(result.feedback);
+      onConnectionRouteChange(routeDragState.connectionId, result.route);
     },
-    [connectionSegments, model.sheet, onConnectionRouteChange]
+    [model.sheet, onConnectionRouteChange]
   );
 
   const handleRoutePointPointerDown = useCallback(
     (pointId: string, event: PointerEvent<SVGRectElement>) => {
       if (event.button !== 0 || !selectedConnectionSegment) {
+        return;
+      }
+
+      const startPoint = selectedConnectionSegment.route.points.find(
+        (point) => point.id === pointId
+      );
+      if (!startPoint || startPoint.kind === "endpoint") {
         return;
       }
 
@@ -81,10 +116,16 @@ export function useRoutePointDrag({
       routeDragStateRef.current = {
         connectionId: selectedConnectionSegment.connection.id,
         pointId,
-        pointerId: event.pointerId
+        pointerId: event.pointerId,
+        startRoute: selectedConnectionSegment.route,
+        startPointer: toSvgPoint(event, model.sheet),
+        startPoint,
+        pixelsPerUnit: getSvgPixelsPerUnit(event.currentTarget, model.sheet),
+        activeSnapState: {}
       };
     },
     [
+      model.sheet,
       onConnectionSelect,
       onFocusCanvas,
       onGestureStart,
@@ -94,14 +135,36 @@ export function useRoutePointDrag({
   );
 
   const endRoutePointDrag = useCallback(() => {
-    routeDragStateRef.current = null;
+    if (!routeDragStateRef.current) {
+      return;
+    }
+    clearRoutePointGesture();
     onGestureEnd();
-  }, [onGestureEnd]);
+  }, [clearRoutePointGesture, onGestureEnd]);
 
   const cancelRoutePointDrag = useCallback(() => {
-    routeDragStateRef.current = null;
+    if (!routeDragStateRef.current) {
+      return false;
+    }
+    clearRoutePointGesture();
     onGestureCancel();
-  }, [onGestureCancel]);
+    return true;
+  }, [clearRoutePointGesture, onGestureCancel]);
+
+  useEffect(() => {
+    const active = routeDragStateRef.current;
+    if (
+      active &&
+      selectedConnectionSegment?.connection.id !== active.connectionId
+    ) {
+      clearRoutePointGesture();
+      onGestureCancel();
+    }
+  }, [
+    clearRoutePointGesture,
+    onGestureCancel,
+    selectedConnectionSegment?.connection.id
+  ]);
 
   const deleteRoutePoint = useCallback(
     (pointId: string) => {
@@ -109,14 +172,19 @@ export function useRoutePointDrag({
         return;
       }
 
-      routeDragStateRef.current = null;
+      clearRoutePointGesture();
       onConnectionRouteChange(
         selectedConnectionSegment.connection.id,
         removeRouteControlPoint(selectedConnectionSegment.route, pointId)
       );
       setSelectedRoutePointId(null);
     },
-    [onConnectionRouteChange, selectedConnectionSegment, setSelectedRoutePointId]
+    [
+      clearRoutePointGesture,
+      onConnectionRouteChange,
+      selectedConnectionSegment,
+      setSelectedRoutePointId
+    ]
   );
 
   return {
@@ -124,6 +192,7 @@ export function useRoutePointDrag({
     handleRoutePointPointerDown,
     endRoutePointDrag,
     cancelRoutePointDrag,
-    deleteRoutePoint
+    deleteRoutePoint,
+    alignmentFeedback
   };
 }

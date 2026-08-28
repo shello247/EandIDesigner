@@ -7,6 +7,15 @@ import type {
 } from "../../data/schema";
 import { placementAssetId } from "../services/drawing-asset-identity";
 import { clearLayoutDimensionAttachmentToPlacement } from "../services/drawing-layout-dimensions";
+import {
+  containedPlacementIdsForPanels,
+  isGeneratedPanelEnclosurePlacement
+} from "../services/drawing-asset-containment";
+import { isPanelConnectionViewPlacement } from "../services/drawing-panel-connection-views";
+import {
+  moveConnectionRoute,
+  movePlacementWithAttachedLabel
+} from "../services/drawing-movement";
 
 export function addPlacement(
   model: DrawingSheetCanvasModel,
@@ -23,11 +32,49 @@ export function updatePlacementProperties(
   placementId: string,
   updates: Partial<DrawingPlacement>
 ): DrawingSheetCanvasModel {
+  const currentPlacement = model.placements.find(
+    (placement) => placement.id === placementId
+  );
+  const nextX = updates.x ?? currentPlacement?.x;
+  const nextY = updates.y ?? currentPlacement?.y;
+  const panelDelta =
+    currentPlacement &&
+    (isGeneratedPanelEnclosurePlacement(currentPlacement) ||
+      isPanelConnectionViewPlacement(currentPlacement)) &&
+    nextX !== undefined &&
+    nextY !== undefined
+      ? {
+          x: Number((nextX - currentPlacement.x).toFixed(2)),
+          y: Number((nextY - currentPlacement.y).toFixed(2))
+        }
+      : undefined;
+  const containedIds = panelDelta
+    ? new Set(containedPlacementIdsForPanels(model, [placementId]))
+    : new Set<string>();
+
   return {
     ...model,
-    placements: model.placements.map((placement) =>
-      placement.id === placementId ? { ...placement, ...updates } : placement
-    )
+    placements: model.placements.map((placement) => {
+      if (placement.id === placementId) {
+        return { ...placement, ...updates };
+      }
+
+      return panelDelta && containedIds.has(placement.id)
+        ? movePlacementWithAttachedLabel(placement, panelDelta)
+        : placement;
+    }),
+    connections: panelDelta
+      ? model.connections.map((connection) =>
+          connection.route &&
+          containedIds.has(connection.from.placementId) &&
+          containedIds.has(connection.to.placementId)
+            ? {
+                ...connection,
+                route: moveConnectionRoute(connection.route, panelDelta)
+              }
+            : connection
+        )
+      : model.connections
   };
 }
 
@@ -55,16 +102,28 @@ export function deletePlacement(
     (placement) => placement.id === placementId
   );
   const deletedAssetId =
-    deletedPlacement?.role === "enclosure"
+    deletedPlacement?.role === "enclosure" &&
+    !isPanelConnectionViewPlacement(deletedPlacement)
       ? placementAssetId(deletedPlacement)
       : undefined;
   const deletedLayoutParentId =
     deletedPlacement?.layoutKind === "backplane" ? deletedPlacement.id : undefined;
+  const deletedConnectionViewChildIds = new Set(
+    isPanelConnectionViewPlacement(deletedPlacement)
+      ? model.placements
+          .filter((placement) => placement.layoutParentId === placementId)
+          .map((placement) => placement.id)
+      : []
+  );
 
   return {
     ...model,
     placements: model.placements
-      .filter((placement) => placement.id !== placementId)
+      .filter(
+        (placement) =>
+          placement.id !== placementId &&
+          !deletedConnectionViewChildIds.has(placement.id)
+      )
       .map((placement) => {
         const withoutDeletedDimensionAttachment =
           clearLayoutDimensionAttachmentToPlacement(placement, placementId);
@@ -86,7 +145,11 @@ export function deletePlacement(
       (connection) =>
         connection.from.placementId !== placementId &&
         connection.to.placementId !== placementId &&
-        connection.cablePlacementId !== placementId
+        connection.cablePlacementId !== placementId &&
+        !deletedConnectionViewChildIds.has(connection.from.placementId) &&
+        !deletedConnectionViewChildIds.has(connection.to.placementId) &&
+        (!connection.cablePlacementId ||
+          !deletedConnectionViewChildIds.has(connection.cablePlacementId))
     )
   };
 }
@@ -159,9 +222,15 @@ export function updateAnnotation(
 ): DrawingSheetCanvasModel {
   return {
     ...model,
-    annotations: model.annotations.map((annotation) =>
-      annotation.id === annotationId ? { ...annotation, ...updates } : annotation
-    )
+    annotations: model.annotations.map((annotation): DrawingAnnotation => {
+      if (annotation.id !== annotationId) return annotation;
+      return {
+        ...annotation,
+        ...updates,
+        id: annotation.id,
+        kind: annotation.kind
+      } as DrawingAnnotation;
+    })
   };
 }
 

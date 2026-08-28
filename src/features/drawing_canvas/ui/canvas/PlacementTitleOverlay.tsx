@@ -49,7 +49,7 @@ export function PlacementTitleOverlay({
         onPointerUp={onPlacementTitlePointerEnd}
         onPointerCancel={onPlacementTitlePointerCancel}
       >
-        <title>Drag symbol tag and title</title>
+        <title>Drag symbol label</title>
       </circle>
     </g>
   );

@@ -54,6 +54,7 @@ only and is not telemetry.
 | Operation | p95 budget |
 | --- | ---: |
 | Source validation plus connectivity graph | 100 ms |
+| Connection-display projection | 100 ms |
 | Package QC | 150 ms |
 | Active-panel catalogs and QC | 75 ms |
 | Active-panel deliverables | 75 ms |
@@ -132,7 +133,9 @@ Agents must never select physical identity by tag similarity, edit raw
    gesture.
 6. Create one jumper and one valid shield/PE relationship. Confirm duplicate
    membership is blocked.
-7. Run Panel Review. Repair all blocking findings and approve the package.
+7. Submit the package with Approve. If validation blocks approval, repair the
+   findings in the automatically opened review and submit again. Panel Review
+   has no standalone drawing-toolbar action.
 8. Generate terminal, wire, asset, and BOM schedules; CSV; XLSX; schedule PDF;
    and drawing-plus-schedule PDF.
 9. Save/reload and repeat discovery and report counts. Confirm no duplicate

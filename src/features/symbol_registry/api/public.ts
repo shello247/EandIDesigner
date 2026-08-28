@@ -1,7 +1,9 @@
 import {
   getApprovedNetworkSymbolSvgAsset as getApprovedNetworkSymbolSvgAssetQuery,
   listApprovedNetworkSymbolVersionsByIds as listApprovedNetworkSymbolVersionsByIdsQuery,
+  listDrawingSymbolCatalogSummaries as listDrawingSymbolCatalogSummariesQuery,
   listDrawingSymbolVersions,
+  listDrawingSymbolVersionsByIds,
   listNetworkSymbolCatalog,
   listNetworkSymbolVersions,
   listSymbolIdentitiesByIds
@@ -16,6 +18,9 @@ export type { ApprovedNetworkSymbol, ApprovedNetworkSymbolCatalogItem };
 
 export type {
   AnchorKind,
+  DrawingSymbolCatalogCapabilities,
+  DrawingSymbolCatalogSummary,
+  DrawingSymbolVersionIds,
   NetworkDeviceType,
   NetworkPortMedia,
   SaveSymbolDraftInput,
@@ -24,6 +29,8 @@ export type {
   SymbolLayoutMetadata,
   SymbolLayoutUsage,
   SymbolMetadata,
+  SymbolElectricalTopology,
+  SymbolPermanentContinuityGroup,
   SymbolNetworkPort,
   SymbolNetworkProfile,
   SymbolPanelCategory,
@@ -32,13 +39,20 @@ export type {
   SymbolPanelWiringCapability,
   SymbolTerminal,
   SymbolTerminalPanelSide,
+  SymbolTechnicalKind,
   ValidationIssue
 } from "../data/schema";
 export {
+  drawingSymbolCatalogCapabilitiesSchema,
+  drawingSymbolCatalogSummarySchema,
+  drawingSymbolVersionIdsSchema,
   networkDeviceTypeSchema,
   networkPortMediaSchema,
   symbolCategorySchema,
+  symbolTechnicalKindSchema,
   symbolMetadataSchema,
+  symbolElectricalTopologySchema,
+  symbolPermanentContinuityGroupSchema,
   symbolPanelWiringAssetTypeSchema,
   symbolPanelWiringCapabilitySchema,
   symbolTerminalPanelSideSchema,
@@ -61,6 +75,16 @@ export async function listApprovedSymbolsForDrawing(
   referencedVersionIds: readonly string[] = []
 ) {
   return listDrawingSymbolVersions(referencedVersionIds);
+}
+
+export async function listDrawingRenderSymbols(
+  referencedVersionIds: readonly string[]
+) {
+  return listDrawingSymbolVersionsByIds(referencedVersionIds);
+}
+
+export async function listDrawingSymbolCatalogSummaries() {
+  return listDrawingSymbolCatalogSummariesQuery();
 }
 
 export async function listNetworkSymbolCatalogForMapping(): Promise<
@@ -88,3 +112,9 @@ export async function listNetworkSymbolsForMapping(): Promise<
 
 export { listSymbolIdentitiesByIds };
 export type { SymbolIdentity } from "../types";
+export type { SymbolCategorySummary } from "@/features/symbol_categories/api/public";
+export {
+  symbolElectricalTopologySignature,
+  validateSymbolElectricalTopology,
+  type SymbolElectricalTopologyValidation
+} from "../logic/services/symbol-electrical-topology";

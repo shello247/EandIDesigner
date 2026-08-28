@@ -4,7 +4,7 @@ import {
   deleteE2eDrawing
 } from "./drawing-fixtures";
 
-test("reviews, repairs, navigates, and blocks approval for panel QC", async ({
+test("keeps panel QC in blocked approval without a standalone review toolbar action", async ({
   page
 }) => {
   const drawingId = await createE2ePanelQualityPackage();
@@ -12,13 +12,20 @@ test("reviews, repairs, navigates, and blocks approval for panel QC", async ({
   try {
     await page.goto(`/drawings/${drawingId}`);
     await page.getByRole("button", { name: "Open sheet loader" }).click();
+    await page.getByRole("dialog", { name: "Sheet Loader" })
+      .getByRole("searchbox", { name: "Search sheets" })
+      .fill("JB001 Detailed Panel Drawing");
     await page
       .getByRole("dialog", { name: "Sheet Loader" })
       .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
       .getByRole("button", { name: "Load" })
       .click();
 
-    await page.getByRole("button", { name: /Panel Review/ }).click();
+    await expect(page.getByRole("button", { name: /Panel Review/, includeHidden: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Wire", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pattern", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Approve", exact: true }).click();
+    await expect(page.getByTestId("drawing-toast")).toContainText("Approval blocked");
     let review = page.getByRole("dialog", {
       name: "JB001 Panel Drawing Review"
     });
@@ -41,7 +48,7 @@ test("reviews, repairs, navigates, and blocks approval for panel QC", async ({
     await expect(page.getByTestId("active-sheet-readout")).toContainText(
       "JB001 Field Terminations"
     );
-    await expect(page.getByRole("button", { name: /Panel Review/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Panel Review/, includeHidden: true })).toHaveCount(0);
 
     await page.getByRole("button", { name: "Approve", exact: true }).click();
     await expect(page.getByTestId("drawing-toast")).toContainText(
@@ -54,6 +61,10 @@ test("reviews, repairs, navigates, and blocks approval for panel QC", async ({
     await expect(page.getByTestId("active-sheet-readout")).toContainText(
       "JB001 Detailed Panel Drawing"
     );
+    await review.getByRole("button", { name: "Close panel review" }).click();
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Open sheet loader" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Panel Review/, includeHidden: true })).toHaveCount(0);
   } finally {
     await deleteE2eDrawing(drawingId);
   }

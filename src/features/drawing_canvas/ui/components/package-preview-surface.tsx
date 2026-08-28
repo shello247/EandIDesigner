@@ -9,25 +9,35 @@ import { renderDrawingToSvg } from "../../logic/services/drawing-svg-renderer";
 import { getDrawingSheetPresentation } from "../../logic/services/drawing-sheet-presentation";
 import { measureDrawingOperation } from "../../logic/services/drawing-performance-diagnostics";
 import type { DrawingSectionIndex } from "../../logic/services/drawing-sections";
-import type { PanelExternalTerminationDisplayRow } from "@/features/drawing_panel_wiring/api/public";
+import type { PlacementWireContextDisplayRow } from "@/features/drawing_panel_wiring/api/public";
+import {
+  isConnectedWireScheduleAnnotation,
+  type ConnectedWireScheduleIndex,
+  type ConnectedWireScheduleProjection
+} from "@/features/drawing_connected_wire_schedule/api/public";
 
 type PackagePreviewSurfaceProps = {
   model: DrawingModel;
   sectionIndex: DrawingSectionIndex;
   drawingTitle: string;
   symbols: ApprovedDrawingSymbol[];
-  panelExternalTerminationsBySheetId?: ReadonlyMap<
+  placementWireContextRowsBySheetId?: ReadonlyMap<
     string,
-    PanelExternalTerminationDisplayRow[]
+    PlacementWireContextDisplayRow[]
   >;
+  connectedWireScheduleProjections?: ConnectedWireScheduleIndex;
   onExitPreview: () => void;
-  onPreviewPdf: () => void;
+  previewPdfHref: string;
 };
 
 const MAX_MOUNTED_PREVIEW_PAGES = 12;
-const EMPTY_PANEL_EXTERNAL_TERMINATIONS_BY_SHEET = new Map<
+const EMPTY_PLACEMENT_WIRE_CONTEXT_BY_SHEET = new Map<
   string,
-  PanelExternalTerminationDisplayRow[]
+  PlacementWireContextDisplayRow[]
+>();
+const EMPTY_CONNECTED_WIRE_SCHEDULE_PROJECTIONS = new Map<
+  string,
+  ConnectedWireScheduleProjection
 >();
 
 export function PackagePreviewSurface({
@@ -35,10 +45,11 @@ export function PackagePreviewSurface({
   sectionIndex,
   drawingTitle,
   symbols,
-  panelExternalTerminationsBySheetId =
-    EMPTY_PANEL_EXTERNAL_TERMINATIONS_BY_SHEET,
+  placementWireContextRowsBySheetId = EMPTY_PLACEMENT_WIRE_CONTEXT_BY_SHEET,
+  connectedWireScheduleProjections =
+    EMPTY_CONNECTED_WIRE_SCHEDULE_PROJECTIONS,
   onExitPreview,
-  onPreviewPdf
+  previewPdfHref
 }: PackagePreviewSurfaceProps) {
   const svgCacheRef = useRef<Map<string, string>>(new Map());
   const [mountedSheetIds, setMountedSheetIds] = useState<string[]>(() =>
@@ -97,14 +108,15 @@ export function PackagePreviewSurface({
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
+          <a
+            href={previewPdfHref}
+            target="_blank"
+            rel="noopener noreferrer"
             className="icon-button"
-            onClick={onPreviewPdf}
           >
             <FileDown aria-hidden="true" size={14} />
             Preview PDF
-          </button>
+          </a>
           <button
             type="button"
             className="icon-button icon-button-primary"
@@ -126,6 +138,55 @@ export function PackagePreviewSurface({
               membership?.kind === "section"
                 ? membership.sectionNumber
                 : undefined;
+            const placementWireContextRows =
+              placementWireContextRowsBySheetId.get(sheet.id) ?? [];
+            const placementWireContextCacheKey = placementWireContextRows
+              .map(
+                (row) =>
+                  `${row.placementId}:${row.canonicalKind}:${row.canonicalId}:${row.anchorKey}:${row.physicalPosition ?? "inferred"}:${row.direction}:${row.wireId}:${row.externalTerminationId ?? ""}:${row.cableTag ?? ""}:${row.conductorKey ?? ""}`
+              )
+              .join("|");
+            const connectedWireScheduleCacheKey = sheet.annotations
+              .filter(isConnectedWireScheduleAnnotation)
+              .map((annotation) => {
+                const projection = connectedWireScheduleProjections.get(
+                  annotation.id
+                );
+                const linkedAssetTag =
+                  model.assets.find(
+                    (asset) => asset.id === annotation.schedule.assetId
+                  )?.tag ?? annotation.schedule.assetId;
+                const rowSignature = projection?.rows
+                  .map((row) =>
+                    [
+                      row.canonicalKind,
+                      row.canonicalId,
+                      row.wireId,
+                      row.wireNumber ?? "",
+                      row.from.assetTag,
+                      row.from.terminalKey,
+                      row.from.assetTitle ?? "",
+                      row.from.terminalLabel ?? "",
+                      row.from.terminalFunction ?? "",
+                      row.to.assetTag,
+                      row.to.terminalKey,
+                      row.to.assetTitle ?? "",
+                      row.to.terminalLabel ?? "",
+                      row.to.terminalFunction ?? "",
+                      row.specification?.name ?? "",
+                      row.specification?.wireType ?? "",
+                      row.specification?.size ?? "",
+                      row.specification?.color ?? "",
+                      row.description ?? ""
+                    ].join(":")
+                  )
+                  .join(",") ?? "";
+                const columnRatioSignature = annotation.schedule.columnRatios
+                  ? Object.values(annotation.schedule.columnRatios).join(":")
+                  : "default";
+                return `${annotation.id}:${annotation.x}:${annotation.y}:${annotation.width}:${annotation.schedule.assetId}:${linkedAssetTag}:${annotation.schedule.sourcePlacementId}:${annotation.schedule.scope}:${columnRatioSignature}:${projection?.linkedOccurrenceAvailable ?? false}:${projection?.unresolvedCount ?? 0}:${rowSignature}`;
+              })
+              .join("|");
 
             return <PackagePreviewPage
               key={sheet.id}
@@ -136,10 +197,9 @@ export function PackagePreviewSurface({
               sheetNumber={index + 1}
               sheetCount={model.sheets.length}
               derivedSectionNumber={derivedSectionNumber}
-              panelExternalTerminations={
-                panelExternalTerminationsBySheetId.get(sheet.id) ?? []
-              }
-              cacheKey={`${sheet.id}:${index + 1}:${derivedSectionNumber ?? 0}`}
+              placementWireContextRows={placementWireContextRows}
+              connectedWireScheduleProjections={connectedWireScheduleProjections}
+              cacheKey={`${sheet.id}:${index + 1}:${derivedSectionNumber ?? 0}:${model.measurementUnit}:${placementWireContextCacheKey}:${connectedWireScheduleCacheKey}`}
               mounted={mountedSheetIds.includes(sheet.id)}
               onProximityChange={handlePageProximityChange}
               getCachedSvg={getCachedSvg}
@@ -160,7 +220,8 @@ function PackagePreviewPage({
   sheetNumber,
   sheetCount,
   derivedSectionNumber,
-  panelExternalTerminations,
+  placementWireContextRows,
+  connectedWireScheduleProjections,
   mounted,
   onProximityChange,
   getCachedSvg
@@ -173,7 +234,8 @@ function PackagePreviewPage({
   sheetNumber: number;
   sheetCount: number;
   derivedSectionNumber?: number;
-  panelExternalTerminations: PanelExternalTerminationDisplayRow[];
+  placementWireContextRows: PlacementWireContextDisplayRow[];
+  connectedWireScheduleProjections: ConnectedWireScheduleIndex;
   mounted: boolean;
   onProximityChange: (sheetId: string, isNear: boolean) => void;
   getCachedSvg: (sheetId: string, render: () => string) => string;
@@ -216,13 +278,15 @@ function PackagePreviewPage({
             record
           }))
         ],
-        panelExternalTerminations,
+        placementWireContextRows,
+        connectedWireScheduleProjections,
         connectionVisibility: sheet.panelDrawingContext
           ? "panel_internal"
-          : "field"
+          : "field",
+        measurementUnit: model.measurementUnit
       }), { sheetId });
     });
-  }, [cacheKey, derivedSectionNumber, drawingTitle, getCachedSvg, model, mounted, panelExternalTerminations, sheet, sheetCount, sheetId, sheetNumber, symbols]);
+  }, [cacheKey, connectedWireScheduleProjections, derivedSectionNumber, drawingTitle, getCachedSvg, model, mounted, placementWireContextRows, sheet, sheetCount, sheetId, sheetNumber, symbols]);
 
   useEffect(() => {
     const element = containerRef.current;

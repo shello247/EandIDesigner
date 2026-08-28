@@ -1,9 +1,10 @@
 import type {
-  SymbolCategory,
   SymbolMetadata,
   SymbolStatus,
+  SymbolTechnicalKind,
   ValidationIssue
 } from "../data/schema";
+import type { SymbolCategorySummary } from "@/features/symbol_categories/api/public";
 
 export type SymbolListItem = {
   id: string;
@@ -11,7 +12,8 @@ export type SymbolListItem = {
   displayName: string;
   manufacturer?: string | null;
   model?: string | null;
-  category: SymbolCategory;
+  category: SymbolCategorySummary;
+  technicalKind: SymbolTechnicalKind;
   status: SymbolStatus;
   latestVersionNumber?: number;
   blockingIssueCount: number;
@@ -65,7 +67,8 @@ export type SymbolDetail = {
   displayName: string;
   manufacturer?: string | null;
   model?: string | null;
-  category: SymbolCategory;
+  category: SymbolCategorySummary;
+  technicalKind: SymbolTechnicalKind;
   status: SymbolStatus;
   createdAt: string;
   updatedAt: string;

@@ -14,6 +14,7 @@ export async function saveImportedSvgSymbolDraft(
 
   return saveSymbolDraftToRegistry({
     svg: preview.svg,
+    categoryId: parsed.categoryId,
     metadata: parsed.metadata,
     sourceInputSummary: [
       `Imported SVG: ${parsed.sourceAsset.fileName}`,

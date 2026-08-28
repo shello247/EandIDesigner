@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 import type { SymbolMetadata } from "@/features/symbol_registry/data/schema";
 import {
   createDefaultDrawingModel,
@@ -9,7 +9,9 @@ import type { ApprovedDrawingSymbol } from "../types";
 import { renderDrawingToSvg } from "../logic/services/drawing-svg-renderer";
 import { buildDrawingPdfPrintHtml } from "../logic/services/drawing-pdf-export";
 import {
+  bringConnectionRouteOntoSheet,
   generateDefaultOrthogonalRoute,
+  hasConnectionRouteOutsideSheet,
   removeRouteControlPoint,
   updateRouteLabelPosition,
   updateRoutePoint
@@ -192,6 +194,10 @@ describe("drawing canvas domain", () => {
     expect(svg).toContain('data-connection-id="c1"');
     expect(svg).toContain('data-route-style="orthogonal"');
     expect(svg).toContain('data-placement-title="p1"');
+    expect(svg).toContain('data-connection-label="c1"');
+    expect(
+      svg.match(/<g data-connection-id="c1"[\s\S]*?<\/g>/)?.[0]
+    ).not.toContain("<rect");
     expect(svg).toContain("<path");
     expect(svg).not.toContain("canvas-connection-preview");
     expect(svg).toContain("Signal");
@@ -201,6 +207,9 @@ describe("drawing canvas domain", () => {
     expect(svg).toContain('data-title-block-section="approval"');
     expect(svg).toContain('data-title-block-section="drawing-title"');
     expect(svg).toContain('data-title-block-section="metadata"');
+    expect(svg.match(/data-sheet-frame=/g)).toHaveLength(1);
+    expect(svg).toContain('data-sheet-frame="technical"');
+    expect(svg).not.toContain('stroke-width="0.78"');
     expect(svg).toContain("Sheet Loop Wiring Detail");
     expect(svg).not.toContain("TT-123 Loop Diagram");
     expect(svg).toContain("S.B.");
@@ -331,6 +340,7 @@ describe("drawing canvas domain", () => {
       point: { x: 60, y: 70 },
       sheet: model.sheet
     });
+    assert(note.kind !== "connected_wire_schedule");
 
     model.annotations = [
       {
@@ -459,6 +469,8 @@ describe("drawing canvas domain", () => {
 
     const parsed = drawingSheetCanvasModelSchema.parse(model);
     expect(parsed.annotations[0].width).toBeUndefined();
+    assert(parsed.annotations[0].kind !== "connected_wire_schedule");
+    assert(parsed.annotations[1].kind !== "connected_wire_schedule");
     expect(parsed.annotations[0].title).toBeUndefined();
     expect(parsed.annotations[1].title).toBe("Installation Instructions");
     expect(parsed.annotations[1].leader?.enabled).toBe(true);
@@ -628,6 +640,74 @@ describe("drawing canvas domain", () => {
 
     expect(updated.mode).toBe("manual");
     expect(updated.points[1]).toMatchObject({ x: 50.37, y: 95.64 });
+  });
+
+  it("keeps automatically generated route controls retrievable inside the sheet", () => {
+    const model = validModel();
+    model.sheet.width = 165;
+    const route = generateDefaultOrthogonalRoute({
+      model,
+      symbols: [approvedSymbol],
+      connection: model.connections[0]
+    });
+
+    expect(route).not.toBeNull();
+    expect(route?.points.at(-1)).toMatchObject({
+      kind: "endpoint",
+      x: 160,
+      y: 40
+    });
+    expect(
+      route?.points
+        .filter((point) => point.kind !== "endpoint")
+        .every(
+          (point) =>
+            point.x >= 2.5 &&
+            point.x <= model.sheet.width - 2.5 &&
+            point.y >= 2.5 &&
+            point.y <= model.sheet.height - 2.5
+        )
+    ).toBe(true);
+    expect(hasConnectionRouteOutsideSheet(route!, model.sheet)).toBe(false);
+  });
+
+  it("recovers escaped route controls without changing endpoints or point identities", () => {
+    const model = validModel();
+    const route = generateDefaultOrthogonalRoute({
+      model,
+      symbols: [approvedSymbol],
+      connection: model.connections[0]
+    })!;
+    const escapedRoute = {
+      ...route,
+      mode: "manual" as const,
+      points: route.points.map((point, index) =>
+        index === 1 ? { ...point, x: model.sheet.width + 40, y: -25 } : point
+      ),
+      labelPosition: { x: model.sheet.width + 15, y: -5 }
+    };
+
+    expect(hasConnectionRouteOutsideSheet(escapedRoute, model.sheet)).toBe(true);
+
+    const recovered = bringConnectionRouteOntoSheet({
+      route: escapedRoute,
+      sheet: model.sheet
+    });
+
+    expect(recovered.points[0]).toEqual(escapedRoute.points[0]);
+    expect(recovered.points.at(-1)).toEqual(escapedRoute.points.at(-1));
+    expect(recovered.points.map((point) => point.id)).toEqual(
+      escapedRoute.points.map((point) => point.id)
+    );
+    expect(recovered.points[1]).toMatchObject({
+      x: model.sheet.width - 2.5,
+      y: 2.5
+    });
+    expect(recovered.labelPosition).toEqual({
+      x: model.sheet.width,
+      y: 0
+    });
+    expect(hasConnectionRouteOutsideSheet(recovered, model.sheet)).toBe(false);
   });
 
   it("removes intermediate route control points without removing endpoints", () => {

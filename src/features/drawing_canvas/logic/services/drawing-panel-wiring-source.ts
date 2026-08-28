@@ -17,6 +17,7 @@ import type {
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import { placementAssetId } from "./drawing-asset-identity";
+import { getLayoutPosition } from "./drawing-backplane-scale";
 import {
   getRenderableSymbolForPlacement,
   isGeneratedTerminalBlockPlacement
@@ -235,7 +236,8 @@ function approvedSymbolSourceTerminals(
 
 function terminalSourceForPlacement(
   placement: DrawingPlacement,
-  symbols: ApprovedDrawingSymbol[]
+  symbols: ApprovedDrawingSymbol[],
+  assets: DrawingAssetRecord[] = []
 ): Pick<
   PanelWiringSourceOccurrence,
   | "terminalResolutionStatus"
@@ -260,7 +262,7 @@ function terminalSourceForPlacement(
     };
   }
 
-  const symbol = getRenderableSymbolForPlacement(placement, symbols);
+  const symbol = getRenderableSymbolForPlacement(placement, symbols, assets);
 
   if (!symbol) {
     return {
@@ -303,7 +305,8 @@ function sourceOccurrence(
   sheet: DrawingPackageSheet,
   placement: DrawingPlacement,
   symbols: ApprovedDrawingSymbol[],
-  asset: DrawingAssetRecord | undefined
+  asset: DrawingAssetRecord | undefined,
+  backplane: DrawingPlacement | undefined
 ): PanelWiringSourceOccurrence {
   const effectivePlacement = placementWithAuthoritativeTerminalBlock(
     placement,
@@ -311,8 +314,43 @@ function sourceOccurrence(
   );
   const renderableSymbol = getRenderableSymbolForPlacement(
     effectivePlacement,
-    symbols
+    symbols,
+    asset ? [asset] : []
   );
+  const physicalWidth =
+    effectivePlacement.layoutDimensions?.lengthMm ??
+    renderableSymbol?.metadata.physicalWidthMm ??
+    renderableSymbol?.metadata.viewBox.width;
+  const physicalHeight =
+    effectivePlacement.layoutDimensions?.widthMm ??
+    renderableSymbol?.metadata.physicalHeightMm ??
+    renderableSymbol?.metadata.viewBox.height;
+  const panelLayout =
+    effectivePlacement.layoutKind &&
+    backplane?.layoutKind === "backplane" &&
+    physicalWidth &&
+    physicalHeight
+      ? {
+          layoutKind: effectivePlacement.layoutKind,
+          backplanePlacementId: backplane.id,
+          backplaneSheetX: backplane.x,
+          backplaneSheetY: backplane.y,
+          ...(effectivePlacement.layoutKind === "backplane"
+            ? { xMm: 0, yMm: 0 }
+            : getLayoutPosition(
+                { ...sheet.page, titleBlock: {} },
+                effectivePlacement,
+                backplane
+              )),
+          widthMm: physicalWidth,
+          heightMm: physicalHeight,
+          rotationDeg: effectivePlacement.rotation,
+          mountingType: renderableSymbol?.metadata.mountingType,
+          technicalKind:
+            renderableSymbol?.technicalKind ?? renderableSymbol?.category
+        }
+      : undefined;
+
   return {
     sheetId: sheet.id,
     placementId: effectivePlacement.id,
@@ -323,10 +361,29 @@ function sourceOccurrence(
     containerAssetId: effectivePlacement.containerAssetId,
     symbolId: effectivePlacement.symbolId,
     versionId: effectivePlacement.versionId,
+    panelLayout,
     availableAnchorKeys: renderableSymbol?.metadata.anchors.map(
       (anchor) => anchor.key
     ),
-    ...terminalSourceForPlacement(effectivePlacement, symbols)
+    electricalTopology: renderableSymbol?.metadata.electricalTopology
+      ? {
+          version: 1,
+          permanentContinuityGroups:
+            renderableSymbol.metadata.electricalTopology.permanentContinuityGroups.map(
+              (group) => ({
+                ...group,
+                terminalKeys: [...group.terminalKeys],
+                symbolId: renderableSymbol.symbolId,
+                versionId: renderableSymbol.versionId
+              })
+            )
+        }
+      : undefined,
+    ...terminalSourceForPlacement(
+      effectivePlacement,
+      symbols,
+      asset ? [asset] : []
+    )
   };
 }
 
@@ -365,7 +422,8 @@ export function buildDrawingPanelWiringSource(
       type: asset.type,
       title: asset.title,
       symbolId: asset.symbolId,
-      versionId: asset.versionId
+      versionId: asset.versionId,
+      isStructuredTerminalStrip: Boolean(asset.terminalStrip)
     })),
     sheets: model.sheets.map((sheet, sheetIndex) => {
       const canvasModel = {
@@ -377,6 +435,9 @@ export function buildDrawingPanelWiringSource(
         connections: sheet.connections,
         annotations: sheet.annotations
       };
+      const placementsById = new Map(
+        sheet.placements.map((placement) => [placement.id, placement])
+      );
 
       return {
         id: sheet.id,
@@ -391,7 +452,12 @@ export function buildDrawingPanelWiringSource(
             sheet,
             placement,
             symbols,
-            assetId ? assetsById.get(assetId) : undefined
+            assetId ? assetsById.get(assetId) : undefined,
+            placement.layoutKind === "backplane"
+              ? placement
+              : placement.layoutParentId
+                ? placementsById.get(placement.layoutParentId)
+                : undefined
           );
         }),
         connections: sheet.connections.map((connection) => {
@@ -403,6 +469,7 @@ export function buildDrawingPanelWiringSource(
             from: connection.from,
             to: connection.to,
             wireId: getConnectionWireId(canvasModel, symbols, connection),
+            label: connection.label,
             cablePlacementId: cablePlacement?.id,
             cableAssetId: cablePlacement
               ? occurrenceAssetId(cablePlacement)

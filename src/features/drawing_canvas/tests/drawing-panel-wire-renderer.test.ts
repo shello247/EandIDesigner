@@ -71,12 +71,19 @@ describe("Detailed Panel internal-wire renderer", () => {
     const svg = renderDrawingToSvg({
       model,
       approvedSymbols: [symbol],
-      panelInternalWires: [{ id: "wire_record_1", wireId: "JB001-W007" }],
+      panelInternalWires: [
+        {
+          id: "wire_record_1",
+          wireNumber: 7,
+          wireId: "K-101:T(007)"
+        }
+      ],
       connectionVisibility: "panel_internal"
     });
 
     expect(svg).toContain('data-panel-wire-id="wire_record_1"');
-    expect(svg).toContain("JB001-W007");
+    expect(svg).toContain(">K-101:T(007)</text>");
+    expect(svg).not.toContain(">007</text>");
     expect(svg).toContain('stroke="#1f4e79"');
   });
 
@@ -145,29 +152,20 @@ describe("Detailed Panel internal-wire renderer", () => {
     const svg = renderDrawingToSvg({
       model,
       approvedSymbols: [symbol],
-      panelExternalTerminations: [
+      placementWireContextRows: [
         {
-          terminationId: "external_termination_1",
-          panelAssetId: "panel_1",
-          detailedSheetId: "sheet_1",
           placementId: "p1",
           anchorKey: "T",
           physicalPosition: "right",
-          target: {
-            assetId: "asset_k101",
-            terminalKey: "T",
-            side: "single"
-          },
+          canonicalKind: "field_connection",
+          canonicalId: "field_sheet_1:field_connection_1",
+          fieldConnectionId: "field_connection_1",
+          externalTerminationId: "external_termination_1",
+          direction: "incoming",
           wireId: "FIELD-W101",
           cableTag: "CBL-101",
           conductorKey: "1",
-          source: {
-            sheetId: "field_sheet_1",
-            connectionId: "field_connection_1",
-            endpointRole: "to",
-            placementId: "field_k101",
-            anchorKey: "T"
-          },
+          oppositeEndpoint: { assetTag: "FIELD-K101", terminalKey: "T" },
           sourceSheet: {
             id: "field_sheet_1",
             number: 5,
@@ -185,5 +183,100 @@ describe("Detailed Panel internal-wire renderer", () => {
     expect(svg).toContain('x1="90" y1="80" x2="122" y2="80"');
     expect(svg).toContain("FIELD-W101");
     expect(svg).toContain("Source Sheet 5 - K-101 Field Wiring");
+  });
+
+  it("renders connected-wiring context as non-interactive field and internal stubs", () => {
+    const model = toSheetCanvasModel(createDefaultDrawingModel(), "sheet_1");
+    model.placements = [
+      {
+        id: "p1",
+        assetId: "asset_k101",
+        symbolId: symbol.symbolId,
+        versionId: symbol.versionId,
+        role: "device",
+        tag: "K-101",
+        x: 50,
+        y: 60,
+        rotation: 0,
+        scale: 1,
+        connectionDisplayMode: "all_connected"
+      }
+    ];
+
+    const svg = renderDrawingToSvg({
+      model,
+      approvedSymbols: [symbol],
+      placementWireContextRows: [
+        {
+          placementId: "p1",
+          anchorKey: "T",
+          physicalPosition: "right",
+          canonicalKind: "field_connection",
+          canonicalId: "sheet_2:field_1",
+          direction: "incoming",
+          wireId: "FIELD-101",
+          oppositeEndpoint: { assetTag: "JB-101", terminalKey: "3" },
+          sourceSheet: { id: "sheet_2", number: 2, name: "Field Wiring" }
+        },
+        {
+          placementId: "p1",
+          anchorKey: "T",
+          physicalPosition: "left",
+          canonicalKind: "internal_wire",
+          canonicalId: "wire_1",
+          direction: "outgoing",
+          wireId: "K-101:T(001)",
+          oppositeEndpoint: { assetTag: "PLC-101", terminalKey: "I-00" }
+        }
+      ]
+    });
+
+    expect(svg).toContain('data-placement-wire-context="true"');
+    expect(svg).toContain('pointer-events="none"');
+    expect(svg).toContain('data-field-connection-key="sheet_2:field_1"');
+    expect(svg).toContain('data-panel-wire-id="wire_1"');
+    expect(svg).toContain("Incoming FIELD-101 / From JB-101:3");
+    expect(svg).toContain("Outgoing K-101:T(001) / To PLC-101:I-00");
+    expect(svg).toContain('stroke="#0f766e"');
+    expect(svg).toContain('stroke="#1f4e79"');
+  });
+
+  it("rotates physical stub direction without changing canonical wire identity", () => {
+    const model = toSheetCanvasModel(createDefaultDrawingModel(), "sheet_1");
+    model.placements = [
+      {
+        id: "p1",
+        assetId: "asset_k101",
+        symbolId: symbol.symbolId,
+        versionId: symbol.versionId,
+        role: "device",
+        tag: "K-101",
+        x: 50,
+        y: 60,
+        rotation: 90,
+        scale: 1,
+        connectionDisplayMode: "internal_connected"
+      }
+    ];
+
+    const svg = renderDrawingToSvg({
+      model,
+      approvedSymbols: [symbol],
+      placementWireContextRows: [
+        {
+          placementId: "p1",
+          anchorKey: "T",
+          physicalPosition: "right",
+          canonicalKind: "internal_wire",
+          canonicalId: "wire_rotated",
+          direction: "outgoing",
+          wireId: "K-101:T(001)",
+          oppositeEndpoint: { assetTag: "PLC-101", terminalKey: "I-00" }
+        }
+      ]
+    });
+
+    expect(svg).toContain('data-panel-wire-id="wire_rotated"');
+    expect(svg).toContain('x1="70" y1="100" x2="70" y2="132"');
   });
 });

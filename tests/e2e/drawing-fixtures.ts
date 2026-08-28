@@ -26,6 +26,17 @@ function placementId(value: string): string {
   return value.replace(/[^a-z0-9_]+/gi, "_").toLowerCase();
 }
 
+async function requireE2eSymbolCategoryId(): Promise<string> {
+  const category = await prisma.symbolCategory.findUnique({
+    where: { normalizedName: "other" },
+    select: { id: true }
+  });
+  if (!category) {
+    throw new Error("The managed Other symbol category is unavailable.");
+  }
+  return category.id;
+}
+
 async function requireApprovedSymbol(symbolKey: string): Promise<FixtureSymbol> {
   const symbol = await prisma.symbol.findUnique({
     where: { symbolKey },
@@ -173,6 +184,533 @@ export async function createE2eNmt81ToNrf81Drawing(): Promise<string> {
   return row.id;
 }
 
+export async function createE2eConnectedWireScheduleDrawing(): Promise<{
+  drawingId: string;
+  symbolId: string;
+  sourcePlacementId: string;
+}> {
+  const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const symbolKey = `e2e_connected_wire_schedule_${unique}`;
+  const categoryId = await requireE2eSymbolCategoryId();
+  const symbol = await prisma.symbol.create({
+    data: {
+      symbolKey,
+      displayName: `E2E Schedule Device ${unique}`,
+      category: "other",
+      categoryId,
+      status: "approved",
+      versions: {
+        create: {
+          versionNumber: 1,
+          status: "approved",
+          svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 50"><rect x=".5" y=".5" width="29" height="49" fill="white" stroke="#334155"/><circle cx="28" cy="12" r="1.5" fill="none" stroke="#0f766e"/><circle cx="28" cy="25" r="1.5" fill="none" stroke="#0f766e"/><circle cx="28" cy="38" r="1.5" fill="none" stroke="#0f766e"/></svg>',
+          metadataJson: stringifyMetadata({
+            symbolKey,
+            displayName: `E2E Schedule Device ${unique}`,
+            category: "other",
+            layoutUsage: "both",
+            physicalWidthMm: 30,
+            physicalHeightMm: 50,
+            viewBox: { x: 0, y: 0, width: 30, height: 50 },
+            anchors: [
+              { key: "T1", x: 28, y: 12, kind: "terminal" },
+              { key: "T2", x: 28, y: 25, kind: "terminal" },
+              { key: "T3", x: 28, y: 38, kind: "terminal" }
+            ],
+            terminals: ["T1", "T2", "T3"].map((key) => ({
+              key,
+              label: key,
+              anchorKey: key,
+              requiredForWiring: true
+            }))
+          })
+        }
+      }
+    },
+    select: {
+      id: true,
+      versions: {
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+        select: { id: true }
+      }
+    }
+  });
+  const version = symbol.versions[0];
+  if (!version) throw new Error("E2E schedule symbol has no approved version.");
+
+  const sourcePlacementId = `schedule_source_${unique}`;
+  const model = createDefaultDrawingModel();
+  model.assets = [
+    {
+      id: "asset_mcb_101",
+      tag: "MCB-101",
+      type: "breaker",
+      title: "Main breaker",
+      symbolId: symbol.id,
+      versionId: version.id
+    },
+    ...[1, 2, 3].map((number) => ({
+      id: `asset_load_${number}`,
+      tag: `LOAD-${number}01`,
+      type: "other" as const,
+      title: `Load ${number}`,
+      symbolId: symbol.id,
+      versionId: version.id
+    }))
+  ];
+  model.sheets[0] = {
+    ...model.sheets[0],
+    name: "Connected Wire Schedule",
+    placements: [
+      {
+        id: sourcePlacementId,
+        assetId: "asset_mcb_101",
+        symbolId: symbol.id,
+        versionId: version.id,
+        role: "device",
+        tag: "MCB-101",
+        title: "Main breaker",
+        x: 45,
+        y: 75,
+        rotation: 0,
+        scale: 1
+      },
+      ...[1, 2, 3].map((number) => ({
+        id: `schedule_load_${number}_${unique}`,
+        assetId: `asset_load_${number}`,
+        symbolId: symbol.id,
+        versionId: version.id,
+        role: "device" as const,
+        tag: `LOAD-${number}01`,
+        title: `Load ${number}`,
+        x: 315,
+        y: 50 + number * 55,
+        rotation: 0,
+        scale: 0.7
+      }))
+    ],
+    connections: [1, 2, 3].map((number) => ({
+      id: `schedule_connection_${number}_${unique}`,
+      from: { placementId: sourcePlacementId, anchorKey: `T${number}` },
+      to: {
+        placementId: `schedule_load_${number}_${unique}`,
+        anchorKey: "T1"
+      },
+      wireId: `FW-${number.toString().padStart(3, "0")}`,
+      cableTag: `CBL-${number.toString().padStart(3, "0")}`,
+      conductorKey: `${number}`,
+      label: `Feeder ${number}`
+    })),
+    annotations: []
+  };
+  const row = await prisma.drawing.create({
+    data: {
+      drawingKey: `e2e_connected_wire_schedule_${unique}`,
+      title: "Connected Wire Schedule E2E",
+      status: "needs_review",
+      modelJson: stringifyDrawingModel(model)
+    },
+    select: { id: true }
+  });
+
+  return { drawingId: row.id, symbolId: symbol.id, sourcePlacementId };
+}
+
+export async function createE2ePaginatedConnectedWireScheduleDrawing(): Promise<{
+  drawingId: string;
+}> {
+  const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const panelAssetId = `asset_panel_${unique}`;
+  const sourceAssetId = `asset_pdb_${unique}`;
+  const targetAssetId = `asset_load_${unique}`;
+  const detailSheet = createDefaultDrawingSheet({
+    id: `sheet_detail_${unique}`,
+    name: "PDB-101 Wiring"
+  });
+  const fieldSheet = createDefaultDrawingSheet({
+    id: `sheet_field_${unique}`,
+    name: "PDB-101 Distribution Wiring"
+  });
+  const base = createDefaultDrawingModel();
+  const source = createTerminalBlockPlacement({
+    model: base,
+    activeSheet: fieldSheet,
+    assetId: sourceAssetId,
+    tag: "PDB-101",
+    x: 40,
+    y: 45,
+    terminalBlock: { count: 25 }
+  });
+  const target = createTerminalBlockPlacement({
+    model: base,
+    activeSheet: fieldSheet,
+    assetId: targetAssetId,
+    tag: "LOAD-101",
+    x: 230,
+    y: 45,
+    terminalBlock: { count: 25 }
+  });
+  const detailOccurrence = {
+    ...source,
+    id: `detail_pdb_${unique}`,
+    x: 35,
+    y: 70,
+    containerAssetId: panelAssetId,
+    connectionDisplayMode: "all_connected" as const
+  };
+  const scheduleId = `schedule_${unique}`;
+  const model = drawingPackageModelSchema.parse({
+    ...base,
+    assets: [
+      {
+        id: panelAssetId,
+        tag: "PLC-001",
+        type: "panel",
+        title: "PLC Panel"
+      },
+      {
+        id: sourceAssetId,
+        tag: "PDB-101",
+        type: "terminal_block",
+        title: "110 VAC Distribution Block",
+        symbolId: source.symbolId,
+        versionId: source.versionId,
+        terminalBlock: source.terminalBlock
+      },
+      {
+        id: targetAssetId,
+        tag: "LOAD-101",
+        type: "terminal_block",
+        title: "Distribution Loads",
+        symbolId: target.symbolId,
+        versionId: target.versionId,
+        terminalBlock: target.terminalBlock
+      }
+    ],
+    sheets: [
+      {
+        ...detailSheet,
+        description: "Detailed wiring for PDB-101",
+        panelDrawingContext: {
+          kind: "detailed_panel_wiring",
+          panelAssetId
+        },
+        placements: [detailOccurrence],
+        annotations: [
+          {
+            id: scheduleId,
+            kind: "connected_wire_schedule",
+            x: 165,
+            y: 20,
+            width: 235,
+            schedule: {
+              assetId: sourceAssetId,
+              sourcePlacementId: detailOccurrence.id,
+              scope: "all_connected"
+            }
+          }
+        ]
+      },
+      {
+        ...fieldSheet,
+        placements: [
+          { ...source, containerAssetId: panelAssetId },
+          { ...target, containerAssetId: panelAssetId }
+        ],
+        connections: Array.from({ length: 25 }, (_, index) => ({
+          id: `field_wire_${index + 1}_${unique}`,
+          from: {
+            placementId: source.id,
+            anchorKey: `T${index + 1}_BOTTOM`
+          },
+          to: {
+            placementId: target.id,
+            anchorKey: `T${index + 1}_BOTTOM`
+          },
+          wireId: `FW-${String(index + 1).padStart(3, "0")}`,
+          label: `Distribution feeder ${index + 1}`
+        }))
+      }
+    ]
+  });
+  const row = await prisma.drawing.create({
+    data: {
+      drawingKey: `e2e_paginated_wire_schedule_${unique}`,
+      title: "Paginated Connected Wire Schedule E2E",
+      status: "needs_review",
+      modelJson: stringifyDrawingModel(model)
+    },
+    select: { id: true }
+  });
+
+  return { drawingId: row.id };
+}
+
+export async function createE2eWireHitTestingDrawing(): Promise<{
+  drawingId: string;
+  symbolId: string;
+  innerConnectionId: string;
+  outerConnectionId: string;
+}> {
+  const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const symbolKey = `e2e_wire_hit_target_${unique}`;
+  const categoryId = await requireE2eSymbolCategoryId();
+  const symbol = await prisma.symbol.create({
+    data: {
+      symbolKey,
+      displayName: `E2E Wire Hit Target ${unique}`,
+      category: "other",
+      categoryId,
+      status: "approved",
+      versions: {
+        create: {
+          versionNumber: 1,
+          status: "approved",
+          svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="white" stroke="#334155"/><circle cx="5" cy="5" r="1.5" fill="none" stroke="#0f766e"/></svg>',
+          metadataJson: stringifyMetadata({
+            symbolKey,
+            displayName: `E2E Wire Hit Target ${unique}`,
+            category: "other",
+            layoutUsage: "wiring",
+            viewBox: { x: 0, y: 0, width: 10, height: 10 },
+            anchors: [{ key: "T", x: 5, y: 5, kind: "terminal" }],
+            terminals: [
+              {
+                key: "T",
+                label: "Terminal",
+                anchorKey: "T",
+                requiredForWiring: true
+              }
+            ]
+          })
+        }
+      }
+    },
+    select: {
+      id: true,
+      versions: {
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+        select: { id: true }
+      }
+    }
+  });
+  const version = symbol.versions[0];
+
+  if (!version) {
+    throw new Error("The E2E wire hit target symbol has no approved version.");
+  }
+
+  const innerConnectionId = `connection_inner_${unique}`;
+  const outerConnectionId = `connection_outer_${unique}`;
+  const placement = (id: string, tag: string, x: number, y: number) => ({
+    id,
+    symbolId: symbol.id,
+    versionId: version.id,
+    role: "device" as const,
+    tag,
+    x,
+    y,
+    rotation: 0,
+    scale: 1
+  });
+  const model = drawingPackageModelSchema.parse({
+    ...createDefaultDrawingModel(),
+    sheets: [
+      {
+        ...createDefaultDrawingModel().sheets[0],
+        name: "Nested Wire Hit Testing",
+        placements: [
+          placement(`placement_outer_source_${unique}`, "OS-101", 40, 40),
+          placement(`placement_outer_target_${unique}`, "OT-101", 340, 40),
+          placement(`placement_inner_source_${unique}`, "IS-101", 100, 120),
+          placement(`placement_inner_target_${unique}`, "IT-101", 280, 120)
+        ],
+        connections: [
+          {
+            id: innerConnectionId,
+            from: {
+              placementId: `placement_inner_source_${unique}`,
+              anchorKey: "T"
+            },
+            to: {
+              placementId: `placement_inner_target_${unique}`,
+              anchorKey: "T"
+            },
+            wireId: "INNER-001",
+            route: {
+              mode: "manual",
+              style: "orthogonal",
+              points: [
+                { id: `${innerConnectionId}_from`, x: 105, y: 125, kind: "endpoint" },
+                { id: `${innerConnectionId}_to`, x: 285, y: 125, kind: "endpoint" }
+              ]
+            }
+          },
+          {
+            id: outerConnectionId,
+            from: {
+              placementId: `placement_outer_source_${unique}`,
+              anchorKey: "T"
+            },
+            to: {
+              placementId: `placement_outer_target_${unique}`,
+              anchorKey: "T"
+            },
+            wireId: "OUTER-001",
+            route: {
+              mode: "manual",
+              style: "orthogonal",
+              points: [
+                { id: `${outerConnectionId}_from`, x: 45, y: 45, kind: "endpoint" },
+                { id: `${outerConnectionId}_left_top`, x: 30, y: 45, kind: "control" },
+                { id: `${outerConnectionId}_left_bottom`, x: 30, y: 220, kind: "control" },
+                { id: `${outerConnectionId}_right_bottom`, x: 360, y: 220, kind: "control" },
+                { id: `${outerConnectionId}_right_top`, x: 360, y: 45, kind: "control" },
+                { id: `${outerConnectionId}_to`, x: 345, y: 45, kind: "endpoint" }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  });
+  const drawing = await prisma.drawing.create({
+    data: {
+      drawingKey: `e2e_wire_hit_testing_${unique}`,
+      title: "Wire Stroke Hit Testing",
+      status: "needs_review",
+      modelJson: stringifyDrawingModel(model)
+    },
+    select: { id: true }
+  });
+
+  return {
+    drawingId: drawing.id,
+    symbolId: symbol.id,
+    innerConnectionId,
+    outerConnectionId
+  };
+}
+
+export async function createE2ePlacementLabelDrawing(): Promise<{
+  drawingId: string;
+  symbolId: string;
+  placements: Array<{
+    id: string;
+    bounds: { left: number; top: number; right: number; bottom: number };
+  }>;
+}> {
+  const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const symbolKey = `e2e_placement_label_target_${unique}`;
+  const categoryId = await requireE2eSymbolCategoryId();
+  const symbol = await prisma.symbol.create({
+    data: {
+      symbolKey,
+      displayName: `E2E Placement Label Target ${unique}`,
+      category: "other",
+      categoryId,
+      status: "approved",
+      versions: {
+        create: {
+          versionNumber: 1,
+          status: "approved",
+          svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><rect x="1" y="1" width="98" height="78" fill="white" stroke="#334155"/></svg>',
+          metadataJson: stringifyMetadata({
+            symbolKey,
+            displayName: `E2E Placement Label Target ${unique}`,
+            category: "other",
+            layoutUsage: "both",
+            viewBox: { x: 0, y: 0, width: 100, height: 80 },
+            anchors: [],
+            terminals: []
+          })
+        }
+      }
+    },
+    select: {
+      id: true,
+      versions: {
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+        select: { id: true }
+      }
+    }
+  });
+  const version = symbol.versions[0];
+
+  if (!version) {
+    throw new Error("The E2E placement-label symbol has no approved version.");
+  }
+
+  const smallPlacementId = `placement_label_small_${unique}`;
+  const largePlacementId = `placement_label_large_${unique}`;
+  const model = drawingPackageModelSchema.parse({
+    ...createDefaultDrawingModel(),
+    sheets: [
+      {
+        ...createDefaultDrawingModel().sheets[0],
+        name: "Placement Label Clearance",
+        placements: [
+          {
+            id: smallPlacementId,
+            symbolId: symbol.id,
+            versionId: version.id,
+            role: "device",
+            tag: "PDB-101",
+            title: "Small Distribution Block",
+            x: 40,
+            y: 80,
+            rotation: 0,
+            scale: 1,
+            layoutDimensions: { lengthMm: 20, widthMm: 50 }
+          },
+          {
+            id: largePlacementId,
+            symbolId: symbol.id,
+            versionId: version.id,
+            role: "device",
+            tag: "PLC-101",
+            title: "Large Controller",
+            x: 150,
+            y: 110,
+            rotation: 0,
+            scale: 1,
+            layoutDimensions: { lengthMm: 150, widthMm: 100 }
+          }
+        ],
+        connections: [],
+        annotations: []
+      }
+    ]
+  });
+  const drawing = await prisma.drawing.create({
+    data: {
+      drawingKey: `e2e_placement_label_clearance_${unique}`,
+      title: "Placement Label Clearance",
+      status: "needs_review",
+      modelJson: stringifyDrawingModel(model)
+    },
+    select: { id: true }
+  });
+
+  return {
+    drawingId: drawing.id,
+    symbolId: symbol.id,
+    placements: [
+      {
+        id: smallPlacementId,
+        bounds: { left: 40, top: 80, right: 60, bottom: 130 }
+      },
+      {
+        id: largePlacementId,
+        bounds: { left: 150, top: 110, right: 300, bottom: 210 }
+      }
+    ]
+  };
+}
+
 export async function createE2eDetailedPanelDrawingPackage(): Promise<string> {
   const model: DrawingModel = {
     ...createDefaultDrawingModel(),
@@ -237,6 +775,37 @@ export async function createE2ePanelDiscoveryPackage(): Promise<string> {
       panelAssetId: "asset_jb_001"
     }
   };
+  const layoutSheet = createDefaultDrawingSheet({
+    id: "sheet_panel_layout",
+    name: "JB001 Panel Layout"
+  });
+  const panelPlacement = createPanelEnclosurePlacement({
+    model: base,
+    activeSheet: layoutSheet,
+    assetId: "asset_jb_001",
+    tag: "JB001",
+    title: "Field Junction Box",
+    x: 30,
+    y: 30
+  });
+  const backplane = {
+    ...createBackplanePlacement({
+      panelPlacement,
+      id: "backplane_jb_001"
+    }),
+    layoutDimensions: { lengthMm: 300, widthMm: 200 }
+  };
+  const layoutTerminal = {
+    ...terminal,
+    id: "layout_terminal_tb_101",
+    containerAssetId: "asset_jb_001",
+    layoutKind: "layout_helper" as const,
+    layoutParentId: backplane.id,
+    layoutPosition: { xMm: 30, yMm: 40 },
+    layoutDimensions: { lengthMm: 26, widthMm: 50 },
+    x: backplane.x + 15,
+    y: backplane.y + 20
+  };
   const model: DrawingModel = {
     ...base,
     assets: [
@@ -299,7 +868,11 @@ export async function createE2ePanelDiscoveryPackage(): Promise<string> {
           }
         ]
       },
-      detailSheet
+      detailSheet,
+      {
+        ...layoutSheet,
+        placements: [panelPlacement, backplane, layoutTerminal]
+      }
     ]
   };
   const row = await prisma.drawing.create({
@@ -467,11 +1040,13 @@ export async function createE2ePanelComponentPackage(): Promise<{
   const drawingId = await createE2ePanelDiscoveryPackage();
   const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const symbolName = `E2E Panel Breaker ${unique}`;
+  const categoryId = await requireE2eSymbolCategoryId();
   const symbol = await prisma.symbol.create({
     data: {
       symbolKey: `e2e_panel_breaker_${unique}`,
       displayName: symbolName,
       category: "terminal_block",
+      categoryId,
       status: "approved",
       versions: {
         create: {
@@ -634,17 +1209,20 @@ export async function createE2eSectionedDrawingPackage(): Promise<string> {
 export async function createE2eTerminalBlockGroupPackage(): Promise<{
   drawingId: string;
   symbolId: string;
+  endBracketSymbolId: string;
 }> {
   await prisma.symbol.deleteMany({
     where: { symbolKey: { startsWith: "e2e_terminal_group_module_" } }
   });
   const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const symbolKey = `e2e_terminal_group_module_${unique}`;
+  const categoryId = await requireE2eSymbolCategoryId();
   const symbol = await prisma.symbol.create({
     data: {
       symbolKey,
       displayName: "E2E Feed-through Terminal Module",
       category: "terminal_block",
+      categoryId,
       status: "approved",
       versions: {
         create: {
@@ -664,7 +1242,64 @@ export async function createE2eTerminalBlockGroupPackage(): Promise<{
               kind: "feed_through",
               defaultForGeneratedGroups: true
             },
+            terminalStripCapability: {
+              role: "electrical",
+              railDatumMm: 25,
+              defaultForNewStrips: true
+            },
             viewBox: { x: 0, y: 0, width: 20, height: 178 },
+            anchors: [
+              { key: "left", x: 1, y: 89, kind: "terminal" },
+              { key: "right", x: 19, y: 89, kind: "terminal" }
+            ],
+            terminals: [
+              {
+                key: "1",
+                label: "1",
+                anchorKey: "left",
+                panelSide: "external",
+                requiredForWiring: true
+              },
+              {
+                key: "2",
+                label: "2",
+                anchorKey: "right",
+                panelSide: "internal",
+                requiredForWiring: true
+              }
+            ]
+          })
+        }
+      }
+    },
+    select: { id: true }
+  });
+  const endBracket = await prisma.symbol.create({
+    data: {
+      symbolKey: `e2e_terminal_group_bracket_${unique}`,
+      displayName: "E2E DIN Rail End Bracket",
+      category: "terminal_block",
+      categoryId,
+      status: "approved",
+      versions: {
+        create: {
+          versionNumber: 1,
+          status: "approved",
+          svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 131"><rect x="0.25" y="0.25" width="19.5" height="130.5" fill="#e2e8f0" stroke="#334155"/></svg>',
+          metadataJson: stringifyMetadata({
+            symbolKey: `e2e_terminal_group_bracket_${unique}`,
+            displayName: "E2E DIN Rail End Bracket",
+            category: "terminal_block",
+            layoutUsage: "panel_layout",
+            mountingType: "din_rail",
+            physicalWidthMm: 8,
+            physicalHeightMm: 52.4,
+            terminalStripCapability: {
+              role: "end_bracket",
+              railDatumMm: 26.2,
+              defaultForNewStrips: true
+            },
+            viewBox: { x: 0, y: 0, width: 20, height: 131 },
             anchors: [],
             terminals: []
           })
@@ -703,6 +1338,33 @@ export async function createE2eTerminalBlockGroupPackage(): Promise<{
       panelAssetId: panel.assetId
     }
   };
+  const reuseSheet = createDefaultDrawingSheet({
+    id: `sheet_terminal_reuse_${unique}`,
+    name: "Terminal Strip Reuse Drawing"
+  });
+  const targetSheet = createDefaultDrawingSheet({
+    id: `sheet_terminal_target_${unique}`,
+    name: "PLC001 Panel Layout Drawing"
+  });
+  const targetPanel = {
+    ...createPanelEnclosurePlacement({
+      model: base,
+      activeSheet: targetSheet,
+      assetId: `asset_target_panel_${unique}`,
+      tag: "PLC001",
+      title: "Target PLC Panel",
+      x: 30,
+      y: 30
+    }),
+    id: `target_panel_${unique}`
+  };
+  const targetBackplane = {
+    ...createBackplanePlacement({
+      panelPlacement: targetPanel,
+      id: `target_backplane_${unique}`
+    }),
+    layoutDimensions: { lengthMm: 300, widthMm: 200 }
+  };
   const model = drawingPackageModelSchema.parse({
     ...base,
     assets: [
@@ -711,6 +1373,12 @@ export async function createE2eTerminalBlockGroupPackage(): Promise<{
         tag: panel.tag,
         type: "junction_box",
         title: "Terminal Group Test Panel"
+      },
+      {
+        id: targetPanel.assetId,
+        tag: targetPanel.tag,
+        type: "panel",
+        title: "Target PLC Panel"
       }
     ],
     sheets: [
@@ -719,7 +1387,12 @@ export async function createE2eTerminalBlockGroupPackage(): Promise<{
         name: "JB001 Panel Layout Drawing",
         placements: [panel, backplane]
       },
-      detailedSheet
+      detailedSheet,
+      reuseSheet,
+      {
+        ...targetSheet,
+        placements: [targetPanel, targetBackplane]
+      }
     ]
   });
   const drawing = await prisma.drawing.create({
@@ -732,7 +1405,73 @@ export async function createE2eTerminalBlockGroupPackage(): Promise<{
     select: { id: true }
   });
 
-  return { drawingId: drawing.id, symbolId: symbol.id };
+  return {
+    drawingId: drawing.id,
+    symbolId: symbol.id,
+    endBracketSymbolId: endBracket.id
+  };
+}
+
+export async function addE2eCablePlacementToDrawing({
+  drawingId,
+  sheetName
+}: {
+  drawingId: string;
+  sheetName: string;
+}): Promise<{ placementId: string }> {
+  const cable = await requireApprovedSymbol("clx_cable_1_pair");
+  const row = await prisma.drawing.findUniqueOrThrow({
+    where: { id: drawingId },
+    select: { modelJson: true }
+  });
+  const model = parseDrawingModelJson(row.modelJson);
+  const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const assetId = `asset_connection_cable_${unique}`;
+  const placementId = `placement_connection_cable_${unique}`;
+  const nextModel = drawingPackageModelSchema.parse({
+    ...model,
+    assets: [
+      ...model.assets,
+      {
+        id: assetId,
+        tag: "C-101",
+        type: "cable",
+        title: "Connection Test Cable",
+        symbolId: cable.symbolId,
+        versionId: cable.versionId
+      }
+    ],
+    sheets: model.sheets.map((sheet) =>
+      sheet.name === sheetName
+        ? {
+            ...sheet,
+            placements: [
+              ...sheet.placements,
+              {
+                id: placementId,
+                assetId,
+                symbolId: cable.symbolId,
+                versionId: cable.versionId,
+                role: "cable_assembly",
+                tag: "C-101",
+                title: "Connection Test Cable",
+                x: 250,
+                y: 100,
+                rotation: 0,
+                scale: 0.45
+              }
+            ]
+          }
+        : sheet
+    )
+  });
+
+  await prisma.drawing.update({
+    where: { id: drawingId },
+    data: { modelJson: stringifyDrawingModel(nextModel) }
+  });
+
+  return { placementId };
 }
 
 export async function createE2eWireTrayResizePackage(): Promise<{
@@ -814,11 +1553,267 @@ export async function createE2eWireTrayResizePackage(): Promise<{
   return { drawingId: drawing.id, trayId };
 }
 
+export async function createE2eDinRailResizePackage(): Promise<{
+  drawingId: string;
+  railId: string;
+  symbolId: string;
+}> {
+  const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const symbolKey = `e2e_din_rail_${unique}`;
+  const categoryId = await requireE2eSymbolCategoryId();
+  const symbol = await prisma.symbol.create({
+    data: {
+      symbolKey,
+      displayName: "E2E Standard TH35 DIN Rail",
+      category: "terminal_block",
+      categoryId,
+      status: "approved",
+      versions: {
+        create: {
+          versionNumber: 1,
+          status: "approved",
+          svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 35"><rect x="0.5" y="0.5" width="299" height="34" fill="#f8fafc" stroke="#475569"/><path d="M20 17.5h260" stroke="#94a3b8" stroke-dasharray="8 6"/></svg>',
+          metadataJson: stringifyMetadata({
+            symbolKey,
+            displayName: "E2E Standard TH35 DIN Rail",
+            category: "terminal_block",
+            layoutUsage: "panel_layout",
+            panelCategory: "rail",
+            mountingType: "backplate",
+            resizable: true,
+            physicalWidthMm: 300,
+            physicalHeightMm: 35,
+            viewBox: { x: 0, y: 0, width: 300, height: 35 },
+            anchors: [],
+            terminals: []
+          })
+        }
+      }
+    },
+    select: {
+      id: true,
+      versions: {
+        select: { id: true },
+        take: 1
+      }
+    }
+  });
+  const version = symbol.versions[0];
+
+  if (!version) {
+    throw new Error("Expected the E2E DIN rail version to be created.");
+  }
+
+  const base = createDefaultDrawingModel();
+  const panel = {
+    ...createPanelEnclosurePlacement({
+      model: base,
+      activeSheet: base.sheets[0],
+      assetId: `asset_rail_panel_${unique}`,
+      tag: "JB001",
+      title: "DIN Rail Resize Test Panel",
+      x: 30,
+      y: 30
+    }),
+    id: `rail_panel_${unique}`
+  };
+  const backplane = {
+    ...createBackplanePlacement({
+      panelPlacement: panel,
+      id: `rail_backplane_${unique}`
+    }),
+    layoutDimensions: { lengthMm: 300, widthMm: 200 }
+  };
+  const railId = `din_rail_${unique}`;
+  const rail = {
+    id: railId,
+    symbolId: symbol.id,
+    versionId: version.id,
+    role: "other" as const,
+    tag: "DIN Rail",
+    x: 0,
+    y: 0,
+    rotation: 0,
+    scale: 1,
+    layoutKind: "layout_helper" as const,
+    layoutParentId: backplane.id,
+    containerAssetId: panel.assetId,
+    layoutPosition: {
+      xMm: 35,
+      yMm: 60
+    },
+    layoutDimensions: {
+      lengthMm: 170,
+      widthMm: 35
+    }
+  };
+  const model = drawingPackageModelSchema.parse({
+    ...base,
+    assets: [
+      {
+        id: panel.assetId,
+        tag: panel.tag,
+        type: "junction_box",
+        title: "DIN Rail Resize Test Panel"
+      }
+    ],
+    sheets: [
+      {
+        ...base.sheets[0],
+        name: "JB001 Panel Layout Drawing",
+        placements: [panel, backplane, rail]
+      }
+    ]
+  });
+  const drawing = await prisma.drawing.create({
+    data: {
+      drawingKey: `e2e_din_rail_resize_${unique}`,
+      title: "DIN Rail Length Resize Test",
+      status: "needs_review",
+      modelJson: stringifyDrawingModel(model)
+    },
+    select: { id: true }
+  });
+
+  return { drawingId: drawing.id, railId, symbolId: symbol.id };
+}
+
 export async function deleteE2eSymbol(symbolId: string | undefined) {
   if (!symbolId) {
     return;
   }
   await prisma.symbol.deleteMany({ where: { id: symbolId } });
+}
+
+export async function createE2eSelectionArrangementDrawing(): Promise<{
+  drawingId: string;
+  placementIds: string[];
+}> {
+  const equipment = await requireApprovedSymbol(
+    "nmt81_average_temperature_probe"
+  );
+  const base = createDefaultDrawingModel();
+  const placementIds = ["arrange_1", "arrange_2", "arrange_3", "arrange_4"];
+  const positions = [
+    { x: 30, y: 58 },
+    { x: 105, y: 42 },
+    { x: 205, y: 66 },
+    { x: 320, y: 50 }
+  ];
+  const assets = placementIds.map((id, index) => ({
+    id: `asset_${id}`,
+    tag: `TT-${index + 101}`,
+    type: "instrument" as const,
+    title: `Arrangement Instrument ${index + 1}`,
+    symbolId: equipment.symbolId,
+    versionId: equipment.versionId
+  }));
+  const model: DrawingModel = drawingPackageModelSchema.parse({
+    ...base,
+    assets,
+    sheets: [
+      {
+        ...base.sheets[0],
+        name: "Arrangement",
+        placements: placementIds.map((id, index) => ({
+          id,
+          assetId: assets[index].id,
+          symbolId: equipment.symbolId,
+          versionId: equipment.versionId,
+          role: "device" as const,
+          tag: assets[index].tag,
+          title: assets[index].title,
+          x: positions[index].x,
+          y: positions[index].y,
+          rotation: 0,
+          scale: 0.24
+        }))
+      }
+    ]
+  });
+  const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const drawing = await prisma.drawing.create({
+    data: {
+      drawingKey: `e2e_selection_arrangement_${unique}`,
+      title: "Equipment Arrangement Test",
+      status: "needs_review",
+      modelJson: stringifyDrawingModel(model)
+    },
+    select: { id: true }
+  });
+
+  return { drawingId: drawing.id, placementIds };
+}
+
+export async function createE2eDrawingGuidesDrawing(): Promise<{
+  drawingId: string;
+  placementId: string;
+  primarySheetName: string;
+  secondarySheetName: string;
+}> {
+  const equipment = await requireApprovedSymbol(
+    "nmt81_average_temperature_probe"
+  );
+  const base = createDefaultDrawingModel();
+  const placementId = "guide_equipment";
+  const primarySheetName = "Guide Primary";
+  const secondarySheetName = "Guide Secondary";
+  const asset = {
+    id: "asset_guide_equipment",
+    tag: "LT-101",
+    type: "instrument" as const,
+    title: "Guide Test Instrument",
+    symbolId: equipment.symbolId,
+    versionId: equipment.versionId
+  };
+  const model: DrawingModel = drawingPackageModelSchema.parse({
+    ...base,
+    assets: [asset],
+    sheets: [
+      {
+        ...base.sheets[0],
+        name: primarySheetName,
+        placements: [
+          {
+            id: placementId,
+            assetId: asset.id,
+            symbolId: equipment.symbolId,
+            versionId: equipment.versionId,
+            role: "device" as const,
+            tag: asset.tag,
+            title: asset.title,
+            x: 45,
+            y: 55,
+            rotation: 0,
+            scale: 0.24
+          }
+        ]
+      },
+      {
+        ...base.sheets[0],
+        id: "guide_secondary_sheet",
+        name: secondarySheetName,
+        placements: []
+      }
+    ]
+  });
+  const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const drawing = await prisma.drawing.create({
+    data: {
+      drawingKey: `e2e_drawing_guides_${unique}`,
+      title: "Drawing Guides Test",
+      status: "needs_review",
+      modelJson: stringifyDrawingModel(model)
+    },
+    select: { id: true }
+  });
+
+  return {
+    drawingId: drawing.id,
+    placementId,
+    primarySheetName,
+    secondarySheetName
+  };
 }
 
 export async function deleteE2eDrawing(drawingId: string | undefined) {

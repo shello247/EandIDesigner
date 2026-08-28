@@ -5,19 +5,13 @@ import { validateRegisteredSymbolComponents } from "@/features/symbol_components
 import {
   createEngineerNoteInputSchema,
   parseMetadataJson,
+  saveSymbolMetadataChangesInputSchema,
   saveSymbolDraftInputSchema,
   symbolStatusSchema,
   stringifyMetadata,
   type CreateEngineerNoteInput,
+  type SaveSymbolMetadataChangesInput,
   type SaveSymbolDraftInput,
-  symbolLayoutMetadataUpdateInputSchema,
-  type SymbolLayoutMetadataUpdateInput,
-  symbolPanelWiringCapabilityUpdateInputSchema,
-  type SymbolPanelWiringCapabilityUpdateInput,
-  terminalMapUpdateInputSchema,
-  type TerminalMapUpdateInput,
-  updateSymbolNetworkProfileInputSchema,
-  type UpdateSymbolNetworkProfileInput,
   uploadSymbolDocumentInputSchema,
   type UploadSymbolDocumentInput,
   type ValidationIssue
@@ -27,8 +21,14 @@ import {
   assertSymbolVersionEditable,
   isSymbolVersionEditable
 } from "../logic/services/symbol-version-lifecycle";
+import { mergeEditableSymbolMetadata } from "../logic/services/editable-symbol-metadata";
 import { validateSymbol } from "../logic/use_cases/validate-symbol";
 import { getSymbolDetail, getSymbolVersionForExport } from "./queries";
+import {
+  findSymbolCategoryByName,
+  requireSymbolCategory
+} from "@/features/symbol_categories/data/queries";
+import { resolveLegacySymbolCategoryName } from "@/features/symbol_categories/api/public";
 
 function normalizeSymbolKey(value: string): string {
   const normalized = value
@@ -155,6 +155,18 @@ export async function saveSymbolDraft(input: SaveSymbolDraftInput) {
   const metadata = validation.metadata ?? metadataWithPreservedComponents;
   const symbolKey = normalizeSymbolKey(metadata.symbolKey);
   const metadataJson = stringifyMetadata({ ...metadata, symbolKey });
+  const requestedCategory = parsed.categoryId
+    ? await requireSymbolCategory(parsed.categoryId)
+    : await findSymbolCategoryByName(
+        resolveLegacySymbolCategoryName({
+          panelCategory: metadata.panelCategory,
+          technicalKind: metadata.category
+        })
+      );
+
+  if (!requestedCategory) {
+    throw new Error("A managed symbol category must be selected.");
+  }
 
   const symbol = await prisma.symbol.upsert({
     where: { symbolKey },
@@ -163,6 +175,7 @@ export async function saveSymbolDraft(input: SaveSymbolDraftInput) {
       manufacturer: metadata.manufacturer,
       model: metadata.model,
       category: metadata.category,
+      categoryId: requestedCategory.id,
       status: "needs_review"
     },
     create: {
@@ -171,6 +184,7 @@ export async function saveSymbolDraft(input: SaveSymbolDraftInput) {
       manufacturer: metadata.manufacturer,
       model: metadata.model,
       category: metadata.category,
+      categoryId: requestedCategory.id,
       status: "needs_review"
     }
   });
@@ -216,6 +230,54 @@ export async function saveSymbolDraft(input: SaveSymbolDraftInput) {
   return getSymbolDetail(symbol.id);
 }
 
+async function assertTerminalStripDefaultUnique(params: {
+  symbolId: string;
+  metadata: import("./schema").SymbolMetadata;
+}) {
+  const capability = params.metadata.terminalStripCapability;
+  if (!capability?.defaultForNewStrips || capability.role === "accessory") {
+    return;
+  }
+
+  const symbols = await prisma.symbol.findMany({
+    where: {
+      id: { not: params.symbolId },
+      status: "approved"
+    },
+    select: {
+      displayName: true,
+      versions: {
+        where: { status: "approved" },
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+        select: { metadataJson: true }
+      }
+    }
+  });
+
+  for (const symbol of symbols) {
+    const version = symbol.versions[0];
+    if (!version) {
+      continue;
+    }
+    try {
+      const other = parseMetadataJson(version.metadataJson)
+        .terminalStripCapability;
+      if (other?.defaultForNewStrips && other.role === capability.role) {
+        throw new Error(
+          `${symbol.displayName} is already the default ${
+            capability.role === "end_bracket" ? "end bracket" : "electrical member"
+          } for new terminal strips.`
+        );
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("already the default")) {
+        throw error;
+      }
+    }
+  }
+}
+
 export async function validateSymbolVersion(versionId: string) {
   const version = await prisma.symbolVersion.findUnique({
     where: { id: versionId },
@@ -259,233 +321,119 @@ export async function validateSymbolVersion(versionId: string) {
   };
 }
 
-export async function updateSymbolTerminalMap(input: TerminalMapUpdateInput) {
-  const parsed = terminalMapUpdateInputSchema.parse(input);
-  const version = await prisma.symbolVersion.findUnique({
-    where: { id: parsed.versionId },
-    include: { symbol: true }
-  });
-
-  if (!version) {
-    throw new Error("Symbol version was not found.");
-  }
-
-  assertStoredVersionEditable(version);
-
-  const metadata = parseMetadataJson(version.metadataJson);
-  const updatedMetadata = {
-    ...metadata,
-    terminals: parsed.terminals.map((terminal) => ({
-      ...terminal,
-      function: terminal.function?.trim() || undefined
-    }))
-  };
-  const validation = await validateSymbolWithRegisteredComponents(
-    version.symbolId,
-    version.svg,
-    updatedMetadata
-  );
-  const nextSymbolStatus =
-    version.symbol.status === "archived" ? "archived" : "needs_review";
-
-  await prisma.$transaction([
-    prisma.symbolVersion.update({
-      where: { id: version.id },
-      data: {
-        status: version.status,
-        svg: validation.sanitizedSvg,
-        metadataJson: stringifyMetadata(validation.metadata ?? updatedMetadata)
-      }
-    }),
-    prisma.symbol.update({
-      where: { id: version.symbolId },
-      data: { status: nextSymbolStatus }
-    })
-  ]);
-
-  await replaceValidationIssues({
-    symbolId: version.symbolId,
-    versionId: version.id,
-    issues: validation.issues
-  });
-
-  return getSymbolDetail(version.symbolId);
-}
-
-export async function updateSymbolLayoutMetadata(
-  input: SymbolLayoutMetadataUpdateInput
+export async function saveSymbolMetadataChanges(
+  input: SaveSymbolMetadataChangesInput
 ) {
-  const parsed = symbolLayoutMetadataUpdateInputSchema.parse(input);
+  const parsed = saveSymbolMetadataChangesInputSchema.parse(input);
   const version = await prisma.symbolVersion.findUnique({
     where: { id: parsed.versionId },
     include: { symbol: true }
   });
 
-  if (!version) {
-    throw new Error("Symbol version was not found.");
-  }
-
-  assertStoredVersionEditable(version);
-
-  const metadata = parseMetadataJson(version.metadataJson);
-  const updatedMetadata = {
-    ...metadata,
-    layoutUsage: parsed.layoutUsage,
-    physicalWidthMm: parsed.physicalWidthMm,
-    physicalHeightMm: parsed.physicalHeightMm,
-    mountingType: parsed.mountingType,
-    panelCategory: parsed.panelCategory,
-    resizable: parsed.resizable,
-    terminalBlockModule: parsed.terminalBlockModule
-  };
-  const validation = await validateSymbolWithRegisteredComponents(
-    version.symbolId,
-    version.svg,
-    updatedMetadata
-  );
-  const nextVersionStatus =
-    version.status === "approved" ? "needs_review" : version.status;
-  const nextSymbolStatus =
-    version.symbol.status === "archived" ? "archived" : "needs_review";
-
-  await prisma.$transaction([
-    prisma.symbolVersion.update({
-      where: { id: version.id },
-      data: {
-        status: nextVersionStatus,
-        svg: validation.sanitizedSvg,
-        metadataJson: stringifyMetadata(validation.metadata ?? updatedMetadata)
-      }
-    }),
-    prisma.symbol.update({
-      where: { id: version.symbolId },
-      data: { status: nextSymbolStatus }
-    })
-  ]);
-
-  await replaceValidationIssues({
-    symbolId: version.symbolId,
-    versionId: version.id,
-    issues: validation.issues
-  });
-
-  return getSymbolDetail(version.symbolId);
-}
-
-export async function updateSymbolPanelWiringCapability(
-  input: SymbolPanelWiringCapabilityUpdateInput
-) {
-  const parsed = symbolPanelWiringCapabilityUpdateInputSchema.parse(input);
-  const version = await prisma.symbolVersion.findUnique({
-    where: { id: parsed.versionId },
-    include: { symbol: true }
-  });
-
-  if (!version) {
-    throw new Error("Symbol version was not found.");
-  }
-
-  const metadata = parseMetadataJson(version.metadataJson);
-  const updatedMetadata = {
-    ...metadata,
-    panelWiring: parsed.panelWiring
-  };
-  const validation = await validateSymbolWithRegisteredComponents(
-    version.symbolId,
-    version.svg,
-    updatedMetadata
-  );
-  const nextSymbolStatus =
-    version.symbol.status === "archived" ? "archived" : "needs_review";
-
-  await prisma.$transaction([
-    prisma.symbolVersion.update({
-      where: { id: version.id },
-      data: {
-        status: version.status,
-        svg: validation.sanitizedSvg,
-        metadataJson: stringifyMetadata(validation.metadata ?? updatedMetadata)
-      }
-    }),
-    prisma.symbol.update({
-      where: { id: version.symbolId },
-      data: { status: nextSymbolStatus }
-    })
-  ]);
-
-  await replaceValidationIssues({
-    symbolId: version.symbolId,
-    versionId: version.id,
-    issues: validation.issues
-  });
-
-  return getSymbolDetail(version.symbolId);
-}
-
-export async function updateSymbolNetworkProfile(
-  input: UpdateSymbolNetworkProfileInput
-) {
-  const parsed = updateSymbolNetworkProfileInputSchema.parse(input);
-  const version = await prisma.symbolVersion.findUnique({
-    where: { id: parsed.versionId },
-    include: { symbol: true }
-  });
-
-  if (!version) {
-    throw new Error("Symbol version was not found.");
-  }
-
-  assertStoredVersionEditable(version);
-
-  const metadata = parseMetadataJson(version.metadataJson);
   if (
-    version.symbol.category !== "network_device" ||
-    metadata.category !== "network_device"
+    !version ||
+    version.symbolId !== parsed.symbolId ||
+    version.symbol.id !== parsed.symbolId
   ) {
-    throw new Error("Network profile updates are only valid for network symbols.");
+    throw new Error("Symbol version was not found.");
   }
 
-  const manufacturer = parsed.manufacturer?.trim() || undefined;
-  const model = parsed.model?.trim() || undefined;
-  const updatedMetadata = {
-    ...metadata,
-    manufacturer,
-    model,
-    networkProfile: parsed.networkProfile
-  };
+  if (
+    version.symbol.status === "archived" ||
+    version.status === "archived"
+  ) {
+    throw new Error("Archived symbols are immutable.");
+  }
+
+  const latestVersion = await prisma.symbolVersion.findFirst({
+    where: { symbolId: parsed.symbolId },
+    orderBy: { versionNumber: "desc" },
+    select: { id: true }
+  });
+
+  if (!latestVersion || latestVersion.id !== version.id) {
+    throw new Error("Historical symbol versions cannot be edited.");
+  }
+
+  const storedMetadata = parseMetadataJson(version.metadataJson);
+  const categoryId = parsed.categoryId ?? version.symbol.categoryId;
+  if (!categoryId) {
+    throw new Error("A managed symbol category must be selected.");
+  }
+  await requireSymbolCategory(categoryId);
+  const mergedMetadata = mergeEditableSymbolMetadata(storedMetadata, parsed);
   const validation = await validateSymbolWithRegisteredComponents(
     version.symbolId,
     version.svg,
-    updatedMetadata
+    mergedMetadata
   );
 
   if (!validation.metadata) {
     throw new Error(validationErrorMessage(validation));
   }
+  const validatedMetadata = validation.metadata;
 
-  await prisma.$transaction([
-    prisma.symbolVersion.update({
+  if (version.status === "approved" && version.symbol.status === "approved") {
+    await assertTerminalStripDefaultUnique({
+      symbolId: version.symbolId,
+      metadata: validatedMetadata
+    });
+  }
+
+  if (version.status === "approved" && validation.blockingIssueCount > 0) {
+    throw new Error(
+      validation.issues.find((issue) => issue.severity === "blocking")
+        ?.message ??
+        "Approved symbol metadata cannot be saved with blocking validation issues."
+    );
+  }
+
+  const nextStatus =
+    version.status === "approved" && version.symbol.status === "approved"
+      ? "approved"
+      : "needs_review";
+  const isNetworkSymbol = validatedMetadata.category === "network_device";
+
+  await prisma.$transaction(async (transaction) => {
+    await transaction.symbolVersion.update({
       where: { id: version.id },
       data: {
-        status: "needs_review",
-        svg: validation.sanitizedSvg,
-        metadataJson: stringifyMetadata(validation.metadata)
+        status: nextStatus,
+        metadataJson: stringifyMetadata(validatedMetadata)
       }
-    }),
-    prisma.symbol.update({
+    });
+    await transaction.symbol.update({
       where: { id: version.symbolId },
       data: {
-        manufacturer: manufacturer ?? null,
-        model: model ?? null,
-        status: "needs_review"
+        status: nextStatus,
+        displayName: validatedMetadata.displayName,
+        categoryId,
+        ...(isNetworkSymbol
+          ? {
+              manufacturer: validatedMetadata.manufacturer ?? null,
+              model: validatedMetadata.model ?? null
+            }
+          : {})
       }
-    })
-  ]);
-
-  await replaceValidationIssues({
-    symbolId: version.symbolId,
-    versionId: version.id,
-    issues: validation.issues
+    });
+    await transaction.symbolValidationIssue.deleteMany({
+      where: {
+        symbolId: version.symbolId,
+        versionId: version.id
+      }
+    });
+    if (validation.issues.length > 0) {
+      await transaction.symbolValidationIssue.createMany({
+        data: validation.issues.map((issue) => ({
+          symbolId: version.symbolId,
+          versionId: version.id,
+          severity: issue.severity,
+          code: issue.code,
+          message: issue.message,
+          path: issue.path
+        }))
+      });
+    }
   });
 
   return getSymbolDetail(version.symbolId);
@@ -558,6 +506,11 @@ export async function approveSymbolVersion(versionId: string) {
   if (validation.blockingIssueCount > 0 || !validation.metadata) {
     throw new Error("Blocking validation issues must be resolved before approval.");
   }
+
+  await assertTerminalStripDefaultUnique({
+    symbolId: version.symbolId,
+    metadata: validation.metadata
+  });
 
   await prisma.$transaction([
     prisma.symbolVersion.updateMany({
@@ -637,7 +590,12 @@ export async function deleteSymbol(symbolId: string) {
         sheet.placements.some((placement) => placement.symbolId === symbolId)
       ) ||
       model.assets.some((asset) =>
-        selectionReferencesSymbol(asset.componentSelections, symbolId)
+        selectionReferencesSymbol(asset.componentSelections, symbolId) ||
+        (asset.terminalStrip?.members ?? []).some(
+          (member) =>
+            member.symbolId === symbolId ||
+            selectionReferencesSymbol(member.componentSelections, symbolId)
+        )
       );
 
     return isReferenced ? [drawing.title] : [];

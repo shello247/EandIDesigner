@@ -23,6 +23,7 @@ import {
 } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-layout";
 import { getRenderableSymbolForPlacement } from "./drawing-generated-symbols";
 import { deriveWireId } from "./drawing-identification";
+import { isNetworkDeviceDrawingSymbol } from "./drawing-network-device-assets";
 
 const TAG_STEP_PATTERN = /^([A-Z]{1,6})-(\d{1,5})([A-Z]?)$/i;
 
@@ -137,6 +138,10 @@ export function isBreakerLikeSymbol(
 }
 
 export function roleFromSymbol(symbol: ApprovedDrawingSymbol): DrawingPlacementRole {
+  if (isNetworkDeviceDrawingSymbol(symbol)) {
+    return "device";
+  }
+
   if (isBreakerLikeSymbol(symbol)) {
     return "device";
   }
@@ -612,6 +617,7 @@ function roleFromAssetType(type: DrawingAssetType): DrawingPlacementRole {
     type === "isolator" ||
     type === "converter" ||
     type === "io_module" ||
+    type === "network_device" ||
     type === "earth_bar"
   ) {
     return "device";

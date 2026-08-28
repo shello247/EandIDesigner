@@ -61,6 +61,62 @@ async function expectEighteenPixelMarker(page: Page, selector: string) {
   return markerBox!;
 }
 
+async function expectIndependentSymbolDetailsPane(page: Page) {
+  const details = page.getByTestId("symbol-details-scroll-region");
+  const preview = page.getByTestId("symbol-preview-column");
+  const stage = page.getByTestId("svg-coordinate-stage");
+
+  await expect(details).toBeVisible();
+  await expect(preview).toBeVisible();
+
+  const detailsMetrics = await details.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    overflowY: window.getComputedStyle(element).overflowY,
+    scrollHeight: element.scrollHeight
+  }));
+  expect(detailsMetrics.overflowY).toBe("auto");
+  expect(detailsMetrics.scrollHeight).toBeGreaterThan(
+    detailsMetrics.clientHeight
+  );
+
+  const previewBefore = await preview.boundingBox();
+  const stageBox = await stage.boundingBox();
+  const windowScrollBefore = await page.evaluate(() => window.scrollY);
+  expect(previewBefore).not.toBeNull();
+  expect(stageBox).not.toBeNull();
+  expect(stageBox!.x).toBeGreaterThanOrEqual(previewBefore!.x);
+  expect(stageBox!.y).toBeGreaterThanOrEqual(previewBefore!.y);
+  expect(stageBox!.x + stageBox!.width).toBeLessThanOrEqual(
+    previewBefore!.x + previewBefore!.width + 1
+  );
+  expect(stageBox!.y + stageBox!.height).toBeLessThanOrEqual(
+    previewBefore!.y + previewBefore!.height + 1
+  );
+
+  await details.focus();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("PageDown");
+  await expect
+    .poll(() => details.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  await details.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect
+    .poll(() => details.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+
+  const previewAfter = await preview.boundingBox();
+  expect(previewAfter).not.toBeNull();
+  expect(previewAfter!.x).toBeCloseTo(previewBefore!.x, 0);
+  expect(previewAfter!.y).toBeCloseTo(previewBefore!.y, 0);
+  expect(await page.evaluate(() => window.scrollY)).toBe(windowScrollBefore);
+  await expect(page.getByRole("button", { name: "Validate" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Overview" })).toBeVisible();
+
+  return details;
+}
+
 test("imports an SVG symbol draft and keeps review workflows available", async ({
   page
 }) => {
@@ -118,6 +174,7 @@ test("imports an SVG symbol draft and keeps review workflows available", async (
   await expect(page.getByText("Needs review")).toBeVisible();
 
   await expectAlignedCoordinateStage(page);
+  await expectIndependentSymbolDetailsPane(page);
   const registryMarkerBox = await expectEighteenPixelMarker(
     page,
     '[data-terminal-hotspot="1"]'
@@ -142,9 +199,27 @@ test("imports an SVG symbol draft and keeps review workflows available", async (
 
   await page.getByRole("button", { name: "Edit terminal map" }).click();
   await page.getByLabel("Function for terminal 1").fill("Verified signal positive");
-  await page.getByRole("button", { name: "Save terminal map" }).click();
-  await expect(page.getByText("Terminal map updated.")).toBeVisible();
+  await page.getByRole("button", { name: "Apply to draft" }).click();
+  await expect(page.getByText("Terminal changes are ready.")).toBeVisible();
   await expect(page.getByText("Verified signal positive")).toBeVisible();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Symbol metadata saved.")).toBeVisible();
+
+  await page.getByLabel("Layout usage").selectOption("panel_layout");
+  await page.getByLabel("Width mm").fill("28");
+  await page.getByLabel("Height mm").fill("90");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  const dimensionDialog = page.getByRole("dialog", {
+    name: "Save physical dimension changes?"
+  });
+  await expect(dimensionDialog).toBeVisible();
+  await dimensionDialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(
+    page.getByRole("button", { name: "Save changes" })
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await dimensionDialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Symbol metadata saved.")).toBeVisible();
 
   await expect(page.getByRole("button", { name: "AI verify" })).toBeEnabled();
   await page.getByRole("button", { name: "AI verify" }).click();
@@ -174,6 +249,24 @@ test("imports an SVG symbol draft and keeps review workflows available", async (
   await expect(page.getByText("Document uploaded.")).toBeVisible();
   await expect(page.getByText("Installation Manual")).toBeVisible();
   await expect(page.getByRole("link", { name: "Download" })).toBeVisible();
+
+  await page.getByRole("tab", { name: "Overview" }).click();
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await expect
+    .poll(() =>
+      page
+        .getByTestId("symbol-details-scroll-region")
+        .evaluate((element) => window.getComputedStyle(element).overflowY)
+    )
+    .toBe("visible");
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await expect
+    .poll(() =>
+      page
+        .getByTestId("symbol-details-scroll-region")
+        .evaluate((element) => window.getComputedStyle(element).overflowY)
+    )
+    .toBe("visible");
 });
 
 test("keeps a portrait import aligned and selects the intended dense terminal", async ({
@@ -267,4 +360,46 @@ test("blocks invalid SVG import before save", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "Save imported symbol" })
   ).toBeDisabled();
+});
+
+test("filters symbols by the managed category and protects Other", async ({
+  page
+}) => {
+  await page.goto("/symbols");
+
+  await page
+    .getByLabel("Filter symbols by category")
+    .selectOption({ label: "Monitor" });
+  await expect(page.getByText("NRF81 Tank Side Monitor")).toBeVisible();
+  await expect(page.getByText("NMT81 Average Temperature Probe")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Manage categories" }).click();
+  const manager = page.getByRole("dialog", { name: "Symbol Categories" });
+  await expect(manager).toBeVisible();
+  await expect(
+    manager.getByText(
+      "Categories organize the registry and drawing library. They do not change technical behavior."
+    )
+  ).toBeVisible();
+  await expect(
+    manager.getByRole("button", { name: "Delete Other" })
+  ).toBeDisabled();
+  await manager.getByRole("button", { name: "Close category manager" }).click();
+  await expect(manager).toHaveCount(0);
+
+  await page.getByRole("link", { name: "NRF81 Tank Side Monitor" }).click();
+  await page.getByRole("button", { name: "Manage categories" }).click();
+  const detailManager = page.getByRole("dialog", {
+    name: "Symbol Categories"
+  });
+  await expect(detailManager).toBeVisible();
+  await detailManager
+    .getByLabel("Name", { exact: true })
+    .fill("Temporary Category Draft");
+  const categoryDescription = detailManager.locator("textarea");
+  await categoryDescription.fill("Typing remains stable.");
+  await expect(
+    detailManager.getByLabel("Name", { exact: true })
+  ).toHaveValue("Temporary Category Draft");
+  await expect(categoryDescription).toHaveValue("Typing remains stable.");
 });

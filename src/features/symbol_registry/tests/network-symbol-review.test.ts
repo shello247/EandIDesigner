@@ -121,10 +121,10 @@ describe("network symbol review", () => {
     expect(isSymbolVersionEditable("approved")).toBe(false);
     expect(isSymbolVersionEditable("archived")).toBe(false);
     expect(() => assertSymbolVersionEditable("approved")).toThrow(
-      /immutable/i
+      /controlled artwork/i
     );
     expect(() => assertSymbolVersionEditable("archived")).toThrow(
-      /immutable/i
+      /controlled artwork/i
     );
   });
 });

@@ -13,11 +13,10 @@ test("creates and reloads a Detailed Panel Drawing without duplicating its asset
     await page.goto(`/drawings/${drawingId}`);
     await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible();
 
-    await page.getByRole("button", { name: "Add to drawing" }).click();
+    await page.getByRole("button", { name: "Open sheet loader" }).click();
     await page
-      .getByRole("menuitem", {
-        name: "Sheet Add drawing, section, or panel page"
-      })
+      .getByRole("dialog", { name: "Sheet Loader" })
+      .getByRole("button", { name: "Add Sheet" })
       .click();
     const dialog = page.getByRole("dialog", { name: "Add Sheet" });
 
@@ -40,7 +39,9 @@ test("creates and reloads a Detailed Panel Drawing without duplicating its asset
         .getByRole("heading", { name: "Detailed Panel Drawing" })
     ).toBeVisible();
     await expect(page.getByText("JB001", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Connect" })).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Connect", exact: true })
+    ).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Save active sheet as template" })
     ).toHaveCount(0);

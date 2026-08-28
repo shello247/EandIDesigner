@@ -11,12 +11,14 @@ import {
 } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
 import { TERMINAL_BLOCK_TAG_PREFIX } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-layout";
 import type {
+  DrawingMeasurementUnit,
   DrawingModel,
   DrawingSheetCanvasModel
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import { allocateNextTagFromPrefix } from "../../logic/services/drawing-asset-identity";
 import { getBackplanesForSheet } from "../../logic/services/drawing-backplane-layouts";
+import { formatDrawingMeasurementPair } from "../../logic/services/drawing-measurement-units";
 
 export type TerminalBlockGroupDialogSubmission = {
   backplaneId: string;
@@ -25,14 +27,11 @@ export type TerminalBlockGroupDialogSubmission = {
   count: number;
 };
 
-function formatMillimetres(value: number): string {
-  return Number(value.toFixed(2)).toString();
-}
-
 export function TerminalBlockGroupDialog({
   model,
   activeSheetModel,
   symbols,
+  measurementUnit,
   preferredBackplaneId,
   onCancel,
   onPlace
@@ -40,6 +39,7 @@ export function TerminalBlockGroupDialog({
   model: DrawingModel;
   activeSheetModel: DrawingSheetCanvasModel;
   symbols: ApprovedDrawingSymbol[];
+  measurementUnit: DrawingMeasurementUnit;
   preferredBackplaneId?: string;
   onCancel: () => void;
   onPlace: (submission: TerminalBlockGroupDialogSubmission) => void;
@@ -265,7 +265,11 @@ export function TerminalBlockGroupDialog({
               <div className="font-bold uppercase text-slate-500">Physical size</div>
               <div className="mt-1 font-semibold text-slate-900">
                 {size
-                  ? `${formatMillimetres(size.lengthMm)} x ${formatMillimetres(size.widthMm)} mm`
+                  ? formatDrawingMeasurementPair(
+                      size.lengthMm,
+                      size.widthMm,
+                      measurementUnit
+                    )
                   : "Unavailable"}
               </div>
             </div>

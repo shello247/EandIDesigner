@@ -22,6 +22,7 @@ const GROUP_BY_ASSET_TYPE: Record<
   power_supply: "power",
   controller: "control_io",
   io_module: "control_io",
+  network_device: "networking",
   isolator: "isolation_conversion",
   converter: "isolation_conversion",
   terminal_block: "terminal_blocks",

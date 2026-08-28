@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ApprovedDrawingSymbol } from "../types";
 import {
+  getCatalogSummariesForLibraryContext,
   getSymbolLibraryContextForSheetKind,
   getSymbolsForLibraryContext,
+  groupCatalogSummariesForLibrary,
   groupSymbolsForLibrary,
   hasPanelLayoutPhysicalDimensions
 } from "../logic/services/symbol-library-context";
+import type { DrawingSymbolCatalogSummary } from "@/features/symbol_registry/api/public";
 import {
   GENERATED_BACKPLANE_SYMBOL_ID,
   GENERATED_BACKPLANE_SYMBOL_KEY
@@ -53,6 +56,42 @@ function approvedSymbol(input: {
       viewBox: { x: 0, y: 0, width: 10, height: 10 },
       anchors: [],
       terminals: []
+    }
+  };
+}
+
+function catalogSummary(
+  symbol: ApprovedDrawingSymbol
+): DrawingSymbolCatalogSummary {
+  const managedCategoryNames: Partial<
+    Record<ApprovedDrawingSymbol["category"], string>
+  > = {
+    cable_assembly: "Cable Assemblies",
+    instrument: "Instrumentation",
+    monitor: "Controllers"
+  };
+
+  return {
+    symbolId: symbol.symbolId,
+    symbolKey: symbol.symbolKey,
+    displayName: symbol.displayName,
+    manufacturer: symbol.manufacturer,
+    model: symbol.model,
+    technicalKind: symbol.category,
+    managedCategory: symbol.managedCategory ?? {
+      id: symbol.category,
+      name: managedCategoryNames[symbol.category] ?? symbol.category
+    },
+    versionId: symbol.versionId,
+    versionNumber: symbol.versionNumber,
+    capabilities: {
+      layoutUsage: symbol.metadata.layoutUsage,
+      physicalWidthMm: symbol.metadata.physicalWidthMm,
+      physicalHeightMm: symbol.metadata.physicalHeightMm,
+      mountingType: symbol.metadata.mountingType,
+      panelCategory: symbol.metadata.panelCategory,
+      terminalBlockModule: symbol.metadata.terminalBlockModule,
+      terminalStripCapability: symbol.metadata.terminalStripCapability
     }
   };
 }
@@ -210,5 +249,30 @@ describe("symbol library context", () => {
         .find((group) => group.key === "panel_layout")
         ?.symbols.map((symbol) => symbol.symbolId)
     ).toContain(GENERATED_WIRE_TRAY_SYMBOL_ID);
+  });
+
+  it("builds the same browsable groups from lightweight catalogue summaries", () => {
+    const summaries = symbols.map(catalogSummary);
+    const managedSymbols = symbols.map((symbol, index) => ({
+      ...symbol,
+      managedCategory: summaries[index].managedCategory
+    }));
+    const available = getCatalogSummariesForLibraryContext(
+      summaries,
+      "wiring"
+    );
+    const groups = groupCatalogSummariesForLibrary(summaries, "wiring");
+    const fullGroups = groupSymbolsForLibrary(managedSymbols, "wiring");
+
+    expect(available.map((symbol) => symbol.symbolKey)).not.toContain(
+      "layout_symbol_without_size"
+    );
+    expect(available.map((symbol) => symbol.symbolKey)).toContain(
+      GENERATED_BACKPLANE_SYMBOL_KEY
+    );
+    expect(groups.map((group) => group.label)).toEqual(
+      fullGroups.map((group) => group.label)
+    );
+    expect(JSON.stringify(available)).not.toContain("<svg");
   });
 });

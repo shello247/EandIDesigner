@@ -1,6 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent
+} from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -8,8 +15,10 @@ import {
   ChevronsDown,
   ChevronsUp,
   FileText,
+  FilePlus2,
   FolderInput,
   Layers,
+  MoreVertical,
   Search,
   Trash2,
   X
@@ -39,19 +48,25 @@ export function SheetLoaderDialog({
   groups,
   activeSheetId,
   onCancel,
+  onAddSheet,
   onLoadSheet,
   onMoveSection,
+  onMoveSheet,
+  onMoveSheetToEnd,
   onMoveSheetToSection,
   onRequestDeleteSheet
 }: {
   groups: SheetLoaderGroup[];
   activeSheetId: string;
   onCancel: () => void;
+  onAddSheet: () => void;
   onLoadSheet: (sheetId: string) => void;
   onMoveSection: (
     sectionId: string,
     direction: DrawingSectionMoveDirection
   ) => void;
+  onMoveSheet: (sheetId: string, direction: -1 | 1) => void;
+  onMoveSheetToEnd: (sheetId: string) => void;
   onMoveSheetToSection: (
     sheetId: string,
     targetSectionId: string | "front_matter"
@@ -60,17 +75,9 @@ export function SheetLoaderDialog({
 }) {
   const titleId = "sheet-loader-dialog-title";
   const descriptionId = "sheet-loader-dialog-description";
-  const activeGroupId = groups.find((group) =>
-    groupContainsSheet(group, activeSheetId)
-  )?.id;
   const [query, setQuery] = useState("");
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
-    () =>
-      new Set(
-        groups
-          .filter((group) => group.id !== activeGroupId)
-          .map((group) => group.id)
-      )
+    () => new Set(groups.map((group) => group.id))
   );
   const [moveCandidate, setMoveCandidate] = useState<SheetLoaderRow | null>(
     null
@@ -78,6 +85,21 @@ export function SheetLoaderDialog({
   const filteredGroups = useMemo(
     () => filterSheetLoaderGroups(groups, query),
     [groups, query]
+  );
+  const movementBySheetId = useMemo(
+    () =>
+      new Map(
+        groups.flatMap((group) =>
+          group.rows.map((row, index) => [
+            row.sheetId,
+            {
+              canMoveUp: index > 0,
+              canMoveDown: index < group.rows.length - 1
+            }
+          ] as const)
+        )
+      ),
+    [groups]
   );
   const sectionGroups = groups.filter((group) => group.kind === "section");
   const sheetCount = groups.reduce(
@@ -97,10 +119,13 @@ export function SheetLoaderDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/20 p-4 pt-10 backdrop-blur-[2px] sm:pt-12"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onCancel();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !moveCandidate) onCancel();
       }}
     >
       <div
@@ -108,9 +133,9 @@ export function SheetLoaderDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
-        className="flex max-h-[82vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
+        className="sheet-loader-dialog flex max-h-[82vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
       >
-        <div className="flex items-start gap-3 border-b border-slate-200 px-5 py-4">
+        <div className="flex flex-wrap items-start gap-3 border-b border-slate-200 px-5 py-4">
           <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-700">
             <Layers aria-hidden="true" size={18} />
           </div>
@@ -125,11 +150,19 @@ export function SheetLoaderDialog({
           </div>
           <button
             type="button"
-            className="icon-button h-8 w-8 p-0"
+            className="icon-button h-9"
+            onClick={onAddSheet}
+          >
+            <FilePlus2 aria-hidden="true" size={18} />
+            Add Sheet
+          </button>
+          <button
+            type="button"
+            className="icon-button h-9 w-9 p-0"
             onClick={onCancel}
             aria-label="Close sheet loader"
           >
-            <X aria-hidden="true" size={14} />
+            <X aria-hidden="true" size={18} />
           </button>
         </div>
 
@@ -190,6 +223,9 @@ export function SheetLoaderDialog({
                     onToggle={() => toggleGroup(group.id)}
                     onLoadSheet={onLoadSheet}
                     onMoveSection={onMoveSection}
+                    movementBySheetId={movementBySheetId}
+                    onMoveSheet={onMoveSheet}
+                    onMoveSheetToEnd={onMoveSheetToEnd}
                     onRequestMoveSheet={setMoveCandidate}
                     canDeleteSheet={sheetCount > 1}
                     onRequestDeleteSheet={onRequestDeleteSheet}
@@ -238,6 +274,9 @@ function GroupRows({
   onToggle,
   onLoadSheet,
   onMoveSection,
+  movementBySheetId,
+  onMoveSheet,
+  onMoveSheetToEnd,
   onRequestMoveSheet,
   canDeleteSheet,
   onRequestDeleteSheet
@@ -256,6 +295,12 @@ function GroupRows({
     sectionId: string,
     direction: DrawingSectionMoveDirection
   ) => void;
+  movementBySheetId: Map<
+    string,
+    { canMoveUp: boolean; canMoveDown: boolean }
+  >;
+  onMoveSheet: (sheetId: string, direction: -1 | 1) => void;
+  onMoveSheetToEnd: (sheetId: string) => void;
   onRequestMoveSheet: (row: SheetLoaderRow) => void;
   canDeleteSheet: boolean;
   onRequestDeleteSheet: (sheetId: string) => void;
@@ -267,14 +312,16 @@ function GroupRows({
           <div className="flex min-h-9 items-center gap-2">
             <button
               type="button"
-              className="icon-button h-7 w-7 shrink-0 p-0"
+              className="icon-button h-9 w-9 shrink-0 !border-sky-200 !bg-white !p-0 !text-sky-700 shadow-sm hover:!border-sky-400 hover:!bg-sky-50 hover:!text-sky-900"
               onClick={onToggle}
               aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${group.title}`}
+              aria-expanded={!isCollapsed}
+              title={`${isCollapsed ? "Expand" : "Collapse"} section`}
             >
               {isCollapsed ? (
-                <ChevronRight aria-hidden="true" size={14} />
+                <ChevronRight aria-hidden="true" size={20} strokeWidth={2.5} />
               ) : (
-                <ChevronDown aria-hidden="true" size={14} />
+                <ChevronDown aria-hidden="true" size={20} strokeWidth={2.5} />
               )}
             </button>
             <div className="min-w-0 flex-1">
@@ -344,6 +391,20 @@ function GroupRows({
                 >
                   <ChevronsDown aria-hidden="true" size={20} strokeWidth={2.25} />
                 </button>
+                <SheetRowActionMenu
+                  row={group.titlePage}
+                  canMoveUp={false}
+                  canMoveDown={false}
+                  canMoveToSection={false}
+                  canDelete={canDeleteSheet}
+                  showMovement={false}
+                  onMove={() => undefined}
+                  onMoveToEnd={() => undefined}
+                  onRequestMoveToSection={() => undefined}
+                  onDelete={() =>
+                    onRequestDeleteSheet(group.titlePage.sheetId)
+                  }
+                />
                 {titlePageIsActive ? (
                   <span className="inline-flex h-9 w-20 shrink-0 items-center justify-center rounded-md border border-sky-300 bg-sky-100 px-2 text-[11px] font-bold text-sky-800">
                     Active
@@ -363,19 +424,29 @@ function GroupRows({
         </td>
       </tr>
       {!isCollapsed
-        ? group.rows.map((row) => (
-            <SheetRow
-              key={row.sheetId}
-              row={row}
-              active={row.sheetId === activeSheetId}
-              indented={group.kind === "section"}
-              canMove={canMoveSheet}
-              onLoadSheet={onLoadSheet}
-              onRequestMove={onRequestMoveSheet}
-              canDelete={canDeleteSheet}
-              onRequestDelete={onRequestDeleteSheet}
-            />
-          ))
+        ? group.rows.map((row) => {
+            const movement = movementBySheetId.get(row.sheetId) ?? {
+              canMoveUp: false,
+              canMoveDown: false
+            };
+            return (
+              <SheetRow
+                key={row.sheetId}
+                row={row}
+                active={row.sheetId === activeSheetId}
+                indented={group.kind === "section"}
+                canMoveToSection={canMoveSheet}
+                canMoveUp={movement.canMoveUp}
+                canMoveDown={movement.canMoveDown}
+                onLoadSheet={onLoadSheet}
+                onMoveSheet={onMoveSheet}
+                onMoveSheetToEnd={onMoveSheetToEnd}
+                onRequestMoveToSection={onRequestMoveSheet}
+                canDelete={canDeleteSheet}
+                onRequestDelete={onRequestDeleteSheet}
+              />
+            );
+          })
         : null}
       {!isCollapsed && group.kind === "section" && group.rows.length === 0 ? (
         <tr className="border-b border-slate-100">
@@ -392,18 +463,26 @@ function SheetRow({
   row,
   active,
   indented,
-  canMove,
+  canMoveToSection,
+  canMoveUp,
+  canMoveDown,
   onLoadSheet,
-  onRequestMove,
+  onMoveSheet,
+  onMoveSheetToEnd,
+  onRequestMoveToSection,
   canDelete,
   onRequestDelete
 }: {
   row: SheetLoaderRow;
   active: boolean;
   indented: boolean;
-  canMove: boolean;
+  canMoveToSection: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
   onLoadSheet: (sheetId: string) => void;
-  onRequestMove: (row: SheetLoaderRow) => void;
+  onMoveSheet: (sheetId: string, direction: -1 | 1) => void;
+  onMoveSheetToEnd: (sheetId: string) => void;
+  onRequestMoveToSection: (row: SheetLoaderRow) => void;
   canDelete: boolean;
   onRequestDelete: (sheetId: string) => void;
 }) {
@@ -433,34 +512,26 @@ function SheetRow({
       </td>
       <td className="py-3 text-right">
         <div className="flex items-center justify-end gap-1">
-          <button
-            type="button"
-            className="icon-button h-8 w-8 p-0"
-            disabled={!canMove}
-            onClick={() => onRequestMove(row)}
-            aria-label={`Move ${row.name} to another section`}
-            title="Move to section"
-          >
-            <FolderInput aria-hidden="true" size={14} />
-          </button>
-          <button
-            type="button"
-            className="icon-button icon-button-danger h-8 w-8 p-0"
-            disabled={!canDelete}
-            onClick={() => onRequestDelete(row.sheetId)}
-            aria-label={`Delete ${row.name}`}
-            title="Delete sheet"
-          >
-            <Trash2 aria-hidden="true" size={14} />
-          </button>
+          <SheetRowActionMenu
+            row={row}
+            canMoveUp={canMoveUp}
+            canMoveDown={canMoveDown}
+            canMoveToSection={canMoveToSection}
+            canDelete={canDelete}
+            showMovement
+            onMove={(direction) => onMoveSheet(row.sheetId, direction)}
+            onMoveToEnd={() => onMoveSheetToEnd(row.sheetId)}
+            onRequestMoveToSection={() => onRequestMoveToSection(row)}
+            onDelete={() => onRequestDelete(row.sheetId)}
+          />
           {active ? (
-            <span className="inline-flex h-8 w-20 items-center justify-center rounded-md border border-sky-300 bg-sky-100 px-3 text-xs font-bold text-sky-800">
+            <span className="inline-flex h-9 w-20 items-center justify-center rounded-md border border-sky-300 bg-sky-100 px-3 text-xs font-bold text-sky-800">
               Active
             </span>
           ) : (
             <button
               type="button"
-              className="icon-button h-8 w-20 justify-center"
+              className="icon-button h-9 w-20 justify-center"
               onClick={() => onLoadSheet(row.sheetId)}
             >
               Load
@@ -469,5 +540,191 @@ function SheetRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+type SheetRowMenuAction = {
+  label: string;
+  icon: typeof ChevronUp;
+  disabled?: boolean;
+  danger?: boolean;
+  onSelect: () => void;
+};
+
+function SheetRowActionMenu({
+  row,
+  canMoveUp,
+  canMoveDown,
+  canMoveToSection,
+  canDelete,
+  showMovement,
+  onMove,
+  onMoveToEnd,
+  onRequestMoveToSection,
+  onDelete
+}: {
+  row: SheetLoaderRow;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  canMoveToSection: boolean;
+  canDelete: boolean;
+  showMovement: boolean;
+  onMove: (direction: -1 | 1) => void;
+  onMoveToEnd: () => void;
+  onRequestMoveToSection: () => void;
+  onDelete: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const actions: SheetRowMenuAction[] = [
+    ...(showMovement
+      ? [
+          {
+            label: "Move up",
+            icon: ChevronUp,
+            disabled: !canMoveUp,
+            onSelect: () => onMove(-1)
+          },
+          {
+            label: "Move down",
+            icon: ChevronDown,
+            disabled: !canMoveDown,
+            onSelect: () => onMove(1)
+          },
+          {
+            label: "Move to end",
+            icon: ChevronsDown,
+            disabled: !canMoveDown,
+            onSelect: onMoveToEnd
+          },
+          {
+            label: "Move to another section",
+            icon: FolderInput,
+            disabled: !canMoveToSection,
+            onSelect: onRequestMoveToSection
+          }
+        ]
+      : []),
+    {
+      label: "Delete",
+      icon: Trash2,
+      disabled: !canDelete,
+      danger: true,
+      onSelect: onDelete
+    }
+  ];
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target instanceof Node ? event.target : null;
+      if (target && rootRef.current?.contains(target)) return;
+      setIsOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () =>
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [isOpen]);
+
+  const focusItem = (index: number) => {
+    const enabledItems = itemRefs.current.filter(
+      (item): item is HTMLButtonElement => Boolean(item && !item.disabled)
+    );
+    if (enabledItems.length === 0) return;
+    enabledItems[(index + enabledItems.length) % enabledItems.length]?.focus();
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+    const enabledItems = itemRefs.current.filter(
+      (item): item is HTMLButtonElement => Boolean(item && !item.disabled)
+    );
+    const activeIndex = enabledItems.findIndex(
+      (item) => item === document.activeElement
+    );
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusItem(activeIndex + 1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      focusItem(activeIndex - 1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      focusItem(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      focusItem(enabledItems.length - 1);
+    }
+  };
+
+  return (
+    <div ref={rootRef} className="sheet-row-action-menu">
+      <button
+        ref={triggerRef}
+        type="button"
+        className="icon-button h-9 w-9 p-0"
+        aria-label={`Actions for ${row.name || `Sheet ${row.sheetNumber}`}`}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-controls={menuId}
+        onClick={() => setIsOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && isOpen) {
+            event.preventDefault();
+            event.stopPropagation();
+            setIsOpen(false);
+          } else if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setIsOpen(true);
+            window.requestAnimationFrame(() => focusItem(0));
+          }
+        }}
+      >
+        <MoreVertical aria-hidden="true" size={18} />
+      </button>
+      {isOpen ? (
+        <div
+          id={menuId}
+          className="sheet-row-action-menu-panel"
+          role="menu"
+          onKeyDown={handleKeyDown}
+        >
+          {actions.map((action, index) => {
+            const Icon = action.icon;
+            return (
+              <button
+                key={action.label}
+                ref={(element) => {
+                  itemRefs.current[index] = element;
+                }}
+                type="button"
+                className={[
+                  "sheet-row-action-menu-item",
+                  action.danger ? "sheet-row-action-menu-item-danger" : ""
+                ].join(" ")}
+                role="menuitem"
+                disabled={action.disabled}
+                onClick={() => {
+                  setIsOpen(false);
+                  action.onSelect();
+                }}
+              >
+                <Icon aria-hidden="true" size={17} />
+                {action.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }

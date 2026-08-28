@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { prisma } from "../../src/lib/prisma";
 import { parseMetadataJson } from "../../src/features/symbol_registry/data/schema";
-import { updateSymbolNetworkProfile } from "../../src/features/symbol_registry/data/mutations";
 
 const managedSwitchSvg = `
 <svg viewBox="0 0 180 110" xmlns="http://www.w3.org/2000/svg">
@@ -16,6 +15,15 @@ const managedSwitchSvg = `
 </svg>`;
 
 test("imports a managed four-port network switch", async ({ page }) => {
+  const keyWarnings: string[] = [];
+  page.on("console", (message) => {
+    if (
+      message.type() === "error" &&
+      message.text().includes('Each child in a list should have a unique "key" prop')
+    ) {
+      keyWarnings.push(message.text());
+    }
+  });
   const runId = Date.now().toString();
   const symbolName = `Managed Network Switch ${runId}`;
   const symbolKey = `managed_network_switch_${runId}`;
@@ -107,10 +115,8 @@ test("imports a managed four-port network switch", async ({ page }) => {
   await page.getByLabel("Model", { exact: true }).fill("NWS-4F");
   await page.getByLabel("Network port label ETH1").fill("Primary uplink");
   await page.getByLabel("Network port media ETH1").selectOption("fiber");
-  await page.getByRole("button", { name: "Save network profile" }).click();
-  await expect(
-    page.getByText("Network profile updated. Validation was refreshed.")
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Symbol metadata saved.")).toBeVisible();
   await expect(page.getByText("No validation issues found.")).toBeVisible();
 
   const symbol = await prisma.symbol.findUnique({
@@ -157,49 +163,69 @@ test("imports a managed four-port network switch", async ({ page }) => {
   });
 
   const approvedVersionId = version?.id;
-  const approvedMetadataJson = version?.metadataJson;
+  const approvedSvg = version?.svg;
 
   await expect(page.getByRole("button", { name: "Approve" })).toBeEnabled();
   await page.getByRole("button", { name: "Approve" }).click();
   await expect(page.getByText("Approved", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("This version is approved and its content is read-only.")
+    page.getByText(
+      "Approved metadata can be updated. SVG artwork and Figma-authored geometry remain controlled."
+    )
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Save network profile" })
-  ).toHaveCount(0);
+    page.getByRole("button", { name: "Save changes" })
+  ).toBeDisabled();
 
   await page.reload();
   await expect(page.getByText("Approved", { exact: true })).toBeVisible();
-  await expect(page.getByText("Primary uplink", { exact: true })).toBeVisible();
+  const updatedSymbolName = `${symbolName} Updated`;
+  await page.getByLabel("Symbol name").fill(updatedSymbolName);
+  await page
+    .getByLabel("Symbol description")
+    .fill("Approved managed switch for the control network.");
+  await expect(page.getByLabel("Network port label ETH1")).toHaveValue(
+    "Primary uplink"
+  );
+  await page
+    .getByLabel("Manufacturer", { exact: true })
+    .fill("Changed after approval");
   await expect(
-    page.getByRole("button", { name: "Save network profile" })
-  ).toHaveCount(0);
+    page.getByRole("button", { name: "Save changes" })
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Symbol metadata saved.")).toBeVisible();
+  await expect(page.getByText("Approved", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: updatedSymbolName, exact: true })
+  ).toBeVisible();
+  await expect(page.getByLabel("Symbol description")).toHaveValue(
+    "Approved managed switch for the control network."
+  );
+  expect(keyWarnings).toEqual([]);
 
   const approvedSymbol = await prisma.symbol.findUnique({
     where: { symbolKey },
     include: {
       versions: {
-        orderBy: { versionNumber: "desc" },
-        take: 1
+        orderBy: { versionNumber: "desc" }
       }
     }
   });
   const approvedVersion = approvedSymbol?.versions[0];
 
   expect(approvedSymbol?.status).toBe("approved");
+  expect(approvedSymbol?.displayName).toBe(updatedSymbolName);
+  expect(approvedSymbol?.manufacturer).toBe("Changed after approval");
+  expect(approvedSymbol?.versions).toHaveLength(1);
   expect(approvedVersion?.status).toBe("approved");
   expect(approvedVersion?.id).toBe(approvedVersionId);
-  expect(approvedVersion?.metadataJson).toBe(approvedMetadataJson);
-
-  await expect(
-    updateSymbolNetworkProfile({
-      versionId: approvedVersionId ?? "",
-      manufacturer: "Changed after approval",
-      model: "NWS-4F",
-      networkProfile: metadata.networkProfile!
-    })
-  ).rejects.toThrow(/immutable/i);
+  expect(approvedVersion?.svg).toBe(approvedSvg);
+  expect(parseMetadataJson(approvedVersion?.metadataJson ?? "")).toMatchObject({
+    displayName: updatedSymbolName,
+    description: "Approved managed switch for the control network.",
+    manufacturer: "Changed after approval"
+  });
 
   const sourceDataUrl = symbol?.sourceAssets[0]?.dataUrl ?? "";
   const encodedSource = sourceDataUrl.split(",", 2)[1] ?? "";

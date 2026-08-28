@@ -10,16 +10,28 @@ import {
   toSvgPoint
 } from "../utils/canvasGeometry";
 import {
+  constrainPanelEnclosureDimensions,
   isGeneratedPanelEnclosurePlacement,
   resizePanelEnclosure
 } from "../../../logic/services/drawing-asset-containment";
+import {
+  isPanelConnectionViewPlacement,
+  resizePanelConnectionView
+} from "../../../logic/services/drawing-panel-connection-views";
 import {
   isBackplanePlacement,
   isLayoutHelperPlacement,
   resizeBackplane
 } from "../../../logic/services/drawing-backplane-layouts";
-import { resizeLayoutHelperFromDisplayBounds } from "../../../logic/services/drawing-backplane-scale";
+import {
+  getBackplaneDisplayBounds,
+  getParentPanelForBackplane,
+  resolveLayoutHelperDisplayPlacement,
+  resizeLayoutHelperFromDisplayBounds
+} from "../../../logic/services/drawing-backplane-scale";
 import { getRenderableSymbolForPlacement } from "../../../logic/services/drawing-generated-symbols";
+import { getRotatedPlacementBounds } from "../../../logic/services/drawing-geometry";
+import { placementAssetId } from "../../../logic/services/drawing-asset-identity";
 import {
   isLayoutDimensionPlacement,
   resolveLayoutDimensionPointerUpdate
@@ -92,6 +104,10 @@ export function usePlacementResize({
         toleranceMm: resolveDimensionSnapToleranceMm({
           sheet: model.sheet,
           backplane,
+          parentPanel: getParentPanelForBackplane(
+            model.placements,
+            backplane
+          ),
           screenScale
         })
       };
@@ -111,15 +127,98 @@ export function usePlacementResize({
         (candidate) => candidate.id === resizeState.placementId
       );
 
+      if (isPanelConnectionViewPlacement(placement)) {
+        const displayUpdate = calculatePanelEnclosureResizeUpdate(
+          resizeState,
+          toSvgPoint(event, model.sheet),
+          1
+        );
+        onPlacementChange(
+          placement.id,
+          resizePanelConnectionView({
+            model,
+            placement,
+            x: displayUpdate.x,
+            y: displayUpdate.y,
+            width: displayUpdate.width,
+            height: displayUpdate.height,
+            symbols
+          })
+        );
+        return;
+      }
+
       if (isGeneratedPanelEnclosurePlacement(placement)) {
+        const physicalScaleFactor = resizeState.physicalScaleFactor ?? 1;
+        const displayUpdate = calculatePanelEnclosureResizeUpdate(
+          resizeState,
+          toSvgPoint(event, model.sheet),
+          physicalScaleFactor
+        );
+        const backplaneById = new Map(
+          model.placements
+            .filter(isBackplanePlacement)
+            .map((candidate) => [candidate.id, candidate])
+        );
+        const containedBounds = model.placements.flatMap((candidate) => {
+          if (
+            candidate.containerAssetId !== placementAssetId(placement) ||
+            candidate.id === placement.id
+          ) {
+            return [];
+          }
+
+          if (isBackplanePlacement(candidate)) {
+            return [getBackplaneDisplayBounds(model.sheet, candidate, placement)];
+          }
+
+          const symbol = getRenderableSymbolForPlacement(candidate, symbols);
+
+          if (!symbol) {
+            return [];
+          }
+
+          const parentBackplane = candidate.layoutParentId
+            ? backplaneById.get(candidate.layoutParentId)
+            : undefined;
+          const displayPlacement = parentBackplane
+            ? resolveLayoutHelperDisplayPlacement({
+                sheet: model.sheet,
+                placement: candidate,
+                backplane: parentBackplane,
+                parentPanel: placement
+              })
+            : candidate;
+
+          return [getRotatedPlacementBounds(displayPlacement, symbol.metadata)];
+        });
+        const constrained = constrainPanelEnclosureDimensions({
+          placement,
+          sheet: model.sheet,
+          containedBounds,
+          width: displayUpdate.width / physicalScaleFactor,
+          height: displayUpdate.height / physicalScaleFactor
+        });
+        const constrainedDisplayWidth = constrained.width * physicalScaleFactor;
+        const constrainedDisplayHeight = constrained.height * physicalScaleFactor;
+        const x =
+          resizeState.handle === "nw" || resizeState.handle === "sw"
+            ? resizeState.fixedPoint.x - constrainedDisplayWidth
+            : resizeState.fixedPoint.x;
+        const y =
+          resizeState.handle === "nw" || resizeState.handle === "ne"
+            ? resizeState.fixedPoint.y - constrainedDisplayHeight
+            : resizeState.fixedPoint.y;
         onPlacementChange(
           resizeState.placementId,
           resizePanelEnclosure(
             placement,
-            calculatePanelEnclosureResizeUpdate(
-              resizeState,
-              toSvgPoint(event, model.sheet)
-            )
+            {
+              x,
+              y,
+              width: constrained.width,
+              height: constrained.height
+            }
           )
         );
         return;
@@ -217,6 +316,9 @@ export function usePlacementResize({
                   isBackplanePlacement(candidate)
               )
             : undefined;
+        const parentPanel = parentBackplane
+          ? getParentPanelForBackplane(model.placements, parentBackplane)
+          : undefined;
 
         onPlacementChange(
           resizeState.placementId,
@@ -226,12 +328,13 @@ export function usePlacementResize({
                 y: dimensionUpdate.y,
                 width: dimensionUpdate.layoutDimensions.lengthMm,
                 height: dimensionUpdate.layoutDimensions.widthMm
-              })
+              }, resizeState.physicalScaleFactor)
             : parentBackplane
               ? resizeLayoutHelperFromDisplayBounds({
                   sheet: model.sheet,
                   placement,
                   backplane: parentBackplane,
+                  parentPanel,
                   bounds: {
                     x: dimensionUpdate.x,
                     y: dimensionUpdate.y,

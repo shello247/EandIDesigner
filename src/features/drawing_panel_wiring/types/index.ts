@@ -1,6 +1,7 @@
 import type {
   PanelBondRecord,
   PanelBridgeRecord,
+  PanelConnectionDisplayMode,
   PanelDrawingQualityFinding,
   PanelElectricalDomain,
   PanelFindingLocation,
@@ -52,11 +53,13 @@ export type {
   PanelTerminalSideRef,
   PanelWireAttributes,
   PanelWireIdPolicy,
+  PanelWireNumberSettings,
   PanelWireSettings,
   PanelWiringMutation,
   PanelWiringPackageData,
   PanelWiringSourceAsset,
   PanelWiringSourceConnection,
+  PanelWiringSourceElectricalTopology,
   PanelWiringSourceOccurrence,
   PanelWiringSourcePackage,
   PanelWiringSourceSheet,
@@ -98,6 +101,75 @@ export type PanelTerminalSideNode = {
   id: string;
   ref: PanelTerminalSideRef;
   terminalId: string;
+};
+
+export type PanelElectricalNode =
+  | {
+      id: string;
+      kind: "terminal_side";
+      terminal: PanelTerminalSideRef;
+    }
+  | {
+      id: string;
+      kind: "panel_reference";
+      panelAssetId: string;
+      referenceKind: "shield" | "protective_earth" | "signal_ground";
+      key?: string;
+    };
+
+export type PanelConductiveRelationshipKind =
+  | "terminal_body"
+  | "registry_continuity"
+  | "drawing_connection"
+  | "internal_wire"
+  | "bridge"
+  | "bond";
+
+export type PanelConductiveRelationshipProvenance = {
+  label: string;
+  assetId?: string;
+  panelAssetId?: string;
+  sheetId?: string;
+  sheetNumber?: number;
+  sheetName?: string;
+  connectionId?: string;
+  wireId?: string;
+  cableTag?: string;
+  conductorKey?: string;
+  symbolId?: string;
+  versionId?: string;
+  continuityGroupKey?: string;
+  continuityGroupLabel?: string;
+  recordId?: string;
+};
+
+export type PanelConductiveRelationship = {
+  id: string;
+  kind: PanelConductiveRelationshipKind;
+  nodeIds: string[];
+  provenance: PanelConductiveRelationshipProvenance;
+};
+
+export type PanelElectricalNet = {
+  id: string;
+  nodeIds: string[];
+  relationshipIds: string[];
+  terminalSideIds: string[];
+  assetIds: string[];
+  panelAssetIds: string[];
+};
+
+export type PanelElectricalPathStep = {
+  fromNodeId: string;
+  toNodeId: string;
+  relationship: PanelConductiveRelationship;
+};
+
+export type PanelElectricalPath = {
+  netId: string;
+  fromNodeId: string;
+  toNodeId: string;
+  steps: PanelElectricalPathStep[];
 };
 
 export type PanelExternalTermination = {
@@ -146,6 +218,51 @@ export type PanelExternalTerminationDisplayRow = {
   };
 };
 
+export type PlacementWireContextRequest = {
+  sheetId: string;
+  placementId: string;
+  mode: PanelConnectionDisplayMode;
+};
+
+export type PlacementWireContextDisplayRow = {
+  placementId: string;
+  anchorKey: string;
+  physicalPosition?: PanelWirePhysicalPosition;
+  canonicalKind: "field_connection" | "internal_wire";
+  canonicalId: string;
+  fieldConnectionId?: string;
+  direction: "incoming" | "outgoing";
+  wireId: string;
+  externalTerminationId?: string;
+  cableTag?: string;
+  conductorKey?: string;
+  oppositeEndpoint: {
+    assetTag: string;
+    terminalKey: string;
+  };
+  sourceSheet?: {
+    id: string;
+    number: number;
+    name: string;
+  };
+};
+
+export type PlacementWireContextSummary = {
+  placementId: string;
+  visibleCount: number;
+  internalVisibleCount: number;
+  externalVisibleCount: number;
+  unresolvedCount: number;
+};
+
+export type PlacementWireContextDisplayIndex = {
+  rowsBySheetId: ReadonlyMap<string, PlacementWireContextDisplayRow[]>;
+  summariesBySheetPlacement: ReadonlyMap<
+    string,
+    PlacementWireContextSummary
+  >;
+};
+
 export type PanelDiscoveryStatus =
   | "available"
   | "represented"
@@ -164,6 +281,19 @@ export type PanelSourceOccurrenceRef = {
   versionId: string;
 };
 
+export type PanelEquipmentSequence = {
+  position: number;
+  row: number;
+  column: number;
+  sourceSheetId: string;
+  backplanePlacementId: string;
+};
+
+export type PanelEquipmentSequenceIndex = {
+  sequenceByAssetId: ReadonlyMap<string, PanelEquipmentSequence>;
+  duplicateLayoutAssetIds: ReadonlySet<string>;
+};
+
 export type PanelAssociatedAssetCatalogRow = {
   assetId: string;
   tag: string;
@@ -171,9 +301,16 @@ export type PanelAssociatedAssetCatalogRow = {
   type: PanelWiringSourceAsset["type"];
   status: PanelDiscoveryStatus;
   terminalCount: number;
+  terminalUsage: {
+    used: number;
+    unused: number;
+    total: number;
+  };
   representedPlacementId?: string;
   representationSource?: PanelSourceOccurrenceRef;
   sourceOccurrences: PanelSourceOccurrenceRef[];
+  panelSequence?: PanelEquipmentSequence;
+  panelSequenceWarning?: string;
   disabledReason?: string;
 };
 
@@ -260,6 +397,7 @@ export type PanelTerminalOccupant = {
   label: string;
   channel?: "conductor" | "structural";
   ownerPatternId?: string;
+  wireNumber?: number;
   wireId?: string;
   cableTag?: string;
   conductorKey?: string;
@@ -343,76 +481,6 @@ export type PanelDiscoverySnapshot = {
   warnings: PanelConnectivityFinding[];
 };
 
-export type PanelGuidedWorkflowStepId =
-  | "place-representation"
-  | "review-terminations"
-  | "create-internal-wiring"
-  | "engineering-review"
-  | "deliverables";
-
-export type PanelGuidedWorkflowStepStatus =
-  | "complete"
-  | "ready"
-  | "needs_action"
-  | "blocked"
-  | "optional";
-
-export type PanelAssetWorkflowStatus =
-  | "blocked"
-  | "not_placed"
-  | "needs_mapping"
-  | "needs_internal_wiring"
-  | "ready";
-
-export type PanelAssetWorkflowRow = {
-  assetId: string;
-  tag: string;
-  title: string;
-  status: PanelAssetWorkflowStatus;
-  representedPlacementId?: string;
-  terminationCount: number;
-  unresolvedMappingCount: number;
-  requiredConnectionCount: number;
-  missingRequiredConnectionCount: number;
-  blockingReason?: string;
-};
-
-export type PanelGuidedWorkflowStep = {
-  id: PanelGuidedWorkflowStepId;
-  label: string;
-  description: string;
-  status: PanelGuidedWorkflowStepStatus;
-  count?: number;
-};
-
-export type PanelGuidedWorkflowAction =
-  | { kind: "select_asset"; assetId: string }
-  | { kind: "open_step"; stepId: PanelGuidedWorkflowStepId }
-  | { kind: "next_asset"; assetId: string }
-  | { kind: "none" };
-
-export type PanelWorkflowFilteredRecords = {
-  asset?: PanelAssociatedAssetCatalogRow;
-  terminations: ExternalTerminationMappingRow[];
-  terminals: PanelTerminalCatalogRow[];
-  internalWires: PanelInternalWireCatalogRow[];
-  connectionPatterns: PanelConnectionPatternCatalogRow[];
-};
-
-export type PanelGuidedWorkflowSnapshot = {
-  panelAssetId: string;
-  detailedSheetId: string;
-  persistedFocusAssetId?: string;
-  focusAssetId?: string;
-  staleFocusAssetId?: string;
-  assets: PanelAssetWorkflowRow[];
-  steps: PanelGuidedWorkflowStep[];
-  nextAction: PanelGuidedWorkflowAction;
-  readyAssetCount: number;
-  totalAssetCount: number;
-  allAssetsReady: boolean;
-};
-
 export type PanelComponentSymbol = {
   symbolId: string;
   versionId: string;
@@ -434,6 +502,7 @@ export type PanelComponentPaletteGroup =
   | "relays"
   | "power"
   | "control_io"
+  | "networking"
   | "isolation_conversion"
   | "terminal_blocks"
   | "earth_ground"
@@ -589,6 +658,14 @@ export type PanelConnectivityGraph = {
   internalWiresById: ReadonlyMap<string, PanelInternalWireRecord>;
   bridgesById: ReadonlyMap<string, PanelBridgeRecord>;
   bondsById: ReadonlyMap<string, PanelBondRecord>;
+  electricalNodesById: ReadonlyMap<string, PanelElectricalNode>;
+  conductiveRelationshipsById: ReadonlyMap<
+    string,
+    PanelConductiveRelationship
+  >;
+  relationshipIdsByElectricalNodeId: ReadonlyMap<string, string[]>;
+  electricalNetsById: ReadonlyMap<string, PanelElectricalNet>;
+  electricalNetIdByNodeId: ReadonlyMap<string, string>;
   findings: PanelConnectivityFinding[];
 };
 
@@ -609,6 +686,8 @@ export type PanelConnectivitySnapshot = {
   internalWires: PanelInternalWireRecord[];
   bridges: PanelBridgeRecord[];
   bonds: PanelBondRecord[];
+  electricalNets: PanelElectricalNet[];
+  conductiveRelationships: PanelConductiveRelationship[];
   findings: PanelConnectivityFinding[];
 };
 

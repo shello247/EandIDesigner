@@ -47,9 +47,9 @@ export function buildPanelDiscoveryIndex({
     detailedSheetId,
     representedPlacementIdsByAssetId
   };
-  const assets = buildPanelAssociatedAssetCatalog(context);
-  const terminations = buildExternalTerminationCatalog(context, assets);
   const terminalCatalog = buildPanelTerminalCatalog({ graph, panelAssetId });
+  const assets = buildPanelAssociatedAssetCatalog(context, terminalCatalog);
+  const terminations = buildExternalTerminationCatalog(context, assets);
   const mappingRows = buildExternalTerminationMappingRows({
     graph,
     panelAssetId,

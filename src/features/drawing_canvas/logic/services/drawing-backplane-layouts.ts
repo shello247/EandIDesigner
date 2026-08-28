@@ -4,8 +4,10 @@ import type {
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import {
+  getPanelEnclosureDisplayBounds,
   getPanelEnclosureBounds,
-  getPanelEnclosureTitle
+  getPanelEnclosureTitle,
+  resolvePanelEnclosureLayoutScale
 } from "./drawing-asset-containment";
 import { placementAssetId } from "./drawing-asset-identity";
 import {
@@ -99,9 +101,12 @@ export function isLayoutHelperPlacement(
 }
 
 export function getBackplanePlacementArea(
-  panelPlacement: DrawingPlacement
+  panelPlacement: DrawingPlacement,
+  sheet?: DrawingSheetCanvasModel["sheet"]
 ): Bounds {
-  const panelBounds = getPanelEnclosureBounds(panelPlacement);
+  const panelBounds = sheet
+    ? getPanelEnclosureDisplayBounds(sheet, panelPlacement)
+    : getPanelEnclosureBounds(panelPlacement);
   const headerHeight = panelHeaderHeight(panelBounds);
   const x = panelBounds.x + BACKPLANE_MARGIN;
   const y =
@@ -123,14 +128,59 @@ export function getBackplanePlacementArea(
   };
 }
 
+export function getBackplanePhysicalPlacementArea(
+  panelPlacement: DrawingPlacement,
+  sheet: DrawingSheetCanvasModel["sheet"]
+): Bounds {
+  const physicalBounds = getPanelEnclosureBounds(panelPlacement);
+  const displayBounds = getPanelEnclosureDisplayBounds(sheet, panelPlacement);
+  const scale = resolvePanelEnclosureLayoutScale(sheet, panelPlacement);
+  const headerHeightMm = panelHeaderHeight(displayBounds) / scale.factor;
+
+  return {
+    x: BACKPLANE_MARGIN,
+    y: round(
+      headerHeightMm + BACKPLANE_MARGIN + BACKPLANE_HEADER_CLEARANCE
+    ),
+    width: round(
+      Math.max(
+        MIN_BACKPLANE_WIDTH,
+        physicalBounds.width - BACKPLANE_MARGIN * 2
+      )
+    ),
+    height: round(
+      Math.max(
+        MIN_BACKPLANE_HEIGHT,
+        physicalBounds.height -
+          headerHeightMm -
+          BACKPLANE_MARGIN * 2 -
+          BACKPLANE_HEADER_CLEARANCE
+      )
+    )
+  };
+}
+
 export function createBackplanePlacement({
   panelPlacement,
+  sheet,
   id = `bp_${Date.now()}`
 }: {
   panelPlacement: DrawingPlacement;
+  sheet?: DrawingSheetCanvasModel["sheet"];
   id?: string;
 }): DrawingPlacement {
-  const bounds = getBackplanePlacementArea(panelPlacement);
+  const bounds = sheet
+    ? getBackplanePhysicalPlacementArea(panelPlacement, sheet)
+    : getBackplanePlacementArea(panelPlacement);
+  const panelScale = sheet
+    ? resolvePanelEnclosureLayoutScale(sheet, panelPlacement)
+    : undefined;
+  const x = panelScale
+    ? round(panelPlacement.x + bounds.x * panelScale.factor)
+    : bounds.x;
+  const y = panelScale
+    ? round(panelPlacement.y + bounds.y * panelScale.factor)
+    : bounds.y;
 
   return {
     id,
@@ -140,14 +190,20 @@ export function createBackplanePlacement({
     tag: BACKPLANE_LABEL,
     title: getPanelEnclosureTitle(panelPlacement),
     containerAssetId: placementAssetId(panelPlacement),
-    x: bounds.x,
-    y: bounds.y,
+    x,
+    y,
     rotation: 0,
     scale: 1,
     layoutKind: "backplane",
     layoutScale: {
       mode: "auto"
     },
+    layoutPosition: sheet
+      ? {
+          xMm: bounds.x,
+          yMm: bounds.y
+        }
+      : undefined,
     layoutDimensions: {
       lengthMm: bounds.width,
       widthMm: bounds.height
@@ -189,14 +245,31 @@ export function getLayoutChildrenForBackplane(
 export function resizeBackplane(
   model: DrawingSheetCanvasModel,
   placement: DrawingPlacement,
-  updates: Bounds
+  updates: Bounds,
+  scaleFactor?: number
 ): DrawingPlacement {
-  const scale = resolveBackplaneLayoutScale(model.sheet, placement);
+  const parentPanel = model.placements.find(
+    (candidate) =>
+      candidate.role === "enclosure" &&
+      placement.containerAssetId === placementAssetId(candidate)
+  );
+  const scale = scaleFactor
+    ? { factor: scaleFactor }
+    : resolveBackplaneLayoutScale(model.sheet, placement, parentPanel);
+  const panelBounds = parentPanel
+    ? getPanelEnclosureDisplayBounds(model.sheet, parentPanel)
+    : undefined;
 
   return {
     ...placement,
     x: round(updates.x),
     y: round(updates.y),
+    layoutPosition: parentPanel && panelBounds
+      ? {
+          xMm: round((updates.x - panelBounds.x) / scale.factor),
+          yMm: round((updates.y - panelBounds.y) / scale.factor)
+        }
+      : placement.layoutPosition,
     layoutDimensions: {
       lengthMm: round(Math.max(MIN_BACKPLANE_WIDTH, updates.width / scale.factor)),
       widthMm: round(Math.max(MIN_BACKPLANE_HEIGHT, updates.height / scale.factor))
@@ -221,8 +294,8 @@ export function shouldAutosizeLayoutSymbolToBackplane(
 ): boolean {
   return (
     symbol.metadata.resizable === true ||
-    symbol.metadata.panelCategory === "rail" ||
-    symbol.metadata.panelCategory === "ducting"
+    (symbol.technicalKind ?? symbol.category) === "rail" ||
+    (symbol.technicalKind ?? symbol.category) === "ducting"
   );
 }
 
@@ -260,12 +333,14 @@ export function autosizeLayoutHelperToBackplane({
   placement,
   backplane,
   symbol,
-  sheet
+  sheet,
+  parentPanel
 }: {
   placement: DrawingPlacement;
   backplane: DrawingPlacement;
   symbol: ApprovedDrawingSymbol;
   sheet?: DrawingSheetCanvasModel["sheet"];
+  parentPanel?: DrawingPlacement;
 }): DrawingPlacement {
   const usable = getBackplaneUsableBounds(backplane);
   const widthMm =
@@ -305,10 +380,11 @@ export function autosizeLayoutHelperToBackplane({
 
   if (sheet) {
     const displayPlacement = resolveLayoutHelperDisplayPlacement({
-        sheet,
-        placement: physicalPlacement,
-        backplane
-      });
+      sheet,
+      placement: physicalPlacement,
+      backplane,
+      parentPanel
+    });
 
     return {
       ...physicalPlacement,
@@ -344,14 +420,19 @@ export function containedPlacementIdsForBackplanes(
 
 export function renderBackplanePlacement(
   placement: DrawingPlacement,
-  sheet: DrawingSheetCanvasModel["sheet"]
+  sheet: DrawingSheetCanvasModel["sheet"],
+  parentPanel?: DrawingPlacement
 ): string {
   if (!isBackplanePlacement(placement)) {
     return "";
   }
 
-  const bounds = getBackplaneDisplayBounds(sheet, placement);
-  const usable = getBackplaneDisplayUsableBounds(sheet, placement);
+  const bounds = getBackplaneDisplayBounds(sheet, placement, parentPanel);
+  const usable = getBackplaneDisplayUsableBounds(
+    sheet,
+    placement,
+    parentPanel
+  );
 
   return `
     <g data-placement-id="${placement.id}" data-backplane="true" pointer-events="none">

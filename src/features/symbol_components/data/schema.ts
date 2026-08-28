@@ -61,11 +61,6 @@ export const drawingComponentSelectionsSchema = z
   .array(drawingComponentSelectionSchema)
   .max(100);
 
-export const updateSymbolComponentsInputSchema = z.object({
-  versionId: z.string().trim().min(1),
-  componentPositions: symbolComponentPositionsSchema
-});
-
 export type SymbolComponentBox = z.infer<typeof symbolComponentBoxSchema>;
 export type SymbolComponentDefinition = z.infer<
   typeof symbolComponentDefinitionSchema
@@ -80,6 +75,3 @@ export type DrawingComponentSelection = {
   versionId: string;
   children?: DrawingComponentSelection[];
 };
-export type UpdateSymbolComponentsInput = z.infer<
-  typeof updateSymbolComponentsInputSchema
->;

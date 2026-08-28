@@ -202,7 +202,10 @@ export function buildPanelTerminalCatalog({
       appendOccupant(occupantsBySideId, endpoint, {
         id: `${wire.id}:${endpointRole}`,
         kind: "internal_wire",
-        label: wire.wireId,
+        label: wire.wireNumber
+          ? String(wire.wireNumber).padStart(3, "0")
+          : wire.wireId,
+        wireNumber: wire.wireNumber,
         wireId: wire.wireId,
         channel: "conductor",
         ownerPatternId: wire.ownerPatternId

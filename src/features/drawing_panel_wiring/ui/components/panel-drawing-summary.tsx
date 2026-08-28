@@ -1,49 +1,27 @@
-import { ChevronRight, CircuitBoard, ClipboardList } from "lucide-react";
+import { ChevronRight, CircuitBoard, PackagePlus } from "lucide-react";
 import type { ReactNode } from "react";
-
-function nextWorkflowLabel(
-  workflow: PanelGuidedWorkflowSnapshot | undefined
-): string {
-  if (!workflow) return "Choose equipment";
-  const action = workflow.nextAction;
-
-  if (action.kind === "open_step") {
-    return (
-      workflow.steps.find((step) => step.id === action.stepId)?.label ??
-      "Continue"
-    );
-  }
-  if (action.kind === "next_asset") {
-    return "Choose next equipment";
-  }
-  if (action.kind === "select_asset") return "Choose equipment";
-  return "No pending work";
-}
 import type {
   DetailedPanelDrawingContextView,
-  PanelDiscoveryIndex,
-  PanelGuidedWorkflowSnapshot
+  PanelDiscoveryIndex
 } from "../../api/public";
 
 export function PanelDrawingSummary({
   context,
   warning,
   discovery,
-  workflow,
   onOpenWorkQueue,
   headerAction
 }: {
   context?: DetailedPanelDrawingContextView;
   warning?: string;
   discovery?: PanelDiscoveryIndex;
-  workflow?: PanelGuidedWorkflowSnapshot;
   onOpenWorkQueue?: () => void;
   headerAction?: ReactNode;
 }) {
-  const focusedAsset = workflow?.assets.find(
-    (asset) => asset.assetId === workflow.focusAssetId
-  );
-  const nextStep = nextWorkflowLabel(workflow);
+  const equipment = discovery ? [...discovery.assetsById.values()] : [];
+  const representedEquipmentCount = equipment.filter(
+    (asset) => asset.status === "represented"
+  ).length;
 
   return (
     <section className="tool-panel overflow-hidden">
@@ -106,39 +84,23 @@ export function PanelDrawingSummary({
                 )}
               </div>
             </details>
-            {discovery && workflow && onOpenWorkQueue ? (
+            {discovery && onOpenWorkQueue ? (
               <div className="space-y-2 border-t border-slate-200 pt-3">
-                <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px]">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-bold text-slate-500">Working on</span>
-                    <span className="flex items-center gap-2">
-                      <span className="font-bold text-slate-900">
-                        {focusedAsset?.tag ?? "Not selected"}
-                      </span>
-                      <button
-                        type="button"
-                        className="font-bold text-teal-700 hover:text-teal-900"
-                        onClick={onOpenWorkQueue}
-                      >
-                        Change
-                      </button>
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-bold text-slate-500">Progress</span>
-                    <span className="text-slate-700">{workflow.readyAssetCount}/{workflow.totalAssetCount} ready</span>
-                  </div>
-                  <div className="border-t border-slate-200 pt-2 text-slate-600">
-                    <span className="font-bold text-slate-800">Next step: </span>{nextStep}
-                  </div>
+                <div className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px]">
+                  <span className="font-bold text-slate-500">
+                    Equipment on sheet
+                  </span>
+                  <span className="font-bold text-slate-900">
+                    {representedEquipmentCount}/{equipment.length}
+                  </span>
                 </div>
                 <button
                   type="button"
                   className="icon-button icon-button-primary w-full"
                   onClick={onOpenWorkQueue}
                 >
-                  <ClipboardList aria-hidden="true" size={14} />
-                  Wiring wizard
+                  <PackagePlus aria-hidden="true" size={14} />
+                  Panel equipment
                 </button>
               </div>
             ) : null}

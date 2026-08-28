@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {"ignoreDeprecations": "6.0", "incremental": false},
+  "include": ["./*.ts", "../../src/features/drawing_canvas/logic/services/drawing-performance-diagnostics.ts"],
+  "exclude": ["../../node_modules"]
+}

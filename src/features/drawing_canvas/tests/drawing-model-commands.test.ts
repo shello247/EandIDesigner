@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 import {
   createDefaultDrawingModel,
   type DrawingSheetCanvasModel
@@ -143,6 +143,7 @@ describe("drawing model commands", () => {
     });
 
     const updated = updateAnnotation(moved, "note_1", { text: "Updated note" });
+    assert(updated.annotations[0].kind !== "connected_wire_schedule");
     expect(updated.annotations[0].text).toBe("Updated note");
 
     const removed = deleteAnnotation(updated, "note_1");

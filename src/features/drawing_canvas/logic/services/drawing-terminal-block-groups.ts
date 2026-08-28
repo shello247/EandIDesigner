@@ -11,7 +11,7 @@ export const GENERATED_TERMINAL_BLOCK_GROUP_LIBRARY_VERSION_ID =
   "generated_terminal_block_group_builder_v1";
 export const GENERATED_TERMINAL_BLOCK_GROUP_LIBRARY_SYMBOL_KEY =
   "generated_terminal_block_group";
-export const TERMINAL_BLOCK_GROUP_LIBRARY_LABEL = "Terminal Block Group";
+export const TERMINAL_BLOCK_GROUP_LIBRARY_LABEL = "Terminal Strip";
 
 export function createGeneratedTerminalBlockGroupLibrarySymbol(): ApprovedDrawingSymbol {
   const width = DEFAULT_TERMINAL_BLOCK_COUNT * DEFAULT_TERMINAL_BLOCK_MODULE_WIDTH;

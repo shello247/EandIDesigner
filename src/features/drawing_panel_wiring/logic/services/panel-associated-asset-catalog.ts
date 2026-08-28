@@ -2,10 +2,13 @@ import type {
   PanelAssociatedAssetCatalogRow,
   PanelDiscoveryBuildContext,
   PanelDiscoveryStatus,
+  PanelTerminalCatalog,
   PanelSourceOccurrenceRef,
   PanelWiringSourceAsset,
   PanelWiringSourceOccurrence
 } from "../../types";
+import { derivePanelEquipmentSequence } from "./panel-equipment-sequence";
+import { buildPanelTerminalCatalog } from "./panel-terminal-catalog";
 
 const EXCLUDED_ASSET_TYPES = new Set(["cable", "panel", "junction_box"]);
 
@@ -139,12 +142,17 @@ function resolveStatus({
 }
 
 export function buildPanelAssociatedAssetCatalog(
-  context: PanelDiscoveryBuildContext
+  context: PanelDiscoveryBuildContext,
+  terminalCatalog: PanelTerminalCatalog = buildPanelTerminalCatalog({
+    graph: context.graph,
+    panelAssetId: context.panelAssetId
+  })
 ): PanelAssociatedAssetCatalogRow[] {
   const associatedIds =
     context.graph.assetIdsByPanelAssetId.get(context.panelAssetId) ??
     new Set<string>();
   const rows: PanelAssociatedAssetCatalogRow[] = [];
+  const panelSequenceIndex = derivePanelEquipmentSequence(context);
 
   for (const assetId of associatedIds) {
     if (assetId === context.panelAssetId) {
@@ -184,6 +192,29 @@ export function buildPanelAssociatedAssetCatalog(
     const terminalCount = [...context.graph.terminalsById.values()].filter(
       (terminal) => terminal.ref.assetId === assetId
     ).length;
+    let usedTerminalSides = 0;
+    let unusedTerminalSides = 0;
+
+    for (const terminal of terminalCatalog.rowsByTerminalId.values()) {
+      if (terminal.terminal.assetId !== assetId) {
+        continue;
+      }
+
+      for (const side of terminal.supportedSides) {
+        const occupancy = terminal.occupancy[side];
+        if (!occupancy) {
+          continue;
+        }
+
+        if (occupancy.conductorStatus === "available") {
+          unusedTerminalSides += 1;
+        } else {
+          usedTerminalSides += 1;
+        }
+      }
+    }
+    const duplicatePanelLayout =
+      panelSequenceIndex.duplicateLayoutAssetIds.has(assetId);
 
     rows.push({
       assetId,
@@ -194,6 +225,11 @@ export function buildPanelAssociatedAssetCatalog(
         (fallback?.role === "terminal_block" ? "terminal_block" : "other"),
       status: resolved.status,
       terminalCount,
+      terminalUsage: {
+        used: usedTerminalSides,
+        unused: unusedTerminalSides,
+        total: usedTerminalSides + unusedTerminalSides
+      },
       representedPlacementId,
       representationSource: resolved.representationSource
         ? sourceOccurrenceRef(context, resolved.representationSource)
@@ -205,14 +241,25 @@ export function buildPanelAssociatedAssetCatalog(
             first.sheetNumber - second.sheetNumber ||
             first.placementId.localeCompare(second.placementId)
         ),
+      panelSequence: panelSequenceIndex.sequenceByAssetId.get(assetId),
+      panelSequenceWarning: duplicatePanelLayout
+        ? "Multiple physical panel-layout occurrences were found. The earliest occurrence determines this position."
+        : undefined,
       disabledReason: resolved.disabledReason
     });
   }
 
-  return rows.sort((first, second) =>
-    first.tag.localeCompare(second.tag, undefined, {
+  return rows.sort((first, second) => {
+    if (first.panelSequence && second.panelSequence) {
+      return first.panelSequence.position - second.panelSequence.position;
+    }
+
+    if (first.panelSequence) return -1;
+    if (second.panelSequence) return 1;
+
+    return first.tag.localeCompare(second.tag, undefined, {
       numeric: true,
       sensitivity: "base"
-    })
-  );
+    });
+  });
 }

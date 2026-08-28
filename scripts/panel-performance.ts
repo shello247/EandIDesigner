@@ -4,6 +4,7 @@ import {
   buildPanelDiscoveryIndex,
   buildPanelEngineeringSnapshot,
   buildPanelQualityIndex,
+  buildPlacementWireContextDisplayIndex,
   runPackagePanelDrawingQualityChecks,
   runPanelDrawingQualityChecks
 } from "../src/features/drawing_panel_wiring/api/public";
@@ -84,6 +85,25 @@ metrics.sourceAdapterAndGraph = measure(
     buildPanelEngineeringSnapshot(source, "large-fixture");
   }
 );
+const connectionDisplayRequests = source.sheets.flatMap((sheet) =>
+  sheet.panelDrawingContext
+    ? sheet.occurrences.map((occurrence) => ({
+        sheetId: sheet.id,
+        placementId: occurrence.placementId,
+        mode: "all_connected" as const
+      }))
+    : []
+);
+metrics.connectionDisplayProjection = measure(
+  "connection-display projection",
+  100,
+  () => {
+    buildPlacementWireContextDisplayIndex({
+      graph,
+      requests: connectionDisplayRequests
+    });
+  }
+);
 metrics.packageQuality = measure("package-wide QC", 150, () => {
   runPackagePanelDrawingQualityChecks(graph);
 });
@@ -157,6 +177,7 @@ const cardinalities = {
     (count, sheet) => count + sheet.connections.length,
     0
   ),
+  connectionDisplayOccurrences: connectionDisplayRequests.length,
   internalWires: source.panelWiring?.internalWires.length ?? 0,
   connectionPatterns: source.panelWiring?.bridges.length ?? 0
 };

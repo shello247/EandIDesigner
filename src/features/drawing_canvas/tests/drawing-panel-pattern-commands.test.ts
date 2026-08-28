@@ -22,10 +22,6 @@ import {
   isGeneratedPanelPatternLegendPlacement,
   isGeneratedPanelReferencePlacement
 } from "../logic/services/drawing-panel-reference-symbols";
-import {
-  applySheetDuplicatePlan,
-  buildSheetDuplicatePlan
-} from "../logic/services/drawing-sheet-duplication";
 
 const PANEL_ID = "asset_panel";
 const ASSET_A = "asset_device_a";
@@ -268,43 +264,4 @@ describe("Detailed Panel pattern commands", () => {
     expect(deleted.assets).toEqual(model.assets);
   });
 
-  it("duplicates visual routes while preserving canonical pattern identity", () => {
-    const model = fixture();
-    const symbols = [symbol()];
-    const domain = createTerminalJumper(createPanelWiringSource(model, symbols), {
-      panelAssetId: PANEL_ID,
-      topology: "terminal_jumper",
-      domain: "signal",
-      members: [
-        { assetId: ASSET_A, terminalKey: "OUT", side: "single" },
-        { assetId: ASSET_B, terminalKey: "IN", side: "single" }
-      ]
-    });
-    const created = createPanelPatternWithRoutes({
-      model,
-      symbols,
-      sheetId: SHEET_A,
-      result: domain
-    });
-    const sourceConnection = created.connections[0];
-    const plan = buildSheetDuplicatePlan({
-      model: created.model,
-      symbols,
-      sourceSheetId: SHEET_A
-    });
-    const duplicated = applySheetDuplicatePlan({
-      model: created.model,
-      symbols,
-      plan
-    });
-    const duplicateSheet = duplicated.model.sheets.find(
-      (sheet) => sheet.id === duplicated.sheetId
-    );
-
-    expect(duplicated.model.panelWiring?.bridges).toHaveLength(1);
-    expect(duplicateSheet?.connections[0].panelPatternId).toBe(
-      domain.pattern?.record.id
-    );
-    expect(duplicateSheet?.connections[0].id).not.toBe(sourceConnection.id);
-  });
 });

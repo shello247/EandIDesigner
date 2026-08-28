@@ -11,26 +11,22 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
+import type {
+  WireCatalogEntry,
+  WireSpecificationSnapshot
+} from "@/features/wire_catalog/api/public";
 import {
-  Cable,
-  CheckCircle2,
-  Eye,
-  FileDown,
-  FileSpreadsheet,
-  Link2,
-  Network,
+  createWireSpecificationSnapshot,
+  getDefaultWireCatalogEntry
+} from "@/features/wire_catalog/api/public";
+import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  PackageSearch,
-  Save,
-  ShieldCheck,
-  StickyNote
+  X
 } from "lucide-react";
-import type { SymbolBomTemplateDetail } from "@/features/bom_creator/types";
-import { loadPanelBomTemplatesAction } from "@/features/drawing_panel_reports/api/actions";
-import type { PanelReportTraceRef } from "@/features/drawing_panel_reports/api/public";
+import type { EngineeringAttributeChange } from "@/features/engineering_attributes/ui/public";
 import type {
   DrawingAnnotation,
   DrawingConnection,
@@ -39,26 +35,17 @@ import type {
   DrawingEndpoint,
   DrawingModel,
   DrawingPlacement,
-  DrawingSheetCanvasModel
+  DrawingSheetCanvasModel,
+  DrawingSettingsDraft,
+  SheetSettingsDraft
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol, DrawingDetail } from "../../types";
 import {
   approveDrawingAction,
+  loadDrawingSymbolVersionAction,
   saveDrawingAction
 } from "../../api/actions";
-import {
-  getSheetTemplateAction,
-  listSheetTemplatesAction,
-  saveSheetTemplateAction
-} from "@/features/drawing_sheet_templates/api/actions";
-import {
-  instantiateTemplateSheet,
-  type TemplateAssetResolutionChoice
-} from "@/features/drawing_sheet_templates/logic/use_cases/drawing-sheet-template-use-cases";
-import type {
-  DrawingSheetTemplateDetail,
-  DrawingSheetTemplateListItem
-} from "@/features/drawing_sheet_templates/types";
+import type { DrawingSymbolCatalogSummary } from "@/features/symbol_registry/api/public";
 import {
   addConnection as addConnectionCommand,
   addAnnotation as addAnnotationCommand,
@@ -92,12 +79,21 @@ import {
 } from "../../logic/commands/drawing-section-commands";
 import { createDetailedPanelDrawingSheet } from "../../logic/commands/drawing-detailed-panel-sheet-commands";
 import {
-  createAndPlaceTerminalBlockGroup,
-  updateTerminalBlockGroup
-} from "../../logic/commands/drawing-terminal-block-group-commands";
+  createOrSynchronizeConnectedWireScheduleContinuations,
+  removeConnectedWireSchedulePagination
+} from "../../logic/commands/drawing-connected-wire-schedule-continuation-commands";
+import { updateDrawingConnectionDisplayMode } from "../../logic/commands/drawing-connection-display-commands";
+import {
+  createAndPlaceStructuredTerminalStrip,
+  updateStructuredTerminalStrip
+} from "../../logic/commands/drawing-structured-terminal-strip-commands";
+import {
+  reuseStructuredTerminalStrip,
+  type StructuredTerminalStripReuseInput
+} from "../../logic/commands/drawing-structured-terminal-strip-reuse-commands";
 import {
   centerDetailedPanelEquipment,
-  placePanelAssetOccurrence,
+  placePanelAssetOccurrences,
   removePanelAssetOccurrence
 } from "../../logic/commands/drawing-panel-occurrence-commands";
 import {
@@ -129,45 +125,53 @@ import {
   buildPanelConnectionPatternCatalog,
   buildPanelEngineeringSnapshotFromValidatedSource,
   buildPanelDiscoveryIndex,
-  buildPanelExternalTerminationDisplayIndex,
-  buildPanelGuidedWorkflowSnapshot,
+  buildPlacementWireContextDisplayIndex,
   buildPanelInternalWireEndpointCatalog,
   buildPanelQualityIndex,
-  allocateInternalWireId,
+  allocateInternalWireNumber,
+  buildLegacyWireIdentityUpgradePreview,
   createDistributionGroup,
   createEarthTermination,
   createShieldTermination,
   createTerminalJumper,
   getDetailedPanelDrawingContext,
-  getPanelWireSettings,
+  getPreviousInternalWireDescription,
   getTerminalSideOccupancy,
   mapExternalTerminationToTerminal,
+  placementWireContextKey,
   resetExternalTerminationMapping,
-  runPackagePanelDrawingQualityChecks,
   runPanelDrawingQualityChecks,
-  updatePanelWireSettings,
   updatePanelConnectionPattern,
-  updatePanelWorkflowFocus,
+  upgradeLegacyWireIdentities,
   validateInternalWireEndpoints,
   updateDetailedPanelDrawingContext,
   validatePanelDrawingContext,
   type PanelDrawingQualityFinding,
-  type PanelExternalTerminationDisplayRow,
-  type PanelGuidedWorkflowSnapshot,
+  type PanelConnectionDisplayMode,
+  type PlacementWireContextDisplayIndex,
   type PanelInternalWireEndpointCatalog,
   type PanelElectricalDomain,
   type PanelPatternCommandResult,
   type PanelTerminalSideRef,
-  type PanelWireAttributes,
-  type PanelWireSettings
+  type PanelWireAttributes
 } from "@/features/drawing_panel_wiring/api/public";
+import {
+  buildPlacementConnectionDisplayModeIndex,
+  collectPlacementWireContextRequests,
+  sheetHasCompleteWiringDisplay
+} from "../../logic/services/drawing-placement-connection-display";
+import {
+  buildConnectedWireScheduleIndex,
+  defaultConnectedWireSchedulePosition,
+  isConnectedWireScheduleAnnotation,
+  type ConnectedWireScheduleAnnotation,
+  type ConnectedWireScheduleIndex
+} from "@/features/drawing_connected_wire_schedule/api/public";
 import {
   InternalWireDeleteDialog,
   InternalWireDialog,
+  LegacyWireIdentityUpgradeDialog,
   type InternalWireDialogSubmission,
-  type PanelInternalWireFormResult,
-  type PanelInternalWireFormSubmission,
-  PanelDrawingContextEditor,
   PanelDrawingSummary,
   PanelPatternAuthoringPanel,
   PanelPatternDeleteDialog,
@@ -176,26 +180,44 @@ import {
   type PanelPatternAuthoringStage,
   type PanelPatternAuthoringTopology
 } from "@/features/drawing_panel_wiring/ui/public";
-import { generateDefaultOrthogonalRoute } from "../../logic/services/connection-route-geometry";
+import {
+  bringConnectionRouteOntoSheet,
+  generateDefaultOrthogonalRoute
+} from "../../logic/services/connection-route-geometry";
+import {
+  addGuidedConnectionWaypoint,
+  buildGuidedConnectionPreview,
+  buildGuidedConnectionRoute,
+  removeLastGuidedConnectionWaypoint,
+  resolveGuidedConnectionPointer,
+  type GuidedConnectionWaypoint
+} from "../../logic/services/guided-connection-routing";
+import { getPlacementBounds } from "../../logic/services/drawing-geometry";
 import {
   clampPointToSheet,
   createDefaultNoteAnnotation
 } from "../../logic/services/drawing-annotations";
 import {
+  buildRenderableDrawingSymbols,
+  getRenderableSymbolForPlacement
+} from "../../logic/services/drawing-generated-symbols";
+import {
+  drawingTerminalSideKey,
+  resolveDrawingAnchorAvailability,
+  summarizeDrawingTerminalAvailability,
+  type DrawingAnchorAvailability
+} from "../../logic/services/drawing-anchor-availability";
+import {
   allocateNextPackageTag,
   allocateNextTagFromPrefix,
   createDrawingAssetId,
   defaultPlacementScale,
-  roleFromSymbol,
-  renameDrawingAssetTag
+  roleFromSymbol
 } from "../../logic/services/drawing-asset-identity";
 import {
-  assignPlacementToContainer,
-  clearPlacementContainer,
   createPanelEnclosurePlacement,
   getPanelEnclosureTitle,
   getVisibleSheetContainers,
-  updatePanelEnclosureTitle
 } from "../../logic/services/drawing-asset-containment";
 import {
   autosizeLayoutHelperToBackplane,
@@ -216,7 +238,26 @@ import {
   type DrawingCanvasClipboard
 } from "../../logic/services/drawing-clipboard-commands";
 import { moveCanvasSelection } from "../../logic/services/drawing-movement";
-import { measureDrawingOperation } from "../../logic/services/drawing-performance-diagnostics";
+import {
+  applyPlacementArrangement,
+  placementArrangementMessage,
+  resolvePlacementArrangement,
+  type PlacementArrangementAction
+} from "../../logic/services/drawing-selection-arrangement";
+import {
+  measureDrawingOperation,
+  updateDrawingPerformanceContext
+} from "../../logic/services/drawing-performance-diagnostics";
+import { createDrawingPanelEngineeringSnapshotCache } from "../../logic/services/drawing-panel-engineering-snapshot-cache";
+import {
+  createDrawingModelPreparationCache,
+  createDrawingModelPreparationSymbolKey
+} from "../../logic/services/drawing-model-preparation";
+import {
+  createDrawingSymbolCatalogLoader,
+  loadDrawingSymbolDependencyClosure
+} from "../../logic/services/drawing-symbol-catalog-loader";
+import { selectDrawingRenderDependencies } from "../../logic/services/drawing-symbol-version-references";
 import {
   createEmptyDrawingHistory,
   pushDrawingHistoryEntry,
@@ -250,13 +291,15 @@ import {
   type AddPanelEnclosureSubmission
 } from "./add-panel-enclosure-dialog";
 import {
-  AddTerminalBlockDialog,
-  type AddTerminalBlockSubmission
-} from "./add-terminal-block-dialog";
+  createPanelConnectionView,
+  fitPanelConnectionViewContents,
+  isPanelConnectionViewPlacement
+} from "../../logic/services/drawing-panel-connection-views";
 import {
-  TerminalBlockGroupDialog,
-  type TerminalBlockGroupDialogSubmission
-} from "./terminal-block-group-dialog";
+  TerminalStripBuilder,
+  type TerminalStripBuilderSubmission,
+  type TerminalStripBuilderSubmissionResult
+} from "@/features/drawing_terminal_blocks/ui/components/terminal-strip-builder";
 import {
   AddSheetDialog,
   type AddSheetDialogSubmission
@@ -268,16 +311,11 @@ import {
 } from "./asset-link-dialog";
 import { DeleteSheetConfirmationDialog } from "./delete-sheet-confirmation-dialog";
 import { DrawingSaveConflictDialog } from "./drawing-save-conflict-dialog";
-import { DuplicateSheetWizardDialog } from "./duplicate-sheet-wizard-dialog";
-import {
-  AddSheetTemplateDialog
-} from "@/features/drawing_sheet_templates/ui/components/add-sheet-template-dialog";
 import {
   allocateNextManagedAssetTag,
   createManagedAsset,
   classifyManagedAssetFromPlacement,
   deleteManagedAsset,
-  reconcileDrawingAssets,
   updateManagedAsset
 } from "@/features/drawing_asset_manager/logic/use_cases/drawing-asset-manager-use-cases";
 import { replaceDrawingAssetComponentSelections } from "@/features/symbol_components/api/public";
@@ -286,20 +324,30 @@ import type {
   ManagedAssetUpdateInput
 } from "@/features/drawing_asset_manager/data/schema";
 
-import { PlacementPropertiesPanel } from "./placement-properties-panel";
+import { DrawingObjectInspector } from "./drawing-object-inspector";
+import { TerminalStripCopyDialog } from "./terminal-strip-copy-dialog";
+import { TerminalStripReuseDialog } from "./terminal-strip-reuse-dialog";
+import { DrawingSettingsDialog } from "./drawing-settings-dialog";
+import { DrawingPackageToolbar } from "./drawing-package-toolbar";
+import { SheetSettingsDialog } from "./sheet-settings-dialog";
 import { PackagePreviewSurface } from "./package-preview-surface";
-import {
-  SaveSheetTemplateDialog,
-  type SaveSheetTemplateForm
-} from "@/features/drawing_sheet_templates/ui/components/save-sheet-template-dialog";
 import { SvgDrawingSurface } from "./svg-drawing-surface";
 import { SymbolLibraryPanel } from "./symbol-library-panel";
+import { ConnectionEndpointInspector } from "./connection-endpoint-inspector";
+import type {
+  ConnectionDraft,
+  DrawingAnchorInspection,
+  GuidedConnectionPointerOptions
+} from "../canvas/types";
 import {
   buildAssociatedPanelAssetCatalog,
-  placeAssociatedPanelAssetOnBackplane
-} from "@/features/drawing_panel_asset_placement/logic/services/panel-associated-assets";
+  placeAssociatedPanelAssetOnBackplane,
+  placeAssociatedPanelAssetOnConnectionView,
+  type PanelAssetPlacementTarget
+} from "@/features/drawing_panel_asset_placement/api/public";
 import { PanelAssociatedAssetsSection } from "@/features/drawing_panel_asset_placement/ui/components/panel-associated-assets-section";
 import {
+  getGeneratedSymbolsForLibraryContext,
   getSymbolLibraryContextForSheetKind,
   hasPanelLayoutPhysicalDimensions,
   isPanelLayoutLibrarySymbol
@@ -311,28 +359,19 @@ import {
   getSheetInsertionIndex
 } from "../../logic/services/drawing-sections";
 import { getDrawingSheetPresentation } from "../../logic/services/drawing-sheet-presentation";
-import { createTerminalBlockPlacement } from "../../logic/services/drawing-terminal-blocks";
 import { isGeneratedTerminalBlockGroupLibrarySymbolReference } from "../../logic/services/drawing-terminal-block-groups";
-import { isTerminalBlockModuleSymbol } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
 import {
   createNewAssetFromPlacement,
   relinkPlacementsToExistingAsset,
   type DrawingAssetPlacementTarget
 } from "../../logic/services/drawing-asset-resolution";
-import {
-  applySheetDuplicatePlan,
-  type SheetDuplicatePlan
-} from "../../logic/services/drawing-sheet-duplication";
-import type { TerminalBlockPlacement } from "@/features/drawing_terminal_blocks/types";
 
-const PanelDeliverablesDialog = dynamic(
+const ConnectionsDialog = dynamic(
   () =>
-    import("@/features/drawing_panel_reports/ui/public").then(
-      (module) => module.PanelDeliverablesDialog
-    ),
+    import("./connections-dialog").then((module) => module.ConnectionsDialog),
   {
     ssr: false,
-    loading: () => <EngineeringDialogLoading label="Loading deliverables" />
+    loading: () => <EngineeringDialogLoading label="Loading connections" />
   }
 );
 const PanelDiscoveryDialog = dynamic(
@@ -365,6 +404,16 @@ const AssetManagerDialog = dynamic(
     loading: () => <EngineeringDialogLoading label="Loading Asset Manager" />
   }
 );
+const WireCatalogManager = dynamic(
+  () =>
+    import("@/features/wire_catalog/ui/components/wire-catalog-manager").then(
+      (module) => module.WireCatalogManager
+    ),
+  {
+    ssr: false,
+    loading: () => <EngineeringDialogLoading label="Loading Wire Catalog" />
+  }
+);
 
 function EngineeringDialogLoading({ label }: { label: string }) {
   return (
@@ -374,6 +423,47 @@ function EngineeringDialogLoading({ label }: { label: string }) {
         className="rounded-md border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-xl"
       >
         {label}...
+      </div>
+    </div>
+  );
+}
+
+function SymbolCatalogLoadErrorDialog({
+  error,
+  onCancel,
+  onRetry
+}: {
+  error: string;
+  onCancel: () => void;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 p-4 backdrop-blur-[2px]">
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="symbol-catalog-load-error-title"
+        className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl"
+      >
+        <h2
+          id="symbol-catalog-load-error-title"
+          className="text-sm font-bold text-slate-950"
+        >
+          Terminal catalogue could not be loaded
+        </h2>
+        <p className="mt-2 text-sm text-slate-600">{error}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" className="icon-button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="icon-button icon-button-primary"
+            onClick={onRetry}
+          >
+            Retry
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -391,14 +481,10 @@ type DragState = {
 type ConnectionMode = "idle" | "connecting";
 type CanvasViewMode = "edit" | "preview";
 
-type ConnectionDraft = {
-  from?: DrawingEndpoint;
-  pointer?: { x: number; y: number };
-};
-
 type PendingInternalWire = {
   from: PanelWireOccurrenceEndpoint;
   to: PanelWireOccurrenceEndpoint;
+  waypoints: GuidedConnectionWaypoint[];
 };
 
 type InternalWireDeleteCandidate = {
@@ -420,24 +506,62 @@ type PendingPanelPatternReview = {
   memberLabels: string[];
 };
 
-function normalizeCanvasModel(
-  model: DrawingModel,
-  symbols: ApprovedDrawingSymbol[]
-): DrawingModel {
-  return reconcileDrawingAssets(model, symbols);
-}
+type TerminalStripCatalogRequest =
+  | { kind: "create" }
+  | { kind: "group" }
+  | { kind: "edit"; assetId: string };
+
+type TerminalStripCatalogLoadState = {
+  request: TerminalStripCatalogRequest;
+  status: "loading" | "error";
+  error?: string;
+};
 
 export function DrawingCanvasShell({
   drawing,
-  symbols,
+  symbols: initialSymbols,
+  symbolCatalogSummaries,
+  wireCatalogEntries: initialWireCatalogEntries = [],
   detailedPanelDrawingsEnabled = true
 }: {
   drawing: DrawingDetail;
   symbols: ApprovedDrawingSymbol[];
+  symbolCatalogSummaries: DrawingSymbolCatalogSummary[];
+  wireCatalogEntries?: WireCatalogEntry[];
   detailedPanelDrawingsEnabled?: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [symbols, setSymbols] = useState(initialSymbols);
+  const symbolsRef = useRef<ApprovedDrawingSymbol[]>(initialSymbols);
+  const initialEngineeringSymbols = useMemo(
+    () => selectDrawingRenderDependencies(drawing.model, initialSymbols),
+    [drawing.model, initialSymbols]
+  );
+  const initialModelPreparationSymbolKey = useMemo(
+    () => createDrawingModelPreparationSymbolKey(initialEngineeringSymbols),
+    [initialEngineeringSymbols]
+  );
+  const initialModelPreparationCache = useMemo(
+    () =>
+      createDrawingModelPreparationCache({
+        symbols: initialEngineeringSymbols,
+        createSource: (candidate) =>
+          measureDrawingOperation(
+            "panel.source",
+            () =>
+              createPanelWiringSource(candidate, initialEngineeringSymbols),
+            {
+              sheets: candidate.sheets.length,
+              assets: candidate.assets?.length ?? 0
+            }
+          )
+      }),
+    // An unchanged Server Component payload may contain fresh arrays. The
+    // complete immutable dependency key owns cache invalidation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [initialModelPreparationSymbolKey]
+  );
   const initialSheet = drawing.model.sheets[0];
   const initialSelection: DrawingCanvasSelection = initialSheet.placements[0]
     ? {
@@ -452,9 +576,59 @@ export function DrawingCanvasShell({
   } | null>(null);
   const [editRevision, setEditRevision] = useState(0);
   const [savedRevision, setSavedRevision] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const [wireCatalogEntries, setWireCatalogEntries] = useState(
+    initialWireCatalogEntries
+  );
+  const [isWireCatalogOpen, setIsWireCatalogOpen] = useState(false);
+  const [hasRequestedWireCatalog, setHasRequestedWireCatalog] = useState(false);
+  const [isLegacyWireUpgradeOpen, setIsLegacyWireUpgradeOpen] =
+    useState(false);
   const [viewMode, setViewMode] = useState<CanvasViewMode>("edit");
   const [model, setModelState] = useState<DrawingModel>(() =>
-    normalizeCanvasModel(drawing.model, symbols)
+    measureDrawingOperation(
+      "canvas.normalize",
+      () => initialModelPreparationCache.prepare(drawing.model).model
+    )
+  );
+  const engineeringSymbols = useMemo(
+    () => selectDrawingRenderDependencies(model, symbols),
+    [model, symbols]
+  );
+  const modelPreparationSymbolKey = useMemo(
+    () => createDrawingModelPreparationSymbolKey(engineeringSymbols),
+    [engineeringSymbols]
+  );
+  const modelPreparationCache = useMemo(
+    () =>
+      modelPreparationSymbolKey === initialModelPreparationSymbolKey
+        ? initialModelPreparationCache
+        : createDrawingModelPreparationCache({
+            symbols: engineeringSymbols,
+            createSource: (candidate) =>
+              measureDrawingOperation(
+                "panel.source",
+                () => createPanelWiringSource(candidate, engineeringSymbols),
+                {
+                  sheets: candidate.sheets.length,
+                  assets: candidate.assets?.length ?? 0
+                }
+              )
+          }),
+    // The complete immutable dependency key deliberately owns invalidation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      initialModelPreparationCache,
+      initialModelPreparationSymbolKey,
+      modelPreparationSymbolKey
+    ]
+  );
+  const symbolCatalogLoader = useMemo(
+    () =>
+      createDrawingSymbolCatalogLoader({
+        loadVersion: loadDrawingSymbolVersionAction
+      }),
+    []
   );
   const [gesturePreviewModel, setGesturePreviewModel] =
     useState<DrawingModel | null>(null);
@@ -465,7 +639,13 @@ export function DrawingCanvasShell({
     string | undefined
   >(undefined);
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>("idle");
-  const [connectionDraft, setConnectionDraft] = useState<ConnectionDraft>({});
+  const [connectionDraft, setConnectionDraft] = useState<ConnectionDraft>({
+    waypoints: []
+  });
+  const [connectionSourceInspection, setConnectionSourceInspection] =
+    useState<DrawingAnchorInspection | null>(null);
+  const [connectionHoverInspection, setConnectionHoverInspection] =
+    useState<DrawingAnchorInspection | null>(null);
   const [pendingInternalWire, setPendingInternalWire] =
     useState<PendingInternalWire | null>(null);
   const [internalWireDeleteCandidate, setInternalWireDeleteCandidate] =
@@ -502,26 +682,39 @@ export function DrawingCanvasShell({
   const [sheetFocusRequestKey, setSheetFocusRequestKey] = useState(0);
   const [isSymbolsCollapsed, setIsSymbolsCollapsed] = useState(false);
   const [isPropertiesCollapsed, setIsPropertiesCollapsed] = useState(false);
+  const propertiesCollapsedBeforeWireModeRef = useRef<boolean | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pendingSymbol, setPendingSymbol] = useState<ApprovedDrawingSymbol | null>(
     null
   );
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [isSheetLoaderOpen, setIsSheetLoaderOpen] = useState(false);
+  const [isDrawingSettingsOpen, setIsDrawingSettingsOpen] = useState(false);
+  const [isSheetSettingsOpen, setIsSheetSettingsOpen] = useState(false);
+  const [isConnectionsOpen, setIsConnectionsOpen] = useState(false);
+  const drawingSettingsReturnFocusRef = useRef<HTMLElement | null>(null);
+  const sheetSettingsReturnFocusRef = useRef<HTMLElement | null>(null);
+  const connectionsReturnFocusRef = useRef<HTMLElement | null>(null);
+  const wireCatalogReturnFocusRef = useRef<HTMLElement | null>(null);
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
   const [isAddTerminalBlockOpen, setIsAddTerminalBlockOpen] = useState(false);
+  const [isCopyTerminalBlockOpen, setIsCopyTerminalBlockOpen] = useState(false);
   const [isTerminalBlockGroupOpen, setIsTerminalBlockGroupOpen] =
     useState(false);
+  const [terminalStripCatalogLoad, setTerminalStripCatalogLoad] =
+    useState<TerminalStripCatalogLoadState | null>(null);
+  const [editingTerminalStripAssetId, setEditingTerminalStripAssetId] =
+    useState<string | null>(null);
+  const [terminalStripReuseSource, setTerminalStripReuseSource] = useState<{
+    sheetId: string;
+    placementId: string;
+  } | null>(null);
   const [isBackplanePanelPickerOpen, setIsBackplanePanelPickerOpen] =
     useState(false);
   const [isAssetManagerOpen, setIsAssetManagerOpen] = useState(false);
   const [assetManagerInitialAssetId, setAssetManagerInitialAssetId] = useState<
     string | null
   >(null);
-  const [isPanelDeliverablesOpen, setIsPanelDeliverablesOpen] = useState(false);
-  const [panelBomTemplates, setPanelBomTemplates] = useState<
-    SymbolBomTemplateDetail[]
-  >([]);
   const [isPanelDiscoveryOpen, setIsPanelDiscoveryOpen] = useState(false);
   const [panelDiscoveryInitialTab, setPanelDiscoveryInitialTab] = useState<
     "assets" | "terminations" | "terminal-map" | "internal-wires" | "patterns"
@@ -535,24 +728,13 @@ export function DrawingCanvasShell({
   const [isPanelReviewOpen, setIsPanelReviewOpen] = useState(false);
   const [panelRepairFinding, setPanelRepairFinding] =
     useState<PanelDrawingQualityFinding | null>(null);
-  const [isSaveTemplateOpen, setIsSaveTemplateOpen] = useState(false);
-  const [isTemplateLibraryOpen, setIsTemplateLibraryOpen] = useState(false);
   const [sheetDeleteCandidateId, setSheetDeleteCandidateId] = useState<
-    string | null
-  >(null);
-  const [sheetDuplicateCandidateId, setSheetDuplicateCandidateId] = useState<
     string | null
   >(null);
   const [assetLinkDialogState, setAssetLinkDialogState] = useState<{
     placementId: string;
     initialMode: AssetLinkDialogMode;
   } | null>(null);
-  const [templateList, setTemplateList] = useState<DrawingSheetTemplateListItem[]>(
-    []
-  );
-  const [selectedTemplate, setSelectedTemplate] =
-    useState<DrawingSheetTemplateDetail | null>(null);
-  const [templateError, setTemplateError] = useState<string | null>(null);
   const [clipboard, setClipboard] = useState<DrawingCanvasClipboard | null>(null);
   const modelRef = useRef(model);
   const activeSheetIdRef = useRef(activeSheetId);
@@ -566,12 +748,161 @@ export function DrawingCanvasShell({
     key: string;
     time: number;
   } | null>(null);
+
+  const openLocalDialog = (
+    setOpen: (open: boolean) => void,
+    returnFocusRef: { current: HTMLElement | null }
+  ) => {
+    returnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setOpen(true);
+  };
+  const closeLocalDialog = (
+    setOpen: (open: boolean) => void,
+    returnFocusRef: { current: HTMLElement | null }
+  ) => {
+    setOpen(false);
+    window.requestAnimationFrame(() => returnFocusRef.current?.focus());
+  };
+  const clearConnectionInspections = () => {
+    setConnectionSourceInspection(null);
+    setConnectionHoverInspection(null);
+  };
+  const openWireCatalog = () => {
+    setHasRequestedWireCatalog(true);
+    openLocalDialog(setIsWireCatalogOpen, wireCatalogReturnFocusRef);
+  };
+  const loadSymbolDependencies = useCallback(
+    async (versionIds: readonly string[]) => {
+      const result = await loadDrawingSymbolDependencyClosure({
+        versionIds,
+        existingSymbols: symbolsRef.current,
+        catalogueSummaries: symbolCatalogSummaries,
+        loader: symbolCatalogLoader
+      });
+      if (!result.ok) return result;
+
+      const nextByVersionId = new Map(
+        symbolsRef.current.map((symbol) => [symbol.versionId, symbol])
+      );
+      const selectableVersionIds = new Set(
+        symbolCatalogSummaries.map((summary) => summary.versionId)
+      );
+      let changed = false;
+      for (const symbol of result.symbols) {
+        const nextSymbol = selectableVersionIds.has(symbol.versionId)
+          ? { ...symbol, selectable: true }
+          : symbol;
+        const current = nextByVersionId.get(symbol.versionId);
+        if (!current || current.selectable !== nextSymbol.selectable) {
+          changed = true;
+        }
+        nextByVersionId.set(symbol.versionId, nextSymbol);
+      }
+      const nextSymbols = [...nextByVersionId.values()];
+      if (changed) {
+        symbolsRef.current = nextSymbols;
+        setSymbols(nextSymbols);
+      }
+
+      return result;
+    },
+    [symbolCatalogLoader, symbolCatalogSummaries]
+  );
+  const loadCatalogSymbol = useCallback(
+    async (versionId: string) => {
+      const result = await loadSymbolDependencies([versionId]);
+      if (!result.ok) return result;
+      const symbol = result.symbols.find(
+        (candidate) => candidate.versionId === versionId
+      );
+      return symbol
+        ? ({ ok: true, symbol } as const)
+        : ({
+            ok: false,
+            error: "The requested symbol version could not be loaded."
+          } as const);
+    },
+    [loadSymbolDependencies]
+  );
+  const revealPropertiesForWireAuthoring = () => {
+    if (propertiesCollapsedBeforeWireModeRef.current === null) {
+      propertiesCollapsedBeforeWireModeRef.current = isPropertiesCollapsed;
+    }
+    if (isPropertiesCollapsed) setIsPropertiesCollapsed(false);
+  };
+  const restorePropertiesAfterWireMode = () => {
+    if (propertiesCollapsedBeforeWireModeRef.current === true) {
+      setIsPropertiesCollapsed(true);
+    }
+    propertiesCollapsedBeforeWireModeRef.current = null;
+  };
   const resolvedActiveSheetId = getActiveSheetId(model, activeSheetId);
   const activeSheetCanvasModel = useMemo(
     () => toSheetCanvasModel(model, resolvedActiveSheetId),
     [model, resolvedActiveSheetId]
   );
+  const activeSheetRenderableSymbols = useMemo(
+    () =>
+      buildRenderableDrawingSymbols({
+        placements: activeSheetCanvasModel.placements,
+        approvedSymbols: symbols,
+        assets: model.assets
+      }),
+    [activeSheetCanvasModel.placements, model.assets, symbols]
+  );
   const selectedPlacementId = primaryPlacementId(selection);
+  const selectedAssetManagerAssetId = useMemo(() => {
+    if (!selectedPlacementId || selection.placementIds.length !== 1) {
+      return null;
+    }
+
+    const assetId = activeSheetCanvasModel.placements.find(
+      (placement) => placement.id === selectedPlacementId
+    )?.assetId;
+
+    return assetId && model.assets?.some((asset) => asset.id === assetId)
+      ? assetId
+      : null;
+  }, [
+    activeSheetCanvasModel.placements,
+    model.assets,
+    selectedPlacementId,
+    selection.placementIds.length
+  ]);
+  const selectedScheduleSource = useMemo(() => {
+    if (!selectedPlacementId || selection.placementIds.length !== 1) {
+      return undefined;
+    }
+    const placement = activeSheetCanvasModel.placements.find(
+      (candidate) => candidate.id === selectedPlacementId
+    );
+    if (
+      !placement?.assetId ||
+      !["device", "terminal_block"].includes(placement.role) ||
+      placement.layoutKind ||
+      placement.panelReference
+    ) {
+      return undefined;
+    }
+    const symbol = getRenderableSymbolForPlacement(
+      placement,
+      symbols,
+      model.assets
+    );
+    if (!symbol || (symbol.metadata.terminals?.length ?? 0) === 0) {
+      return undefined;
+    }
+    return { placement, symbol };
+  }, [
+    activeSheetCanvasModel.placements,
+    model.assets,
+    selectedPlacementId,
+    selection.placementIds.length,
+    symbols
+  ]);
   const visibleSheetContainers = useMemo(
     () => getVisibleSheetContainers(activeSheetCanvasModel),
     [activeSheetCanvasModel]
@@ -619,6 +950,27 @@ export function DrawingCanvasShell({
             }))
         ];
   const activeSheetPresentation = getDrawingSheetPresentation(activeSheet);
+  const placementWireContextRequests = useMemo(
+    () => collectPlacementWireContextRequests(model),
+    [model]
+  );
+  const placementConnectionDisplayModes = useMemo(
+    () => buildPlacementConnectionDisplayModeIndex(model),
+    [model]
+  );
+  const connectedWireSchedulesBySheetId = useMemo(() => {
+    const index = new Map<string, ConnectedWireScheduleAnnotation[]>();
+    for (const sheet of model.sheets) {
+      const schedules = sheet.annotations.filter(
+        isConnectedWireScheduleAnnotation
+      );
+      if (schedules.length > 0) index.set(sheet.id, schedules);
+    }
+    return index;
+  }, [model.sheets]);
+  const hasConnectedWireSchedules = connectedWireSchedulesBySheetId.size > 0;
+  const activeSheetHasCompleteWiringDisplay =
+    sheetHasCompleteWiringDisplay(activeSheet);
   const isDetailedPanelDrawing =
     activeSheetPresentation.workspaceContext === "detailed_panel";
   const detailedPanelReadOnly =
@@ -634,16 +986,8 @@ export function DrawingCanvasShell({
     [model.sheets]
   );
   const panelWiringSource = useMemo(
-    () =>
-      measureDrawingOperation(
-        "panel.source",
-        () => createPanelWiringSource(model, symbols),
-        {
-          sheets: model.sheets.length,
-          assets: model.assets?.length ?? 0
-        }
-      ),
-    [model, symbols]
+    () => modelPreparationCache.prepare(model).panelWiringSource,
+    [model, modelPreparationCache]
   );
   const compatiblePanelOptions = useMemo(
     () => buildCompatiblePanelOptions(panelWiringSource),
@@ -671,72 +1015,91 @@ export function DrawingCanvasShell({
   }, [isDetailedPanelDrawing, panelWiringSource, resolvedActiveSheetId]);
   const effectivePanelReviewAssetId =
     detailedPanelContext?.panelAssetId ?? panelReviewAssetId ?? undefined;
+  const panelEngineeringSnapshotRequired =
+    isDetailedPanelDrawing ||
+    activeSheetHasCompleteWiringDisplay ||
+    hasConnectedWireSchedules ||
+    viewMode === "preview" ||
+    Boolean(panelReviewAssetId) ||
+    Boolean(selectedPlacementId);
+  const panelEngineeringSnapshotCache = useMemo(
+    () => createDrawingPanelEngineeringSnapshotCache(),
+    []
+  );
   const panelEngineeringSnapshot = useMemo(
-    () =>
-      isDetailedPanelDrawing ||
-      viewMode === "preview" ||
-      Boolean(panelReviewAssetId) ||
-      isPanelDeliverablesOpen
-        ? measureDrawingOperation(
-            "panel.graph",
-            () =>
-              buildPanelEngineeringSnapshotFromValidatedSource(
-                panelWiringSource,
-                `edit:${editRevision}`
-              ),
-            {
-              sheets: panelWiringSource.sheets.length,
-              assets: panelWiringSource.assets.length
-            }
-          )
-        : undefined,
+    () => {
+      if (!panelEngineeringSnapshotRequired) return undefined;
+      return panelEngineeringSnapshotCache.getOrCreate(
+        panelWiringSource,
+        () => measureDrawingOperation(
+          "panel.graph",
+          () => buildPanelEngineeringSnapshotFromValidatedSource(
+            panelWiringSource,
+            `edit:${editRevision}`
+          ),
+          {
+            sheets: panelWiringSource.sheets.length,
+            assets: panelWiringSource.assets.length
+          }
+        )
+      );
+    },
     [
       editRevision,
-      isDetailedPanelDrawing,
-      isPanelDeliverablesOpen,
-      panelReviewAssetId,
+      panelEngineeringSnapshotCache,
+      panelEngineeringSnapshotRequired,
       panelWiringSource,
-      viewMode
     ]
   );
   const panelConnectivityGraph = panelEngineeringSnapshot?.graph;
-  const panelExternalTerminationDisplayIndex = useMemo<
-    ReadonlyMap<string, PanelExternalTerminationDisplayRow[]>
+  const placementWireContextDisplayIndex = useMemo<
+    PlacementWireContextDisplayIndex
   >(
     () =>
       panelConnectivityGraph
-        ? buildPanelExternalTerminationDisplayIndex(panelConnectivityGraph)
+        ? measureDrawingOperation("panel.placement-wire-context", () =>
+            buildPlacementWireContextDisplayIndex({
+              graph: panelConnectivityGraph,
+              requests: placementWireContextRequests
+            }))
+        : {
+            rowsBySheetId: new Map(),
+            summariesBySheetPlacement: new Map()
+          },
+    [panelConnectivityGraph, placementWireContextRequests]
+  );
+  const connectedWireScheduleIndex = useMemo<ConnectedWireScheduleIndex>(
+    () =>
+      panelConnectivityGraph
+        ? measureDrawingOperation("panel.connected-wire-schedule", () =>
+            buildConnectedWireScheduleIndex({
+              graph: panelConnectivityGraph,
+              schedulesBySheetId: connectedWireSchedulesBySheetId,
+              displayModesBySheetPlacement: placementConnectionDisplayModes
+            }))
         : new Map(),
-    [panelConnectivityGraph]
+    [
+      connectedWireSchedulesBySheetId,
+      placementConnectionDisplayModes,
+      panelConnectivityGraph
+    ]
   );
   const deferredPanelEngineeringSnapshot = useDeferredValue(
     panelEngineeringSnapshot
   );
   const panelQualityGraph = deferredPanelEngineeringSnapshot?.graph;
   const panelReviewUpdating =
-    (isPanelReviewOpen || isPanelDeliverablesOpen) &&
+    isPanelReviewOpen &&
     Boolean(panelEngineeringSnapshot) &&
     deferredPanelEngineeringSnapshot !== panelEngineeringSnapshot;
-  const panelPackageQuality = useMemo(() => {
-    if (!isPanelDeliverablesOpen || !panelQualityGraph) return undefined;
-    return measureDrawingOperation(
-      "panel.quality",
-      () => runPackagePanelDrawingQualityChecks(panelQualityGraph),
-      { scope: "package" }
-    );
-  }, [isPanelDeliverablesOpen, panelQualityGraph]);
   const panelQualityReport = useMemo(() => {
     if (
-      (!isPanelReviewOpen && !isPanelDeliverablesOpen) ||
+      !isPanelReviewOpen ||
       !panelQualityGraph ||
       !effectivePanelReviewAssetId
     ) {
       return undefined;
     }
-    const packageReport = panelPackageQuality?.reports.find(
-      (report) => report.panelAssetId === effectivePanelReviewAssetId
-    );
-    if (packageReport) return packageReport;
     return measureDrawingOperation(
       "panel.quality",
       () =>
@@ -750,9 +1113,7 @@ export function DrawingCanvasShell({
     );
   }, [
     effectivePanelReviewAssetId,
-    isPanelDeliverablesOpen,
     isPanelReviewOpen,
-    panelPackageQuality,
     panelQualityGraph
   ]);
   const panelDiscoveryIndex = useMemo(() => {
@@ -825,26 +1186,6 @@ export function DrawingCanvasShell({
         : [],
     [detailedPanelContext, panelConnectivityGraph]
   );
-  const panelGuidedWorkflow = useMemo<PanelGuidedWorkflowSnapshot | undefined>(
-    () =>
-      panelDiscoveryIndex && detailedPanelContext
-        ? buildPanelGuidedWorkflowSnapshot({
-            index: panelDiscoveryIndex,
-            internalWires: panelInternalWires,
-            connectionPatterns: panelConnectionPatterns,
-            persistedFocusAssetId:
-              detailedPanelContext.workflowFocusAssetId,
-            qualityReport: panelQualityReport
-          })
-        : undefined,
-    [
-      detailedPanelContext,
-      panelConnectionPatterns,
-      panelDiscoveryIndex,
-      panelInternalWires,
-      panelQualityReport
-    ]
-  );
   const panelPatternDeleteRecord = useMemo(
     () =>
       panelPatternDeleteId
@@ -854,25 +1195,30 @@ export function DrawingCanvasShell({
         : undefined,
     [panelConnectionPatterns, panelPatternDeleteId]
   );
-  const panelWireSettings = useMemo(
+  const proposedInternalWireNumber = useMemo(
     () =>
       detailedPanelContext
-        ? getPanelWireSettings(
-            panelWiringSource,
-            detailedPanelContext.panelAssetId
-          )
+        ? allocateInternalWireNumber(panelWiringSource).wireNumber
         : undefined,
     [detailedPanelContext, panelWiringSource]
   );
-  const proposedInternalWire = useMemo(
+  const previousInternalWireDescription = useMemo(
     () =>
-      detailedPanelContext
-        ? allocateInternalWireId({
-            source: panelWiringSource,
-            panelAssetId: detailedPanelContext.panelAssetId
-          })
-        : undefined,
-    [detailedPanelContext, panelWiringSource]
+      proposedInternalWireNumber
+        ? getPreviousInternalWireDescription(
+            model.panelWiring?.internalWires ?? [],
+            proposedInternalWireNumber
+          )
+        : "",
+    [model.panelWiring?.internalWires, proposedInternalWireNumber]
+  );
+  const defaultWireSpecification = useMemo(() => {
+    const entry = getDefaultWireCatalogEntry(wireCatalogEntries);
+    return entry ? createWireSpecificationSnapshot(entry) : undefined;
+  }, [wireCatalogEntries]);
+  const legacyWireUpgradePreview = useMemo(
+    () => buildLegacyWireIdentityUpgradePreview(panelWiringSource),
+    [panelWiringSource]
   );
   const internalWireDeleteRecord = useMemo(
     () =>
@@ -913,24 +1259,29 @@ export function DrawingCanvasShell({
     return index;
   }, [panelDiscoveryIndex]);
   const getConnectionAnchorState = useCallback(
-    (endpoint: DrawingEndpoint) => {
+    (endpoint: DrawingEndpoint): DrawingAnchorAvailability => {
       if (!isDetailedPanelDrawing) {
-        return { enabled: true };
+        return { status: "available", enabled: true, occupants: [] };
       }
       const candidate = panelWireEndpointsByAnchorId.get(
         `${endpoint.placementId}:${endpoint.anchorKey}`
       );
-      if (!candidate || !panelDiscoveryIndex) {
-        return {
-          enabled: false,
-          reason: "Internal wiring requires a resolved internal or single terminal."
-        };
-      }
-      const occupancy = getTerminalSideOccupancy(
-        panelDiscoveryIndex.terminalCatalog,
-        candidate.terminal
-      );
+      const resolveAvailability = (
+        incompatibleReason?: string,
+        channel: "conductor" | "structural" = "conductor"
+      ) =>
+        resolveDrawingAnchorAvailability({
+          endpoint,
+          terminalMappings: panelWireEndpointsByAnchorId,
+          terminalCatalog: panelDiscoveryIndex?.terminalCatalog,
+          channel,
+          incompatibleReason
+        });
+
+      if (!candidate || !panelDiscoveryIndex) return resolveAvailability();
+
       if (panelPatternDraft?.stage === "selecting") {
+        let incompatibleReason: string | undefined;
         const selectedKey = `${candidate.terminal.assetId}:${candidate.terminal.terminalKey}:${candidate.terminal.side}`;
         if (
           panelPatternDraft.selected.some(
@@ -938,7 +1289,7 @@ export function DrawingCanvasShell({
               `${entry.terminal.assetId}:${entry.terminal.terminalKey}:${entry.terminal.side}` === selectedKey
           )
         ) {
-          return { enabled: false, reason: "This terminal is already in the pattern." };
+          incompatibleReason = "This terminal is already in the pattern.";
         }
         const domain: PanelElectricalDomain =
           panelPatternDraft.topology === "shield" ||
@@ -949,11 +1300,12 @@ export function DrawingCanvasShell({
         const allowedDomains = panelTerminalDomainsByRef.get(
           `${candidate.terminal.assetId}:${candidate.terminal.terminalKey}`
         );
-        if (allowedDomains?.length && !allowedDomains.includes(domain)) {
-          return {
-            enabled: false,
-            reason: `This terminal does not allow the ${domain.replaceAll("_", " ")} domain.`
-          };
+        if (
+          !incompatibleReason &&
+          allowedDomains?.length &&
+          !allowedDomains.includes(domain)
+        ) {
+          incompatibleReason = `This terminal does not allow the ${domain.replaceAll("_", " ")} domain.`;
         }
         const structural = [
           "terminal_jumper",
@@ -962,45 +1314,25 @@ export function DrawingCanvasShell({
           "protective_earth",
           "signal_ground"
         ].includes(panelPatternDraft.topology);
-        const status = structural
-          ? occupancy?.structuralStatus
-          : occupancy?.conductorStatus;
-        const occupants = structural
-          ? occupancy?.structuralOccupants
-          : occupancy?.conductorOccupants;
-        if (status && status !== "available") {
-          return {
-            enabled: false,
-            reason:
-              status === "conflicting"
-                ? "This terminal has conflicting pattern occupancy."
-                : `${occupants?.[0]?.label ?? "Another relationship"} already uses this terminal channel.`
-          };
-        }
         if (
+          !incompatibleReason &&
           panelPatternDraft.topology === "fused_distribution" &&
           panelPatternDraft.selected.length >= 2 &&
           (panelPatternDraft.selected.length - 1) % 3 === 1
         ) {
           const input = panelPatternDraft.selected.at(-1);
           if (input && input.terminal.assetId !== candidate.terminal.assetId) {
-            return {
-              enabled: false,
-              reason: "Protection input and output must belong to the same device."
-            };
+            incompatibleReason =
+              "Protection input and output must belong to the same device.";
           }
         }
-        return { enabled: true };
+        return resolveAvailability(
+          incompatibleReason,
+          structural ? "structural" : "conductor"
+        );
       }
-      if (occupancy && occupancy.conductorStatus !== "available") {
-        return {
-          enabled: false,
-          reason:
-            occupancy.conductorStatus === "conflicting"
-              ? "Terminal occupancy is conflicting."
-              : `${occupancy.conductorOccupants[0]?.label ?? "Another connection"} already occupies this terminal.`
-        };
-      }
+
+      let incompatibleReason: string | undefined;
       const source = connectionDraft.from
         ? panelWireEndpointsByAnchorId.get(
             `${connectionDraft.from.placementId}:${connectionDraft.from.anchorKey}`
@@ -1011,12 +1343,10 @@ export function DrawingCanvasShell({
         source.terminal.assetId === candidate.terminal.assetId &&
         source.terminal.terminalKey === candidate.terminal.terminalKey
       ) {
-        return {
-          enabled: false,
-          reason: "A wire cannot connect both ends of the same logical terminal."
-        };
+        incompatibleReason =
+          "A wire cannot connect both ends of the same logical terminal.";
       }
-      if (source && panelConnectivityGraph) {
+      if (!incompatibleReason && source && panelConnectivityGraph) {
         const pair = [source.terminal, candidate.terminal]
           .map(
             (terminal) =>
@@ -1035,13 +1365,10 @@ export function DrawingCanvasShell({
               .join("::") === pair
         );
         if (duplicate) {
-          return {
-            enabled: false,
-            reason: `${duplicate.wireId} already connects these terminals.`
-          };
+          incompatibleReason = `${duplicate.wireId} already connects these terminals.`;
         }
       }
-      return { enabled: true };
+      return resolveAvailability(incompatibleReason);
     },
     [
       connectionDraft.from,
@@ -1053,12 +1380,60 @@ export function DrawingCanvasShell({
       panelWireEndpointsByAnchorId
     ]
   );
+  const selectedTerminalAvailabilitySummary = useMemo(() => {
+    if (
+      !isDetailedPanelDrawing ||
+      !selectedPlacementId ||
+      !panelDiscoveryIndex
+    ) {
+      return undefined;
+    }
+
+    const entries = [...panelWireEndpointsByAnchorId.entries()].flatMap(
+      ([anchorId, mapping]) => {
+        if (mapping.placementId !== selectedPlacementId) return [];
+        const endpoint = {
+          placementId: mapping.placementId,
+          anchorKey: mapping.anchorKey
+        };
+        return [
+          {
+            canonicalTerminalSideKey: drawingTerminalSideKey(mapping.terminal),
+            fallbackKey: anchorId,
+            terminal: mapping.terminal,
+            terminalLabel: mapping.terminalLabel,
+            availability: resolveDrawingAnchorAvailability({
+              endpoint,
+              terminalMappings: panelWireEndpointsByAnchorId,
+              terminalCatalog: panelDiscoveryIndex.terminalCatalog
+            })
+          }
+        ];
+      }
+    );
+
+    return summarizeDrawingTerminalAvailability(entries);
+  }, [
+    isDetailedPanelDrawing,
+    panelDiscoveryIndex,
+    panelWireEndpointsByAnchorId,
+    selectedPlacementId
+  ]);
   const activeSheetNumber = Math.max(
     1,
     model.sheets.findIndex((sheet) => sheet.id === activeSheet.id) + 1
   );
   const symbolLibraryContext = getSymbolLibraryContextForSheetKind(
     activeSheet.kind ?? "drawing"
+  );
+  const generatedLibrarySymbolsByVersionId = useMemo(
+    () =>
+      new Map(
+        getGeneratedSymbolsForLibraryContext(symbolLibraryContext).map(
+          (symbol) => [symbol.versionId, symbol]
+        )
+      ),
+    [symbolLibraryContext]
   );
   const sheetDeleteCandidate = sheetDeleteCandidateId
     ? model.sheets.find((sheet) => sheet.id === sheetDeleteCandidateId) ?? null
@@ -1077,9 +1452,6 @@ export function DrawingCanvasShell({
       ? "Front Matter"
       : `Section ${sheetDeleteSection.number - 1}`
     : undefined;
-  const sheetDuplicateCandidate = sheetDuplicateCandidateId
-    ? model.sheets.find((sheet) => sheet.id === sheetDuplicateCandidateId) ?? null
-    : null;
   const assetLinkPlacement = assetLinkDialogState
     ? model.sheets
         .flatMap((sheet) => sheet.placements)
@@ -1115,6 +1487,8 @@ export function DrawingCanvasShell({
       setSelectedConnectionId(undefined);
       setConnectionMode("idle");
       setConnectionDraft({});
+      clearConnectionInspections();
+      restorePropertiesAfterWireMode();
       setPendingInternalWire(null);
       setInternalWireDeleteCandidate(null);
       setPanelPatternDraft(null);
@@ -1188,7 +1562,10 @@ export function DrawingCanvasShell({
           return current;
         }
 
-        const nextModel = normalizeCanvasModel(rawNextModel, symbols);
+        const nextModel = measureDrawingOperation(
+          "canvas.normalize",
+          () => modelPreparationCache.prepare(rawNextModel).model
+        );
         const beforeEntry = currentHistoryEntry(current);
         const shouldRecord = options.history !== "skip";
 
@@ -1203,9 +1580,9 @@ export function DrawingCanvasShell({
             now - previousCoalesce.time < 900;
 
           if (!shouldCoalesce) {
-            historyRef.current = pushDrawingHistoryEntry(
-              historyRef.current,
-              beforeEntry
+            historyRef.current = measureDrawingOperation(
+              "canvas.history-commit",
+              () => pushDrawingHistoryEntry(historyRef.current, beforeEntry)
             );
           }
 
@@ -1219,7 +1596,7 @@ export function DrawingCanvasShell({
       });
       setEditRevision((current) => current + 1);
     },
-    [currentHistoryEntry, detailedPanelDrawingsEnabled, symbols]
+    [currentHistoryEntry, detailedPanelDrawingsEnabled, modelPreparationCache]
   );
 
   const beginModelHistoryTransaction = useCallback(() => {
@@ -1250,13 +1627,19 @@ export function DrawingCanvasShell({
     const result = commitCanvasGesture(draft);
 
     if (result.changed) {
-      const nextModel = normalizeCanvasModel(result.model, symbols);
-      historyRef.current = pushDrawingHistoryEntry(historyRef.current, entry);
+      const nextModel = measureDrawingOperation(
+        "canvas.normalize",
+        () => modelPreparationCache.prepare(result.model).model
+      );
+      historyRef.current = measureDrawingOperation(
+        "canvas.history-commit",
+        () => pushDrawingHistoryEntry(historyRef.current, entry)
+      );
       modelRef.current = nextModel;
       setModelState(nextModel);
       setEditRevision((current) => current + 1);
     }
-  }, [symbols]);
+  }, [modelPreparationCache]);
 
   const cancelModelHistoryTransaction = useCallback(() => {
     const draft = canvasGestureDraftRef.current;
@@ -1321,6 +1704,10 @@ export function DrawingCanvasShell({
   }, [message]);
 
   useEffect(() => {
+    updateDrawingPerformanceContext({ revision: `edit:${editRevision}` });
+  }, [editRevision]);
+
+  useEffect(() => {
     if (editRevision === savedRevision) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -1335,6 +1722,8 @@ export function DrawingCanvasShell({
     setSelectedConnectionId(undefined);
     setConnectionMode("idle");
     setConnectionDraft({});
+    clearConnectionInspections();
+    restorePropertiesAfterWireMode();
     setPendingInternalWire(null);
     setInternalWireDeleteCandidate(null);
     setPanelPatternDraft(null);
@@ -1401,13 +1790,19 @@ export function DrawingCanvasShell({
 
   const loadSheetFromDialog = (sheetId: string) => {
     measureDrawingOperation(
-      "canvas.sheet-load",
+      "canvas.sheet-dispatch",
       () => selectSheet(sheetId),
       { fromSheetId: resolvedActiveSheetId, toSheetId: sheetId }
     );
     setIsSheetLoaderOpen(false);
     setSheetFocusRequestKey((current) => current + 1);
     setMessage("Sheet loaded.");
+  };
+
+  const loadSheetFromAssetManager = (sheetId: string) => {
+    loadSheetFromDialog(sheetId);
+    setIsAssetManagerOpen(false);
+    setAssetManagerInitialAssetId(null);
   };
 
   const selectCanvasObject = (
@@ -1448,13 +1843,11 @@ export function DrawingCanvasShell({
     symbol,
     assetId,
     tag,
-    containerAssetId,
     componentSelections
   }: AddSymbolAssetSubmission) => {
     const placement: DrawingPlacement = {
       id: `pl_${Date.now()}`,
       assetId,
-      containerAssetId,
       symbolId: symbol.symbolId,
       versionId: symbol.versionId,
       role: roleFromSymbol(symbol),
@@ -1503,7 +1896,10 @@ export function DrawingCanvasShell({
   };
 
   const placeBackplaneInPanel = (panelPlacement: DrawingPlacement) => {
-    const placement = createBackplanePlacement({ panelPlacement });
+    const placement = createBackplanePlacement({
+      panelPlacement,
+      sheet: activeSheetCanvasModel.sheet
+    });
 
     updateActiveSheet((current) => addPlacementCommand(current, placement));
     selectPlacement(placement.id);
@@ -1546,6 +1942,13 @@ export function DrawingCanvasShell({
           placement.id === selectedPlacementId && isBackplanePlacement(placement)
       )
     : undefined;
+  const selectedPanelConnectionView = selectedPlacementId
+    ? activeSheetCanvasModel.placements.find(
+        (placement) =>
+          placement.id === selectedPlacementId &&
+          isPanelConnectionViewPlacement(placement)
+      )
+    : undefined;
   const activeAssociatedBackplane = useMemo(() => {
     const backplanes = getBackplanesForSheet(activeSheetCanvasModel);
 
@@ -1578,30 +1981,50 @@ export function DrawingCanvasShell({
           container.assetId === activeAssociatedBackplane.containerAssetId
       )
     : undefined;
+  const activeAssociatedTarget = useMemo<
+    PanelAssetPlacementTarget | undefined
+  >(
+    () =>
+      selectedPanelConnectionView
+        ? {
+            kind: "connection_reference",
+            placementId: selectedPanelConnectionView.id
+          }
+        : activeAssociatedBackplane
+          ? {
+              kind: "physical_backplane",
+              placementId: activeAssociatedBackplane.id
+            }
+          : undefined,
+    [activeAssociatedBackplane, selectedPanelConnectionView]
+  );
+  const activeAssociatedPanelAssetId =
+    selectedPanelConnectionView?.assetId ??
+    activeAssociatedBackplane?.containerAssetId;
+  const activeAssociatedPanelLabel = selectedPanelConnectionView
+    ? `${selectedPanelConnectionView.tag} / ${selectedPanelConnectionView.title ?? selectedPanelConnectionView.tag}`
+    : activeAssociatedPanel
+      ? `${activeAssociatedPanel.placement.tag} / ${getPanelEnclosureTitle(
+          activeAssociatedPanel.placement
+        )}`
+      : undefined;
   const associatedPanelAssets = useMemo(
     () =>
-      activeAssociatedBackplane?.containerAssetId
+      activeAssociatedPanelAssetId && activeAssociatedTarget
         ? buildAssociatedPanelAssetCatalog(
             model,
             symbols,
-            activeAssociatedBackplane.containerAssetId,
-            activeAssociatedBackplane.id
+            activeAssociatedPanelAssetId,
+            activeAssociatedTarget.placementId
           )
         : [],
-    [activeAssociatedBackplane, model, symbols]
+    [activeAssociatedPanelAssetId, activeAssociatedTarget, model, symbols]
   );
 
   const addLayoutSymbol = (
     symbol: ApprovedDrawingSymbol,
     submission?: AddSymbolAssetSubmission
   ) => {
-    if (isTerminalBlockModuleSymbol(symbol)) {
-      setMessage(
-        "Individual terminal modules cannot be placed. Use Terminal Block Group."
-      );
-      return;
-    }
-
     const backplanes = getBackplanesForSheet(activeSheetCanvasModel);
     const backplane = selectedBackplane ?? backplanes[0];
 
@@ -1623,8 +2046,8 @@ export function DrawingCanvasShell({
       symbol.metadata.physicalHeightMm ?? symbol.metadata.viewBox.height;
     const placementId = `pl_${Date.now()}`;
     const isTerminalBlockLayoutSymbol =
-      symbol.category === "terminal_block" &&
-      symbol.metadata.panelCategory === "termination";
+      (symbol.technicalKind ?? symbol.category) === "terminal_block" ||
+      (symbol.technicalKind ?? symbol.category) === "termination";
     const createsPhysicalAsset = Boolean(
       isTerminalBlockLayoutSymbol ||
         symbol.metadata.panelWiring ||
@@ -1641,6 +2064,9 @@ export function DrawingCanvasShell({
       backplane,
       symbol,
       sheet: activeSheetCanvasModel.sheet,
+      parentPanel: visibleSheetContainers.find(
+        (container) => container.assetId === backplane.containerAssetId
+      )?.placement,
       placement: {
         id: placementId,
         ...(createsPhysicalAsset
@@ -1736,24 +2162,37 @@ export function DrawingCanvasShell({
   };
 
   const placeAssociatedPanelAsset = (assetId: string) => {
-    if (!activeAssociatedBackplane) {
-      setMessage("Add or select a backplane before placing panel assets.");
+    if (!activeAssociatedTarget) {
+      setMessage("Select a backplane or panel connection reference first.");
       return;
     }
 
     try {
-      const result = placeAssociatedPanelAssetOnBackplane({
-        model,
-        sheetId: resolvedActiveSheetId,
-        backplaneId: activeAssociatedBackplane.id,
-        assetId,
-        symbols
-      });
+      const result =
+        activeAssociatedTarget.kind === "connection_reference"
+          ? placeAssociatedPanelAssetOnConnectionView({
+              model,
+              sheetId: resolvedActiveSheetId,
+              connectionViewId: activeAssociatedTarget.placementId,
+              assetId,
+              symbols
+            })
+          : placeAssociatedPanelAssetOnBackplane({
+              model,
+              sheetId: resolvedActiveSheetId,
+              backplaneId: activeAssociatedTarget.placementId,
+              assetId,
+              symbols
+            });
 
       commitModel(result.model);
       selectPlacement(result.placement.id);
       setSelectedConnectionId(undefined);
-      setMessage(`${result.placement.tag} placed on backplane.`);
+      setMessage(
+        activeAssociatedTarget.kind === "connection_reference"
+          ? `${result.placement.tag} added to panel connection view.`
+          : `${result.placement.tag} placed on backplane.`
+      );
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -1763,68 +2202,100 @@ export function DrawingCanvasShell({
     }
   };
 
-  const addPanel = ({ assetId, tag, title }: AddPanelEnclosureSubmission) => {
-    const placement = createPanelEnclosurePlacement({
-      model,
-      activeSheet,
-      assetId,
-      tag,
-      title,
-      x: viewportCenter.x - 59,
-      y: viewportCenter.y - 46
-    });
-
-    updateActiveSheet((current) => addPlacementCommand(current, placement));
-    selectPlacement(placement.id);
-    setSelectedConnectionId(undefined);
-    setIsAddPanelOpen(false);
-    setMessage(`${placement.tag} panel added.`);
-  };
-
-  const addTerminalBlock = ({
-    assetId,
-    tag,
-    terminalBlock,
-    containerAssetId
-  }: AddTerminalBlockSubmission) => {
-    const placement = createTerminalBlockPlacement({
-      model,
-      activeSheet,
-      assetId,
-      tag,
-      terminalBlock,
-      x: viewportCenter.x - 18,
-      y: viewportCenter.y - 31
-    });
-
-    updateActiveSheet((current) =>
-      addPlacementCommand(current, {
-        ...placement,
-        containerAssetId
-      })
-    );
-    selectPlacement(placement.id);
-    setSelectedConnectionId(undefined);
-    setIsAddTerminalBlockOpen(false);
-    setMessage(`${placement.tag} terminal block added.`);
-  };
-
-  const addTerminalBlockGroup = ({
-    backplaneId,
-    name,
-    description,
-    count
-  }: TerminalBlockGroupDialogSubmission) => {
+  const addPanel = (submission: AddPanelEnclosureSubmission) => {
+    const { mode, assetId, tag, title } = submission;
     try {
-      const result = createAndPlaceTerminalBlockGroup({
+      const target = {
+        x: viewportCenter.x - 59,
+        y: viewportCenter.y - 46
+      };
+      const panel =
+        mode === "reference"
+          ? createPanelConnectionView({
+              model,
+              activeSheet,
+              assetId,
+              tag,
+              title,
+              sourceBackplanePlacementId:
+                submission.sourceBackplanePlacementId,
+              preferredPosition: target
+            })
+          : createPanelEnclosurePlacement({
+                model,
+                activeSheet,
+                assetId,
+                tag,
+                title,
+                ...target
+              });
+
+      updateActiveSheet((current) =>
+        addPlacementCommand(current, panel)
+      );
+      selectPlacement(panel.id);
+      setSelectedConnectionId(undefined);
+      setIsAddPanelOpen(false);
+      setMessage(
+        mode === "reference"
+          ? `${panel.tag} schematic connection reference added.`
+          : `${panel.tag} panel added.`
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "The panel reference could not be placed."
+      );
+    }
+  };
+
+  const fitPanelConnectionView = (placementId: string) => {
+    updateActiveSheet((current) => {
+      const placement = current.placements.find(
+        (candidate) => candidate.id === placementId
+      );
+      return isPanelConnectionViewPlacement(placement)
+        ? fitPanelConnectionViewContents({
+            model: current,
+            placement,
+            symbols,
+            assets: model.assets
+          })
+        : current;
+    });
+    setMessage("Panel connection contents fitted.");
+  };
+
+  const submitTerminalStrip = (
+    submission: TerminalStripBuilderSubmission
+  ): TerminalStripBuilderSubmissionResult => {
+    try {
+      if (submission.mode === "edit") {
+        const nextModel = updateStructuredTerminalStrip({
+          model,
+          symbols,
+          assetId: submission.assetId,
+          name: submission.name,
+          description: submission.description,
+          strip: submission.strip
+        });
+        commitModel(nextModel);
+        setEditingTerminalStripAssetId(null);
+        setMessage("Terminal strip updated.");
+        return { ok: true };
+      }
+      const result = createAndPlaceStructuredTerminalStrip({
         model,
         symbols,
         input: {
           sheetId: resolvedActiveSheetId,
-          backplaneId,
-          name,
-          description,
-          count
+          backplaneId: submission.backplaneId,
+          name: submission.name,
+          description: submission.description,
+          strip: submission.strip,
+          x: viewportCenter.x - 35,
+          y: viewportCenter.y - 25
         }
       });
 
@@ -1832,16 +2303,70 @@ export function DrawingCanvasShell({
       selectPlacement(result.placement.id);
       setSelectedConnectionId(undefined);
       setIsTerminalBlockGroupOpen(false);
-      setMessage(
-        `${result.placement.tag} terminal block group added to the backplane.`
-      );
+      setIsAddTerminalBlockOpen(false);
+      setMessage(`${result.placement.tag} terminal strip placed.`);
+      return { ok: true };
     } catch (error) {
-      setMessage(
+      const message =
         error instanceof Error
           ? error.message
-          : "Terminal block group could not be created."
-      );
+          : "Terminal strip could not be placed.";
+      setMessage(message);
+      return { ok: false, error: message };
     }
+  };
+
+  const applyTerminalStripReuse = (
+    input: StructuredTerminalStripReuseInput,
+    onSuccess: (placementTag: string, createdNewAsset: boolean) => void
+  ): { ok: true } | { ok: false; error: string } => {
+    try {
+      const result = reuseStructuredTerminalStrip({ model, symbols, input });
+      commitModel(result.model);
+      selectSheet(input.targetSheetId);
+      selectPlacement(result.placement.id);
+      setSelectedConnectionId(undefined);
+      onSuccess(result.placement.tag, result.createdNewAsset);
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "The terminal strip could not be reused."
+      };
+    }
+  };
+
+  const submitTerminalStripReuse = (
+    input: StructuredTerminalStripReuseInput
+  ): { ok: true } | { ok: false; error: string } =>
+    applyTerminalStripReuse(input, (placementTag, createdNewAsset) => {
+      setTerminalStripReuseSource(null);
+      setMessage(
+        createdNewAsset
+          ? `${placementTag} created as an independent terminal strip.`
+          : `${placementTag} representation placed.`
+      );
+    });
+
+  const submitDestinationTerminalStripCopy = (
+    input: StructuredTerminalStripReuseInput
+  ): { ok: true } | { ok: false; error: string } => {
+    const sourceTag = model.sheets
+      .find((sheet) => sheet.id === input.sourceSheetId)
+      ?.placements.find(
+        (placement) => placement.id === input.sourcePlacementId
+      )?.tag;
+    return applyTerminalStripReuse(input, (placementTag) => {
+      setIsCopyTerminalBlockOpen(false);
+      setMessage(
+        sourceTag
+          ? `${placementTag} created from ${sourceTag}.`
+          : `${placementTag} created as an independent terminal strip.`
+      );
+    });
   };
 
   const updatePlacement = (
@@ -1850,17 +2375,6 @@ export function DrawingCanvasShell({
   ) => {
     updateActiveSheet((current) =>
       updatePlacementProperties(current, placementId, updates)
-    );
-  };
-
-  const updatePlacementContainer = (
-    placementId: string,
-    containerAssetId: string | undefined
-  ) => {
-    updateActiveSheet((current) =>
-      containerAssetId
-        ? assignPlacementToContainer(current, placementId, containerAssetId)
-        : clearPlacementContainer(current, placementId)
     );
   };
 
@@ -1932,19 +2446,6 @@ export function DrawingCanvasShell({
     }
 
     setDragState(null);
-  };
-
-  const updatePlacementAssetTag = (assetId: string, tag: string) => {
-    try {
-      commitModel(
-        (current) => renameDrawingAssetTag(current, assetId, tag, symbols),
-        { coalesceKey: `asset-tag:${assetId}` }
-      );
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Asset tag could not be updated."
-      );
-    }
   };
 
   const openAssetLinkDialog = (mode: AssetLinkDialogMode) => {
@@ -2031,18 +2532,109 @@ export function DrawingCanvasShell({
   };
 
   const createAssetManagerAsset = (input: ManagedAssetCreateInput) => {
-    commitModel((current) => createManagedAsset(current, input, symbols));
+    const currentModel = modelRef.current;
+    const existingAssetIds = new Set(
+      currentModel.assets?.map((asset) => asset.id) ?? []
+    );
+    const nextModel = createManagedAsset(currentModel, input, symbols);
+    const createdAsset = nextModel.assets?.find(
+      (asset) => !existingAssetIds.has(asset.id)
+    );
+
+    if (!createdAsset) {
+      throw new Error("The created asset could not be resolved.");
+    }
+
+    commitModel(nextModel);
     setMessage("Asset created.");
+    return {
+      id: createdAsset.id,
+      tag: createdAsset.tag,
+      title: createdAsset.title
+    };
   };
 
   const updateAssetManagerAsset = (
     assetId: string,
-    updates: ManagedAssetUpdateInput
+    updates: ManagedAssetUpdateInput,
+    engineeringAttributeChange?: EngineeringAttributeChange
   ) => {
+    const coalesceKey = engineeringAttributeChange
+      ? engineeringAttributeChange.operation === "update"
+        ? `engineering-attribute:${assetId}:${engineeringAttributeChange.definitionKey}`
+        : undefined
+      : `asset-manager:${assetId}:${Object.keys(updates).join(",")}`;
     commitModel(
       (current) => updateManagedAsset(current, assetId, updates, symbols),
-      { coalesceKey: `asset-manager:${assetId}:${Object.keys(updates).join(",")}` }
+      { coalesceKey }
     );
+  };
+
+  const updateConnectionDisplayMode = (
+    placementId: string,
+    mode: PanelConnectionDisplayMode
+  ) => {
+    commitModel((current) =>
+      updateDrawingConnectionDisplayMode({
+        model: current,
+        sheetId: resolvedActiveSheetId,
+        placementId,
+        mode
+      })
+    );
+    setMessage("Connection display updated.");
+  };
+
+  const arrangeSelection = (action: PlacementArrangementAction) => {
+    const targetSelection = selectionRef.current;
+
+    if (targetSelection.annotationIds.length > 0) {
+      setMessage("Deselect notes before arranging equipment symbols.");
+      return;
+    }
+
+    const result = resolvePlacementArrangement({
+      model: activeSheetCanvasModel,
+      symbols,
+      placementIds: targetSelection.placementIds,
+      action
+    });
+
+    if (!result.ok) {
+      setMessage(result.message);
+      return;
+    }
+
+    if (result.deltas.every((delta) => delta.x === 0 && delta.y === 0)) {
+      setMessage("The selected symbols are already arranged.");
+      return;
+    }
+
+    updateActiveSheet((current) =>
+      applyPlacementArrangement({ model: current, deltas: result.deltas })
+    );
+    setMessage(
+      placementArrangementMessage(action, targetSelection.placementIds.length)
+    );
+  };
+
+  const updateSelectedAsset = (
+    assetId: string,
+    updates: Pick<
+      ManagedAssetUpdateInput,
+      "tag" | "title" | "description" | "engineeringAttributes"
+    >,
+    engineeringAttributeChange?: EngineeringAttributeChange
+  ) => {
+    try {
+      updateAssetManagerAsset(assetId, updates, engineeringAttributeChange);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "The selected asset could not be updated."
+      );
+    }
   };
 
   const deleteAssetManagerAsset = (
@@ -2059,75 +2651,6 @@ export function DrawingCanvasShell({
           error instanceof Error ? error.message : "Asset could not be deleted."
       };
     }
-  };
-
-  const updatePlacementTitle = (placementId: string, placementTitle: string) => {
-    const normalizedTitle = placementTitle.trim();
-
-    updateActiveSheet(
-      (current) => ({
-        ...current,
-        placements: current.placements.map((placement) => {
-          if (placement.id !== placementId) {
-            return placement;
-          }
-
-          if (!normalizedTitle) {
-            const placementWithoutTitle = { ...placement };
-            delete placementWithoutTitle.title;
-            return placementWithoutTitle;
-          }
-
-          return {
-            ...placement,
-            title: normalizedTitle
-          };
-        })
-      }),
-      { coalesceKey: `placement-title:${placementId}` }
-    );
-  };
-
-  const updatePanelTitle = (assetId: string, panelTitle: string) => {
-    commitModel(
-      (current) => updatePanelEnclosureTitle(current, assetId, panelTitle),
-      { coalesceKey: `panel-title:${assetId}` }
-    );
-  };
-
-  const updateTerminalBlockConfig = (
-    assetId: string,
-    updates: {
-      terminalBlock?: TerminalBlockPlacement;
-      title?: string;
-      description?: string;
-    }
-  ) => {
-    try {
-      const nextModel = updateTerminalBlockGroup({
-        model,
-        assetId,
-        count: updates.terminalBlock?.count,
-        name: updates.title,
-        description: updates.description
-      });
-
-      commitModel(nextModel, { coalesceKey: `terminal-block:${assetId}` });
-    } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "Terminal block group could not be updated."
-      );
-    }
-  };
-
-  const updateTitleBlock = (
-    updates: Partial<DrawingModel["titleBlock"]>
-  ) => {
-    commitModel((current) => updatePackageTitleBlock(current, updates), {
-      coalesceKey: `title-block:${Object.keys(updates).join(",")}`
-    });
   };
 
   const removePlacement = (placementId: string) => {
@@ -2153,7 +2676,9 @@ export function DrawingCanvasShell({
         setSelectedConnectionId(undefined);
         setSelection({ ...EMPTY_CANVAS_SELECTION });
         setConnectionDraft({});
-        setMessage(`${detailedOccurrence.tag} returned to the Panel Work Queue.`);
+        setMessage(
+          `${detailedOccurrence.tag} returned to the Panel Engineering Workbench.`
+        );
       } catch (error) {
         setMessage(
           error instanceof Error
@@ -2192,6 +2717,54 @@ export function DrawingCanvasShell({
     setMessage("Note added.");
   };
 
+  const addConnectedWireSchedule = () => {
+    if (!selectedScheduleSource?.placement.assetId) {
+      setMessage("Select one managed electrical symbol first.");
+      return;
+    }
+    const placementBounds = getPlacementBounds(
+      selectedScheduleSource.placement,
+      selectedScheduleSource.symbol.metadata
+    );
+    const position = defaultConnectedWireSchedulePosition({
+      sheet: activeSheetCanvasModel.sheet,
+      placementBounds: {
+        left: placementBounds.x,
+        right: placementBounds.x + placementBounds.width,
+        top: placementBounds.y
+      }
+    });
+    const annotation: ConnectedWireScheduleAnnotation = {
+      id: `wire_schedule_${Date.now()}`,
+      kind: "connected_wire_schedule",
+      ...position,
+      schedule: {
+        assetId: selectedScheduleSource.placement.assetId,
+        sourcePlacementId: selectedScheduleSource.placement.id,
+        scope: "all_connected"
+      }
+    };
+    commitModel((current) => {
+      const sheetId = getActiveSheetId(current, resolvedActiveSheetId);
+      const withAnnotation = replaceSheetFromCanvasModel(
+        current,
+        sheetId,
+        addAnnotationCommand(toSheetCanvasModel(current, sheetId), annotation)
+      );
+
+      return updateDrawingConnectionDisplayMode({
+        model: withAnnotation,
+        sheetId,
+        placementId: selectedScheduleSource.placement.id,
+        mode: "all_connected"
+      });
+    });
+    selectCanvasObject("annotation", annotation.id);
+    setSelectedConnectionId(undefined);
+    setConnectionDraft({});
+    setMessage("Connected Wire Schedule added.");
+  };
+
   const updateAnnotation = (
     annotationId: string,
     updates: Partial<DrawingAnnotation>
@@ -2199,6 +2772,116 @@ export function DrawingCanvasShell({
     updateActiveSheet((current) =>
       updateAnnotationCommand(current, annotationId, updates)
     );
+  };
+
+  const synchronizeConnectedWireScheduleContinuations = (
+    annotationId: string,
+    rowsPerPage: number
+  ) => {
+    const annotation = activeSheet.annotations.find(
+      (candidate) => candidate.id === annotationId
+    );
+    const sourceAnnotation =
+      annotation && isConnectedWireScheduleAnnotation(annotation)
+        ? annotation
+        : undefined;
+
+    try {
+      const result = createOrSynchronizeConnectedWireScheduleContinuations({
+        model: modelRef.current,
+        sourceSheetId: resolvedActiveSheetId,
+        sourceAnnotationId: annotationId,
+        rowsPerPage,
+        symbols
+      });
+      const wasPaginated = Boolean(sourceAnnotation?.schedule.pagination);
+      commitModel(result.model);
+
+      const createdSheetId = result.createdSheetIds[0];
+      if (createdSheetId) {
+        const createdSheet = result.model.sheets.find(
+          (sheet) => sheet.id === createdSheetId
+        );
+        const createdSchedule = createdSheet?.annotations.find(
+          (annotation) =>
+            isConnectedWireScheduleAnnotation(annotation) &&
+            annotation.schedule.pagination?.continuationSetId ===
+              result.continuationSetId
+        );
+        if (createdSheet && createdSchedule) {
+          clearActiveSheetSelection();
+          setActiveSheet(createdSheet.id);
+          setViewportTransform({ zoom: 1, panX: 0, panY: 0 });
+          setViewportCenter({
+            x: createdSheet.page.width / 2,
+            y: createdSheet.page.height / 2
+          });
+          setSelection({
+            placementIds: [],
+            annotationIds: [createdSchedule.id]
+          });
+          setSheetFocusRequestKey((current) => current + 1);
+        }
+      }
+
+      const assetTag = modelRef.current.assets.find(
+        (asset) => asset.id === sourceAnnotation?.schedule.assetId
+      )?.tag;
+      setMessage(
+        wasPaginated
+          ? `${assetTag ?? "Connected wire schedule"} continuation sheets synchronized.`
+          : `${result.pageCount}-part schedule created for ${assetTag ?? "the selected equipment"}.`
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "The continuation sheets could not be synchronized."
+      );
+    }
+  };
+
+  const removeConnectedWireScheduleContinuations = (annotationId: string) => {
+    try {
+      const result = removeConnectedWireSchedulePagination({
+        model: modelRef.current,
+        sourceSheetId: resolvedActiveSheetId,
+        sourceAnnotationId: annotationId
+      });
+      commitModel(result.model);
+      setSelection({ placementIds: [], annotationIds: [annotationId] });
+      setMessage("Connected wire schedule pagination removed.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Pagination could not be removed safely."
+      );
+    }
+  };
+
+  const openConnectedWireSchedulePartOne = (continuationSetId: string) => {
+    const partOne = model.sheets.flatMap((sheet) =>
+      sheet.annotations.flatMap((annotation) =>
+        isConnectedWireScheduleAnnotation(annotation) &&
+        annotation.schedule.pagination?.continuationSetId ===
+          continuationSetId &&
+        annotation.schedule.pagination.pageIndex === 0
+          ? [{ sheet, annotation }]
+          : []
+      )
+    )[0];
+    if (!partOne) {
+      setMessage("Part 1 of this continuation set is unavailable.");
+      return;
+    }
+    selectSheet(partOne.sheet.id);
+    setSelection({
+      placementIds: [],
+      annotationIds: [partOne.annotation.id]
+    });
+    setSheetFocusRequestKey((current) => current + 1);
+    setMessage("Part 1 loaded.");
   };
 
   const updateAnnotationGroup = (
@@ -2213,7 +2896,7 @@ export function DrawingCanvasShell({
 
     updateActiveSheet((current) => ({
       ...current,
-      annotations: current.annotations.map((annotation) => {
+      annotations: current.annotations.map((annotation): DrawingAnnotation => {
         const update = updates.find(
           (candidate) => candidate.annotationId === annotation.id
         );
@@ -2233,8 +2916,17 @@ export function DrawingCanvasShell({
               : update.updates.y - annotation.y
         };
 
-        if (!annotation.leader?.enabled || (delta.x === 0 && delta.y === 0)) {
-          return { ...annotation, ...update.updates };
+        if (
+          isConnectedWireScheduleAnnotation(annotation) ||
+          !annotation.leader?.enabled ||
+          (delta.x === 0 && delta.y === 0)
+        ) {
+          return {
+            ...annotation,
+            ...update.updates,
+            id: annotation.id,
+            kind: annotation.kind
+          } as DrawingAnnotation;
         }
 
         const leaderTarget = clampPointToSheet(
@@ -2248,12 +2940,14 @@ export function DrawingCanvasShell({
         return {
           ...annotation,
           ...update.updates,
+          id: annotation.id,
+          kind: annotation.kind,
           leader: {
             ...annotation.leader,
             targetX: leaderTarget.x,
             targetY: leaderTarget.y
           }
-        };
+        } as DrawingAnnotation;
       })
     }));
   };
@@ -2439,9 +3133,15 @@ export function DrawingCanvasShell({
         return current;
       }
 
+      const currentRenderableSymbols = buildRenderableDrawingSymbols({
+        placements: currentCanvasModel.placements,
+        approvedSymbols: symbols,
+        assets: current.assets
+      });
+
       const route = generateDefaultOrthogonalRoute({
         model: currentCanvasModel,
-        symbols,
+        symbols: currentRenderableSymbols,
         connection,
         mode: "auto"
       });
@@ -2495,18 +3195,18 @@ export function DrawingCanvasShell({
   };
 
   const toggleConnectMode = () => {
-    setConnectionMode((current) => {
-      const next = current === "connecting" ? "idle" : "connecting";
-      setMessage(
-        next === "connecting"
-          ? isDetailedPanelDrawing
-            ? "Select a free internal terminal."
-            : "Select a connection start anchor."
-          : null
-      );
-      return next;
-    });
+    const next = connectionMode === "connecting" ? "idle" : "connecting";
+    setConnectionMode(next);
+    setMessage(
+      next === "connecting"
+        ? isDetailedPanelDrawing
+          ? "Select a free internal terminal."
+          : "Select a connection start anchor."
+        : null
+    );
     setConnectionDraft({});
+    clearConnectionInspections();
+    if (next === "idle") restorePropertiesAfterWireMode();
     setPendingInternalWire(null);
     setPanelPatternDraft(null);
     setPendingPanelPatternReview(null);
@@ -2519,22 +3219,30 @@ export function DrawingCanvasShell({
       setPendingPanelPatternReview(null);
       setConnectionDraft({});
       setConnectionMode("idle");
+      clearConnectionInspections();
+      restorePropertiesAfterWireMode();
       setMessage(null);
       return;
     }
     if (connectionDraft.from) {
       setConnectionDraft({});
+      clearConnectionInspections();
       setMessage("Connection start cleared.");
       return;
     }
 
     setConnectionMode("idle");
+    clearConnectionInspections();
+    restorePropertiesAfterWireMode();
     setPendingInternalWire(null);
     setSelectedConnectionId(undefined);
     setMessage(null);
   };
 
-  const handleConnectionAnchorClick = (endpoint: DrawingEndpoint) => {
+  const handleConnectionAnchorClick = (
+    endpoint: DrawingEndpoint,
+    inspection: DrawingAnchorInspection
+  ) => {
     if (connectionMode !== "connecting") {
       return;
     }
@@ -2584,10 +3292,13 @@ export function DrawingCanvasShell({
         return;
       }
       if (!connectionDraft.from) {
-        setConnectionDraft({ from: endpoint });
+        setConnectionDraft({ from: endpoint, waypoints: [] });
+        setConnectionSourceInspection(inspection);
+        setConnectionHoverInspection(inspection);
+        revealPropertiesForWireAuthoring();
         selectPlacement(endpoint.placementId);
         setSelectedConnectionId(undefined);
-        setMessage("Select a free destination terminal.");
+        setMessage(null);
         return;
       }
       const sourceEndpoint = panelWireEndpointsByAnchorId.get(
@@ -2595,6 +3306,7 @@ export function DrawingCanvasShell({
       );
       if (!sourceEndpoint) {
         setConnectionDraft({});
+        clearConnectionInspections();
         setMessage("The selected source terminal is no longer available.");
         return;
       }
@@ -2608,24 +3320,49 @@ export function DrawingCanvasShell({
         setMessage(validation.findings[0]?.message ?? "The wire endpoints are invalid.");
         return;
       }
-      setPendingInternalWire({ from: sourceEndpoint, to: currentEndpoint });
+      const routePreview = buildGuidedConnectionPreview({
+        model: activeSheetCanvasModel,
+        symbols: activeSheetRenderableSymbols,
+        from: connectionDraft.from,
+        destination: endpoint,
+        waypoints: connectionDraft.waypoints ?? []
+      });
+      if (routePreview.warning || routePreview.points.length < 2) {
+        setMessage(
+          routePreview.warning ??
+            "The guided route cannot be completed inside the printable sheet."
+        );
+        return;
+      }
+      setPendingInternalWire({
+        from: sourceEndpoint,
+        to: currentEndpoint,
+        waypoints: [...(connectionDraft.waypoints ?? [])]
+      });
       setConnectionMode("idle");
-      setConnectionDraft({});
+      setConnectionDraft((current) => ({
+        ...current,
+        pointer: undefined,
+        hoveredDestination: endpoint,
+        alignmentFeedback: [],
+        warning: undefined
+      }));
+      setConnectionHoverInspection(inspection);
       setMessage(null);
       return;
     }
 
     if (!connectionDraft.from) {
-      setConnectionDraft({ from: endpoint });
+      setConnectionDraft({ from: endpoint, waypoints: [] });
       selectPlacement(endpoint.placementId);
       setSelectedConnectionId(undefined);
-      setMessage("Select a destination anchor.");
+      setMessage(null);
       return;
     }
 
     const result = createConnectionFromEndpoints({
       model: activeSheetCanvasModel,
-      symbols,
+      symbols: activeSheetRenderableSymbols,
       from: connectionDraft.from,
       to: endpoint
     });
@@ -2635,12 +3372,18 @@ export function DrawingCanvasShell({
       return;
     }
 
-    const route = generateDefaultOrthogonalRoute({
+    const route = buildGuidedConnectionRoute({
       model: activeSheetCanvasModel,
-      symbols,
+      symbols: activeSheetRenderableSymbols,
       connection: result.connection,
-      mode: "auto"
+      waypoints: connectionDraft.waypoints ?? []
     });
+    if (!route) {
+      setMessage(
+        "The guided route cannot be completed inside the printable sheet. Adjust a bend and try again."
+      );
+      return;
+    }
     const routedConnection = route
       ? { ...result.connection, route }
       : result.connection;
@@ -2648,19 +3391,139 @@ export function DrawingCanvasShell({
     updateActiveSheet((current) => addConnectionCommand(current, routedConnection));
     setSelectedConnectionId(routedConnection.id);
     setSelection({ ...EMPTY_CANVAS_SELECTION });
-    setConnectionDraft({});
-    setMessage("Connection added.");
+    setConnectionDraft({ waypoints: [] });
+    setMessage("Connection added. Select another connection start anchor.");
   };
 
-  const handleConnectionPointerMove = (pointer: { x: number; y: number }) => {
+  const handleConnectionPointerMove = (
+    pointer: { x: number; y: number },
+    options: GuidedConnectionPointerOptions
+  ) => {
+    setConnectionDraft((current) => {
+      if (!current.from) return current;
+      if (panelPatternDraft) return current;
+
+      const resolution = resolveGuidedConnectionPointer({
+        model: activeSheetCanvasModel,
+        symbols: activeSheetRenderableSymbols,
+        from: current.from,
+        destination: current.hoveredDestination,
+        waypoints: current.waypoints ?? [],
+        proposedPoint: pointer,
+        pixelsPerUnit: options.pixelsPerUnit,
+        activeSnapState: current.snapState,
+        bypassSnapping: options.bypassSnapping
+      });
+
+      return {
+        ...current,
+        pointer: resolution.point,
+        snapState: resolution.snapState,
+        alignmentFeedback: resolution.alignmentFeedback,
+        warning: resolution.warning
+      };
+    });
+  };
+
+  const handleConnectionWaypointAdd = (
+    pointer: { x: number; y: number },
+    options: GuidedConnectionPointerOptions
+  ) => {
+    setConnectionDraft((current) => {
+      if (!current.from || panelPatternDraft) {
+        return current;
+      }
+
+      const resolution = resolveGuidedConnectionPointer({
+        model: activeSheetCanvasModel,
+        symbols: activeSheetRenderableSymbols,
+        from: current.from,
+        waypoints: current.waypoints ?? [],
+        proposedPoint: pointer,
+        pixelsPerUnit: options.pixelsPerUnit,
+        activeSnapState: current.snapState,
+        bypassSnapping: options.bypassSnapping
+      });
+      if (resolution.warning) {
+        setMessage(resolution.warning);
+        return current;
+      }
+
+      const fixedPreview = buildGuidedConnectionPreview({
+        model: activeSheetCanvasModel,
+        symbols: activeSheetRenderableSymbols,
+        from: current.from,
+        waypoints: current.waypoints ?? []
+      });
+      const waypoints = addGuidedConnectionWaypoint({
+        waypoints: current.waypoints ?? [],
+        point: resolution.point,
+        previousPoint: fixedPreview.points.at(-1),
+        sheet: activeSheetCanvasModel.sheet,
+        pixelsPerUnit: options.pixelsPerUnit
+      });
+
+      if (waypoints === current.waypoints || waypoints.length === (current.waypoints ?? []).length) {
+        return current;
+      }
+
+      return {
+        ...current,
+        pointer: resolution.point,
+        hoveredDestination: undefined,
+        waypoints,
+        snapState: {},
+        alignmentFeedback: [],
+        warning: undefined
+      };
+    });
+  };
+
+  const handleConnectionAnchorHover = (
+    endpoint: DrawingEndpoint | undefined
+  ) => {
+    if (panelPatternDraft) return;
     setConnectionDraft((current) =>
-      current.from ? { ...current, pointer } : current
+      current.from
+        ? {
+            ...current,
+            hoveredDestination: endpoint,
+            alignmentFeedback: endpoint ? [] : current.alignmentFeedback,
+            warning: undefined
+          }
+        : current
     );
   };
 
+  const handleConnectionAnchorInspectionChange = (
+    inspection: DrawingAnchorInspection | undefined
+  ) => {
+    if (!isDetailedPanelDrawing || !connectionDraft.from || panelPatternDraft) {
+      setConnectionHoverInspection(null);
+      return;
+    }
+    setConnectionHoverInspection(inspection ?? null);
+  };
+
+  const removeLastConnectionWaypoint = () => {
+    setConnectionDraft((current) => {
+      const waypoints = current.waypoints ?? [];
+      if (waypoints.length === 0) return current;
+      return {
+        ...current,
+        waypoints: removeLastGuidedConnectionWaypoint(waypoints),
+        hoveredDestination: undefined,
+        snapState: {},
+        alignmentFeedback: [],
+        warning: undefined
+      };
+    });
+  };
+
   const createDetailedPanelInternalWire = (
-    submission: PanelInternalWireFormSubmission
-  ): PanelInternalWireFormResult => {
+    submission: InternalWireDialogSubmission,
+    routeWaypoints: GuidedConnectionWaypoint[] = []
+  ): boolean => {
     try {
       const result = createInternalPanelWireRoute({
         model,
@@ -2668,21 +3531,22 @@ export function DrawingCanvasShell({
         sheetId: resolvedActiveSheetId,
         from: submission.from,
         to: submission.to,
-        wireId: submission.wireId,
-        attributes: submission.attributes
+        specification: submission.specification,
+        attributes: submission.attributes,
+        routeWaypoints
       });
       commitModel(result.model);
       setSelectedConnectionId(result.connection.id);
       setSelection({ ...EMPTY_CANVAS_SELECTION });
       setMessage(`${result.wire.wireId} added.`);
-      return { ok: true };
+      return true;
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
           : "The internal wire could not be created.";
       setMessage(message);
-      return { ok: false, error: message };
+      return false;
     }
   };
 
@@ -2692,14 +3556,45 @@ export function DrawingCanvasShell({
     if (!pendingInternalWire) {
       return;
     }
-    const result = createDetailedPanelInternalWire({
-      from: pendingInternalWire.from.terminal,
-      to: pendingInternalWire.to.terminal,
-      wireId: submission.wireId,
-      attributes: submission.attributes
-    });
-    if (result.ok) {
+    let routeWaypoints = pendingInternalWire.waypoints;
+    if (submission.endpointsSwapped && pendingInternalWire.waypoints.length > 0) {
+      const preview = buildGuidedConnectionPreview({
+        model: activeSheetCanvasModel,
+        symbols: activeSheetRenderableSymbols,
+        from: {
+          placementId: pendingInternalWire.from.placementId,
+          anchorKey: pendingInternalWire.from.anchorKey
+        },
+        destination: {
+          placementId: pendingInternalWire.to.placementId,
+          anchorKey: pendingInternalWire.to.anchorKey
+        },
+        waypoints: pendingInternalWire.waypoints
+      });
+      routeWaypoints = preview.points
+        .slice(1, -1)
+        .reverse()
+        .map((point, index) => ({
+          id: `swapped_route_${index + 1}`,
+          x: point.x,
+          y: point.y
+        }));
+    }
+    const result = createDetailedPanelInternalWire(
+      {
+        from: submission.from,
+        to: submission.to,
+        endpointsSwapped: submission.endpointsSwapped,
+        specification: submission.specification,
+        attributes: submission.attributes
+      },
+      routeWaypoints
+    );
+    if (result) {
       setPendingInternalWire(null);
+      setConnectionMode("connecting");
+      setConnectionDraft({ waypoints: [] });
+      clearConnectionInspections();
     }
   };
 
@@ -2717,6 +3612,8 @@ export function DrawingCanvasShell({
     setPendingInternalWire(null);
     setConnectionMode("idle");
     setConnectionDraft({});
+    clearConnectionInspections();
+    restorePropertiesAfterWireMode();
     setSelectedConnectionId(undefined);
     setMessage("Configure the connection pattern, then select its terminals.");
   };
@@ -2726,11 +3623,23 @@ export function DrawingCanvasShell({
     setPendingPanelPatternReview(null);
     setConnectionMode("idle");
     setConnectionDraft({});
+    clearConnectionInspections();
+    restorePropertiesAfterWireMode();
     setMessage(null);
   };
 
   const buildPendingPanelPatternResult = (): PanelPatternCommandResult | null => {
     if (!panelPatternDraft || !detailedPanelContext) return null;
+    if (
+      ["daisy_chain", "distribution", "fused_distribution"].includes(
+        panelPatternDraft.topology
+      ) &&
+      !defaultWireSpecification
+    ) {
+      throw new Error(
+        "Set up a default Wire Catalog entry before creating a wire-producing pattern."
+      );
+    }
     const selected = panelPatternDraft.selected.map((entry) => entry.terminal);
     const common = {
       panelAssetId: detailedPanelContext.panelAssetId,
@@ -2752,7 +3661,8 @@ export function DrawingCanvasShell({
         ...common,
         topology: "daisy_chain",
         domain: panelPatternDraft.domain,
-        members: selected
+        members: selected,
+        specification: defaultWireSpecification
       });
     }
     if (panelPatternDraft.topology === "distribution") {
@@ -2761,7 +3671,8 @@ export function DrawingCanvasShell({
         topology: "distribution",
         domain: panelPatternDraft.domain,
         source: selected[0],
-        targets: selected.slice(1)
+        targets: selected.slice(1),
+        specification: defaultWireSpecification
       });
     }
     if (panelPatternDraft.topology === "fused_distribution") {
@@ -2779,7 +3690,8 @@ export function DrawingCanvasShell({
         topology: "fused_distribution",
         domain: panelPatternDraft.domain,
         source: selected[0],
-        branches
+        branches,
+        specification: defaultWireSpecification
       });
     }
     const target = panelPatternDraft.targetMode === "terminal"
@@ -2846,7 +3758,11 @@ export function DrawingCanvasShell({
 
   const updateDetailedPanelInternalWire = (
     wireRecordId: string,
-    updates: { wireId: string; attributes?: PanelWireAttributes }
+    updates: {
+      wireId?: string;
+      specification?: WireSpecificationSnapshot;
+      attributes?: PanelWireAttributes;
+    }
   ) => {
     try {
       commitModel(
@@ -2855,6 +3771,7 @@ export function DrawingCanvasShell({
           symbols,
           id: wireRecordId,
           wireId: updates.wireId,
+          specification: updates.specification,
           attributes: updates.attributes
         })
       );
@@ -2929,18 +3846,6 @@ export function DrawingCanvasShell({
     setIsPanelDiscoveryOpen(false);
     selectConnection(connectionId);
     setMessage("Internal wire route selected.");
-  };
-
-  const updateDetailedPanelWireSettings = (settings: PanelWireSettings) => {
-    try {
-      const result = updatePanelWireSettings(panelWiringSource, settings);
-      commitModel(applyPanelWiringMutations(model, result.mutations));
-      setMessage("Internal wire settings updated.");
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Wire settings could not be updated."
-      );
-    }
   };
 
   const addDetailedPanelPatternRoute = (patternId: string) => {
@@ -3081,123 +3986,33 @@ export function DrawingCanvasShell({
     }
   };
 
-  const requestDuplicateSheet = (sheetId: string) => {
-    setSheetDuplicateCandidateId(sheetId);
-  };
-
-  const duplicateSheetFromPlan = (plan: SheetDuplicatePlan) => {
+  const placeDetailedPanelAssets = (assetIds: string[]): boolean => {
     try {
-      const result = applySheetDuplicatePlan({ model, symbols, plan });
-      const newSheet = result.model.sheets.find(
-        (sheet) => sheet.id === result.sheetId
-      );
-
-      setSheetDuplicateCandidateId(null);
-      commitModel(result.model);
-      setActiveSheet(result.sheetId);
-      setSheetFocusRequestKey((current) => current + 1);
-      clearActiveSheetSelection();
-
-      if (newSheet) {
-        setViewportCenter({
-          x: newSheet.page.width / 2,
-          y: newSheet.page.height / 2
-        });
-      }
-
-      setMessage("Sheet duplicated.");
-    } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "Sheet could not be duplicated."
-      );
-    }
-  };
-
-  const updateActiveSheetMetadata = (updates: {
-    name?: string;
-    description?: string;
-  }) => {
-    commitModel(
-      (current) => updateSheetMetadata(current, resolvedActiveSheetId, updates),
-      { coalesceKey: `sheet-metadata:${resolvedActiveSheetId}:${Object.keys(updates).join(",")}` }
-    );
-  };
-
-  const updateActiveSectionTitlePage = (
-    updates: Partial<
-      NonNullable<DrawingModel["sheets"][number]["sectionTitlePage"]>
-    >
-  ) => {
-    commitModel(
-      (current) =>
-        updateSectionTitlePage(current, resolvedActiveSheetId, updates),
-      { coalesceKey: `section-title-page:${resolvedActiveSheetId}:${Object.keys(updates).join(",")}` }
-    );
-  };
-
-  const updateActiveDetailedPanelContext = (panelAssetId: string) => {
-    const result = updateDetailedPanelDrawingContext(panelWiringSource, {
-      sheetId: resolvedActiveSheetId,
-      panelAssetId
-    });
-    const blocking = result.warnings.find(
-      (warning) => warning.severity === "error"
-    );
-
-    if (blocking) {
-      setMessage(blocking.message);
-      return;
-    }
-
-    commitModel((current) =>
-      applyPanelWiringMutations(current, result.mutations)
-    );
-    clearActiveSheetSelection();
-    setMessage("Panel drawing context updated.");
-  };
-
-  const focusDetailedPanelWorkflowAsset = (assetId: string) => {
-    const result = updatePanelWorkflowFocus(panelWiringSource, {
-      sheetId: resolvedActiveSheetId,
-      assetId
-    });
-    const blocking = result.warnings.find(
-      (warning) => warning.severity === "error"
-    );
-
-    if (blocking) {
-      setMessage(blocking.message);
-      return;
-    }
-    if (result.mutations.length > 0) {
-      commitModel((current) =>
-        applyPanelWiringMutations(current, result.mutations)
-      );
-    }
-    const focused = panelDiscoveryIndex?.assetsById.get(assetId);
-    setMessage(`${focused?.tag ?? "Panel asset"} selected for the walkthrough.`);
-  };
-
-  const placeDetailedPanelAsset = (assetId: string) => {
-    try {
-      const result = placePanelAssetOccurrence({
+      const result = placePanelAssetOccurrences({
         model,
         sheetId: resolvedActiveSheetId,
-        assetId,
+        assetIds,
         symbols
       });
 
       commitModel(result.model);
-      selectPlacement(result.placement.id);
-      setMessage(`${result.placement.tag} placed from the existing panel asset.`);
+      const lastPlacement = result.placements.at(-1);
+      if (lastPlacement) {
+        selectPlacement(lastPlacement.id);
+      }
+      setMessage(
+        result.placements.length === 1
+          ? `${result.placements[0].tag} placed from the existing panel asset.`
+          : `${result.placements.length} equipment items added to the sheet.`
+      );
+      return true;
     } catch (error) {
       setMessage(
         error instanceof Error
           ? error.message
-          : "The panel asset could not be represented on this sheet."
+          : "The selected panel equipment could not be added to this sheet."
       );
+      return false;
     }
   };
 
@@ -3244,7 +4059,7 @@ export function DrawingCanvasShell({
         setSelection({ ...EMPTY_CANVAS_SELECTION });
       }
       setMessage(
-        `${placement?.tag ?? "Panel asset"} returned to the Panel Work Queue.`
+        `${placement?.tag ?? "Panel asset"} returned to the Panel Engineering Workbench.`
       );
     } catch (error) {
       setMessage(
@@ -3324,7 +4139,36 @@ export function DrawingCanvasShell({
     setMessage("Automatic terminal mapping restored.");
   };
 
-  const addSymbolFromLibrary = (symbol: ApprovedDrawingSymbol) => {
+  const openTerminalStripBuilder = async (
+    request: TerminalStripCatalogRequest
+  ) => {
+    setTerminalStripCatalogLoad({ request, status: "loading" });
+    const result = await loadSymbolDependencies(
+      symbolCatalogSummaries
+        .filter((summary) => summary.capabilities.terminalStripCapability)
+        .map((summary) => summary.versionId)
+    );
+
+    if (!result.ok) {
+      setTerminalStripCatalogLoad({
+        request,
+        status: "error",
+        error: result.error
+      });
+      return;
+    }
+
+    setTerminalStripCatalogLoad(null);
+    if (request.kind === "create") {
+      setIsAddTerminalBlockOpen(true);
+    } else if (request.kind === "group") {
+      setIsTerminalBlockGroupOpen(true);
+    } else {
+      setEditingTerminalStripAssetId(request.assetId);
+    }
+  };
+
+  const addResolvedSymbolFromLibrary = (symbol: ApprovedDrawingSymbol) => {
     if (symbolLibraryContext === "wiring") {
       if (isGeneratedBackplaneSymbolReference(symbol)) {
         addBackplaneFromLibrary();
@@ -3337,7 +4181,7 @@ export function DrawingCanvasShell({
       }
 
       if (isGeneratedTerminalBlockGroupLibrarySymbolReference(symbol)) {
-        setIsTerminalBlockGroupOpen(true);
+        void openTerminalStripBuilder({ kind: "group" });
         return;
       }
 
@@ -3353,6 +4197,23 @@ export function DrawingCanvasShell({
 
       setPendingSymbol(symbol);
     }
+  };
+
+  const addSymbolFromLibrary = async (
+    summary: DrawingSymbolCatalogSummary
+  ): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const generated = generatedLibrarySymbolsByVersionId.get(
+      summary.versionId
+    );
+    if (generated) {
+      addResolvedSymbolFromLibrary(generated);
+      return { ok: true };
+    }
+
+    const result = await loadCatalogSymbol(summary.versionId);
+    if (!result.ok) return result;
+    addResolvedSymbolFromLibrary(result.symbol);
+    return { ok: true };
   };
 
   const updateAssetComponentSelections = (
@@ -3454,229 +4315,142 @@ export function DrawingCanvasShell({
     }
   };
 
-  const saveActiveSheetAsTemplate = (form: SaveSheetTemplateForm) => {
-    startTransition(async () => {
-      const result = await saveSheetTemplateAction({
-        name: form.name,
-        description: form.description,
-        category: form.category,
-        keywords: form.keywords,
-        sourceDrawingId: drawing.id,
-        sourceSheetId: resolvedActiveSheetId,
-        sheetId: resolvedActiveSheetId,
-        model
-      });
-
-      if (!result.ok) {
-        setTemplateError(result.error);
-        setMessage(result.error);
-        return;
-      }
-
-      setIsSaveTemplateOpen(false);
-      setTemplateError(null);
-      setMessage("Sheet template saved.");
-    });
-  };
-
-  const openTemplateLibrary = () => {
-    setIsTemplateLibraryOpen(true);
-    setSelectedTemplate(null);
-    setTemplateError(null);
-    startTransition(async () => {
-      const result = await listSheetTemplatesAction();
-
-      if (!result.ok) {
-        setTemplateError(result.error);
-        return;
-      }
-
-      setTemplateList(result.data);
-    });
-  };
-
-  const selectTemplateForImport = (templateId: string) => {
-    setTemplateError(null);
-    startTransition(async () => {
-      const result = await getSheetTemplateAction(templateId);
-
-      if (!result.ok) {
-        setTemplateError(result.error);
-        return;
-      }
-
-      setSelectedTemplate(result.data);
-    });
-  };
-
-  const importTemplate = (
-    template: DrawingSheetTemplateDetail,
-    choices: TemplateAssetResolutionChoice[]
-  ) => {
-    try {
-      const result = instantiateTemplateSheet({
-        model,
-        template: template.model,
-        symbols,
-        choices,
-        insertAfterSheetId: resolvedActiveSheetId
-      });
-      const newSheet = result.model.sheets.find(
-        (candidate) => candidate.id === result.sheetId
+  const recoverConnectionRoute = (connectionId: string) => {
+    updateActiveSheet((current) => {
+      const connection = current.connections.find(
+        (candidate) => candidate.id === connectionId
       );
-
-      commitModel(result.model);
-      setActiveSheet(result.sheetId);
-      setSheetFocusRequestKey((current) => current + 1);
-      clearActiveSheetSelection();
-      setSelectedTemplate(null);
-      setIsTemplateLibraryOpen(false);
-      setTemplateError(null);
-      setMessage(
-        result.warnings.length > 0
-          ? `Template added with ${result.warnings.length} warning.`
-          : "Template added."
-      );
-
-      if (newSheet) {
-        setViewportCenter({
-          x: newSheet.page.width / 2,
-          y: newSheet.page.height / 2
-        });
+      if (!connection?.route) {
+        return current;
       }
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Template could not be imported.";
-      setTemplateError(errorMessage);
-      setMessage(errorMessage);
-    }
+
+      return updateConnectionRouteCommand(current, connectionId, {
+        ...bringConnectionRouteOntoSheet({
+          route: connection.route,
+          sheet: current.sheet
+        }),
+        mode: "manual"
+      });
+    });
+    setMessage("Route brought back inside the sheet.");
+  };
+
+  const openAddSheetFromLoader = () => {
+    setIsSheetLoaderOpen(false);
+    setIsAddSheetOpen(true);
+  };
+
+  const requestDeleteSheetFromLoader = (sheetId: string) => {
+    setIsSheetLoaderOpen(false);
+    requestDeleteSheet(sheetId);
   };
 
   const save = () => {
     const revisionToSave = editRevision;
+    setIsSaving(true);
     startTransition(async () => {
-      const modelToSave = normalizeCanvasModel(model, symbols);
-      const result = await saveDrawingAction({
-        drawingId: drawing.id,
-        title,
-        model: modelToSave,
-        expectedUpdatedAt: serverUpdatedAt
-      });
+      try {
+        const modelToSave = modelPreparationCache.prepare(model).model;
+        const result = await saveDrawingAction({
+          drawingId: drawing.id,
+          title,
+          model: modelToSave,
+          expectedUpdatedAt: serverUpdatedAt
+        });
 
-      if (!result.ok) {
-        if (result.code === "conflict") {
-          setSaveConflict({ latestUpdatedAt: result.latestUpdatedAt });
+        if (!result.ok) {
+          if (result.code === "conflict") {
+            setSaveConflict({ latestUpdatedAt: result.latestUpdatedAt });
+          }
+          setMessage(result.error);
+          return;
         }
-        setMessage(result.error);
-        return;
-      }
 
-      setServerUpdatedAt(result.data.updatedAt);
-      setSavedRevision(revisionToSave);
-      setMessage("Drawing saved.");
-      router.refresh();
+        setServerUpdatedAt(result.data.updatedAt);
+        setSavedRevision(revisionToSave);
+        setMessage("Drawing saved.");
+        // Keep the completed save transition local. Refreshing the route here can
+        // leave large drawing canvases suspended with the entire toolbar disabled.
+      } finally {
+        setIsSaving(false);
+      }
     });
   };
 
-  const openPanelReview = () => {
-    const panelAssetId = detailedPanelContext?.panelAssetId ?? panelReviewAssetId;
-    if (!panelAssetId) {
-      setMessage("Load a Detailed Panel Drawing before opening Panel Review.");
+  const applyDrawingSettings = (settings: DrawingSettingsDraft) => {
+    setTitle(settings.title);
+    commitModel(
+      (current) => ({
+        ...updatePackageTitleBlock(current, settings.titleBlock),
+        measurementUnit: settings.measurementUnit
+      }),
+      { coalesceKey: "drawing-settings" }
+    );
+    closeLocalDialog(
+      setIsDrawingSettingsOpen,
+      drawingSettingsReturnFocusRef
+    );
+    setMessage("Drawing settings updated. Use Save to persist the changes.");
+  };
+
+  const applySheetSettings = (settings: SheetSettingsDraft) => {
+    const currentPanelAssetId = activeSheet.panelDrawingContext?.panelAssetId;
+    const nextPanelAssetId = settings.panelAssetId;
+    const panelContextResult =
+      nextPanelAssetId && nextPanelAssetId !== currentPanelAssetId
+        ? updateDetailedPanelDrawingContext(panelWiringSource, {
+            sheetId: resolvedActiveSheetId,
+            panelAssetId: nextPanelAssetId
+          })
+        : undefined;
+    const blockingPanelIssue = panelContextResult?.warnings.find(
+      (warning) => warning.severity === "error"
+    );
+
+    if (blockingPanelIssue) {
+      setMessage(blockingPanelIssue.message);
       return;
     }
-    setPanelReviewAssetId(panelAssetId);
-    setIsPanelReviewOpen(true);
+
+    commitModel(
+      (current) => {
+        let next = updateSheetMetadata(current, resolvedActiveSheetId, {
+          name: settings.name,
+          description: settings.description
+        });
+
+        if (settings.sectionTitlePage) {
+          next = updateSectionTitlePage(
+            next,
+            resolvedActiveSheetId,
+            settings.sectionTitlePage
+          );
+        }
+
+        if (settings.targetSectionId) {
+          next = moveSheetToDrawingSection(
+            next,
+            resolvedActiveSheetId,
+            settings.targetSectionId
+          );
+        }
+
+        if (panelContextResult) {
+          next = applyPanelWiringMutations(next, panelContextResult.mutations);
+        }
+
+        return next;
+      },
+      { coalesceKey: `sheet-settings:${resolvedActiveSheetId}` }
+    );
+    closeLocalDialog(setIsSheetSettingsOpen, sheetSettingsReturnFocusRef);
+    setMessage("Sheet settings updated. Use Save to persist the changes.");
   };
 
-  const openPanelDeliverables = () => {
-    if (detailedPanelAssetIds.length === 0) {
-      setMessage("Add a Detailed Panel Drawing before generating panel deliverables.");
-      return;
-    }
-    startTransition(async () => {
-      const result = await loadPanelBomTemplatesAction(
-        [...new Set([
-          ...(model.assets ?? []).flatMap((asset) =>
-            asset.symbolId ? [asset.symbolId] : []
-          ),
-          ...model.sheets.flatMap((sheet) =>
-            sheet.placements.map((placement) => placement.symbolId)
-          )
-        ])].filter((symbolId) => !symbolId.startsWith("__"))
-      );
-      if (!result.ok) {
-        setMessage(result.error);
-        return;
-      }
-      setPanelBomTemplates(result.data);
-      setIsPanelDeliverablesOpen(true);
-    });
-  };
-
-  const pickGuidedInternalWire = () => {
-    setIsPanelDiscoveryOpen(false);
-    setPanelPatternDraft(null);
-    setPendingPanelPatternReview(null);
-    setPendingInternalWire(null);
-    setConnectionMode("connecting");
-    setConnectionDraft({});
-    setSelectedConnectionId(undefined);
-    setMessage("Select a free internal terminal for the new panel wire.");
-  };
-
-  const startGuidedPanelPattern = () => {
+  const startPanelPatternFromWorkbench = () => {
     setIsPanelDiscoveryOpen(false);
     setIsSymbolsCollapsed(false);
     startPanelPatternAuthoring();
-  };
-
-  const openGuidedPanelReview = () => {
-    setIsPanelDiscoveryOpen(false);
-    openPanelReview();
-  };
-
-  const openGuidedPanelDeliverables = () => {
-    setIsPanelDiscoveryOpen(false);
-    openPanelDeliverables();
-  };
-
-  const navigateFromPanelReport = (trace: PanelReportTraceRef) => {
-    setIsPanelDeliverablesOpen(false);
-    if (trace.kind === "asset_manager") {
-      setAssetManagerInitialAssetId(trace.assetId);
-      setIsAssetManagerOpen(true);
-      return;
-    }
-    if (trace.kind === "work_queue") {
-      const detailSheet = model.sheets.find(
-        (sheet) => sheet.panelDrawingContext?.panelAssetId === trace.panelAssetId
-      );
-      if (detailSheet && detailSheet.id !== resolvedActiveSheetId) {
-        selectSheet(detailSheet.id);
-      }
-      setPanelDiscoveryInitialTab(trace.tab);
-      setPanelDiscoveryFocusId(trace.objectId ?? null);
-      setIsPanelDiscoveryOpen(true);
-      setMessage("Panel Work Queue opened at the related report record.");
-      return;
-    }
-    if (trace.sheet.sheetId !== resolvedActiveSheetId) {
-      selectSheet(trace.sheet.sheetId);
-    }
-    if (trace.objectKind === "placement" && trace.sheet.objectId) {
-      setSelection({
-        placementIds: [trace.sheet.objectId],
-        annotationIds: []
-      });
-      setSelectedConnectionId(undefined);
-    } else if (trace.objectKind === "connection" && trace.sheet.objectId) {
-      setSelection({ ...EMPTY_CANVAS_SELECTION });
-      setSelectedConnectionId(trace.sheet.objectId);
-    }
-    setSheetFocusRequestKey((current) => current + 1);
-    setMessage(
-      `Loaded Sheet ${trace.sheet.sheetNumber}: ${trace.sheet.sheetName}.`
-    );
   };
 
   const navigateFromPanelFinding = (finding: PanelDrawingQualityFinding) => {
@@ -3687,7 +4461,6 @@ export function DrawingCanvasShell({
     }
     setPanelReviewAssetId(finding.panelAssetId);
     setIsPanelReviewOpen(false);
-    setIsPanelDeliverablesOpen(false);
     if (target.kind === "work_queue") {
       const detailSheet = model.sheets.find(
         (sheet) =>
@@ -3699,7 +4472,9 @@ export function DrawingCanvasShell({
       setPanelDiscoveryInitialTab(target.tab);
       setPanelDiscoveryFocusId(target.objectId ?? null);
       setIsPanelDiscoveryOpen(true);
-      setMessage("Panel Work Queue opened at the related engineering records.");
+      setMessage(
+        "Panel Engineering Workbench opened at the related engineering records."
+      );
       return;
     }
     const { location } = target;
@@ -3746,7 +4521,7 @@ export function DrawingCanvasShell({
   const approve = () => {
     const revisionToSave = editRevision;
     startTransition(async () => {
-      const modelToSave = normalizeCanvasModel(model, symbols);
+      const modelToSave = modelPreparationCache.prepare(model).model;
       const result = await approveDrawingAction({
         drawingId: drawing.id,
         title,
@@ -3799,11 +4574,7 @@ export function DrawingCanvasShell({
     });
   };
 
-  const exportPdf = () => {
-    window.location.assign(
-      new URL(`/drawings/${drawing.id}/pdf`, window.location.origin).toString()
-    );
-  };
+  const previewPdfHref = `/drawings/${drawing.id}/pdf`;
 
   const downloadLocalDrawingCopy = () => {
     const payload = JSON.stringify(
@@ -3832,6 +4603,8 @@ export function DrawingCanvasShell({
     cancelModelHistoryTransaction();
     setConnectionMode("idle");
     setConnectionDraft({});
+    clearConnectionInspections();
+    restorePropertiesAfterWireMode();
     setSelectedConnectionId(undefined);
     setDragState(null);
     setIsSheetLoaderOpen(false);
@@ -3854,6 +4627,72 @@ export function DrawingCanvasShell({
 
   return (
     <div className="space-y-5">
+      {terminalStripCatalogLoad?.status === "loading" ? (
+        <EngineeringDialogLoading label="Loading terminal catalogue" />
+      ) : terminalStripCatalogLoad?.status === "error" ? (
+        <SymbolCatalogLoadErrorDialog
+          error={
+            terminalStripCatalogLoad.error ??
+            "The terminal catalogue could not be loaded."
+          }
+          onCancel={() => setTerminalStripCatalogLoad(null)}
+          onRetry={() =>
+            void openTerminalStripBuilder(terminalStripCatalogLoad.request)
+          }
+        />
+      ) : null}
+      {isDrawingSettingsOpen ? (
+        <DrawingSettingsDialog
+          drawingTitle={title}
+          titleBlock={model.titleBlock}
+          measurementUnit={model.measurementUnit}
+          onCancel={() =>
+            closeLocalDialog(
+              setIsDrawingSettingsOpen,
+              drawingSettingsReturnFocusRef
+            )
+          }
+          onApply={applyDrawingSettings}
+        />
+      ) : null}
+      {isSheetSettingsOpen ? (
+        <SheetSettingsDialog
+          key={activeSheet.id}
+          sheet={activeSheet}
+          sheetNumber={activeSheetNumber}
+          sheetCount={model.sheets.length}
+          sectionLabel={activeSectionLabel}
+          sectionMoveOptions={activeSectionMoveOptions}
+          showPanelContext={isDetailedPanelDrawing}
+          panelOptions={compatiblePanelOptions}
+          panelContextWarning={detailedPanelContextWarning}
+          onCancel={() =>
+            closeLocalDialog(
+              setIsSheetSettingsOpen,
+              sheetSettingsReturnFocusRef
+            )
+          }
+          onApply={applySheetSettings}
+        />
+      ) : null}
+      {isConnectionsOpen ? (
+        <ConnectionsDialog
+          model={activeSheetCanvasModel}
+          packageModel={model}
+          symbols={symbols}
+          selectedConnectionId={selectedConnectionId}
+          onCancel={() =>
+            closeLocalDialog(setIsConnectionsOpen, connectionsReturnFocusRef)
+          }
+          onSelect={(connectionId) => {
+            selectConnection(connectionId);
+            closeLocalDialog(
+              setIsConnectionsOpen,
+              connectionsReturnFocusRef
+            );
+          }}
+        />
+      ) : null}
       {saveConflict ? (
         <DrawingSaveConflictDialog
           latestUpdatedAt={saveConflict.latestUpdatedAt}
@@ -3866,7 +4705,6 @@ export function DrawingCanvasShell({
         <AddSymbolAssetDialog
           symbol={pendingSymbol}
           model={model}
-          activeSheetModel={activeSheetCanvasModel}
           symbols={symbols}
           onCancel={() => setPendingSymbol(null)}
           onPlace={(submission) =>
@@ -3884,11 +4722,12 @@ export function DrawingCanvasShell({
         />
       ) : null}
       {isAddTerminalBlockOpen ? (
-        <AddTerminalBlockDialog
+        <TerminalStripBuilder
           model={model}
           activeSheetModel={activeSheetCanvasModel}
+          symbols={symbols}
           onCancel={() => setIsAddTerminalBlockOpen(false)}
-          onPlace={addTerminalBlock}
+          onSubmit={submitTerminalStrip}
         />
       ) : null}
       {isBackplanePanelPickerOpen ? (
@@ -3918,42 +4757,13 @@ export function DrawingCanvasShell({
           groups={sheetLoaderGroups}
           activeSheetId={resolvedActiveSheetId}
           onCancel={() => setIsSheetLoaderOpen(false)}
+          onAddSheet={openAddSheetFromLoader}
           onLoadSheet={loadSheetFromDialog}
           onMoveSection={moveSectionFromLoader}
+          onMoveSheet={moveSheet}
+          onMoveSheetToEnd={moveSheetToEnd}
           onMoveSheetToSection={moveSheetToSection}
-          onRequestDeleteSheet={requestDeleteSheet}
-        />
-      ) : null}
-      {isSaveTemplateOpen ? (
-        <SaveSheetTemplateDialog
-          defaultName={`${activeSheet.name} Template`}
-          isPending={isPending}
-          onCancel={() => {
-            setIsSaveTemplateOpen(false);
-            setTemplateError(null);
-          }}
-          onSave={saveActiveSheetAsTemplate}
-        />
-      ) : null}
-      {isTemplateLibraryOpen ? (
-        <AddSheetTemplateDialog
-          templates={templateList}
-          selectedTemplate={selectedTemplate}
-          model={model}
-          symbols={symbols}
-          isPending={isPending}
-          error={templateError}
-          onCancel={() => {
-            setIsTemplateLibraryOpen(false);
-            setSelectedTemplate(null);
-            setTemplateError(null);
-          }}
-          onSelectTemplate={selectTemplateForImport}
-          onBackToList={() => {
-            setSelectedTemplate(null);
-            setTemplateError(null);
-          }}
-          onImport={importTemplate}
+          onRequestDeleteSheet={requestDeleteSheetFromLoader}
         />
       ) : null}
       {sheetDeleteCandidate ? (
@@ -3973,15 +4783,6 @@ export function DrawingCanvasShell({
           }
           onCancel={() => setSheetDeleteCandidateId(null)}
           onConfirm={() => deleteSheet(sheetDeleteCandidate.id)}
-        />
-      ) : null}
-      {sheetDuplicateCandidate ? (
-        <DuplicateSheetWizardDialog
-          model={model}
-          symbols={symbols}
-          activeSheetId={sheetDuplicateCandidate.id}
-          onCancel={() => setSheetDuplicateCandidateId(null)}
-          onDuplicateSheet={duplicateSheetFromPlan}
         />
       ) : null}
       {assetLinkDialogState && assetLinkPlacement ? (
@@ -4023,6 +4824,7 @@ export function DrawingCanvasShell({
         <AssetManagerDialog
           model={model}
           symbols={symbols}
+          symbolCatalogSummaries={symbolCatalogSummaries}
           initialAssetId={assetManagerInitialAssetId ?? undefined}
           onCancel={() => {
             setIsAssetManagerOpen(false);
@@ -4030,48 +4832,56 @@ export function DrawingCanvasShell({
           }}
           onCreateAsset={createAssetManagerAsset}
           onUpdateAsset={updateAssetManagerAsset}
+          onLoadSheet={loadSheetFromAssetManager}
+          onLoadSymbol={loadCatalogSymbol}
           onDeleteAsset={deleteAssetManagerAsset}
         />
       ) : null}
       {isTerminalBlockGroupOpen ? (
-        <TerminalBlockGroupDialog
+        <TerminalStripBuilder
           model={model}
           activeSheetModel={activeSheetCanvasModel}
           symbols={symbols}
           preferredBackplaneId={activeAssociatedBackplane?.id}
+          requireBackplane
           onCancel={() => setIsTerminalBlockGroupOpen(false)}
-          onPlace={addTerminalBlockGroup}
+          onSubmit={submitTerminalStrip}
         />
       ) : null}
-      {isPanelDeliverablesOpen && panelQualityGraph && panelPackageQuality ? (
-        <PanelDeliverablesDialog
-          drawingId={drawing.id}
-          drawingKey={drawing.drawingKey}
-          drawingTitle={title}
-          drawingStatus={drawing.status}
-          graph={panelQualityGraph}
-          quality={panelPackageQuality}
-          symbols={symbols}
-          templates={panelBomTemplates}
-          initialPanelAssetId={detailedPanelContext?.panelAssetId}
-          isSaved={editRevision === savedRevision}
-          onCancel={() => setIsPanelDeliverablesOpen(false)}
-          onNavigate={navigateFromPanelReport}
-        />
-      ) : null}
-      {pendingInternalWire && proposedInternalWire && panelWireSettings ? (
+      {pendingInternalWire && proposedInternalWireNumber ? (
         <InternalWireDialog
           from={{
             ref: pendingInternalWire.from.terminal,
+            assetTag: pendingInternalWire.from.assetTag,
             label: `${pendingInternalWire.from.assetTag}:${pendingInternalWire.from.terminalLabel}`
           }}
           to={{
             ref: pendingInternalWire.to.terminal,
+            assetTag: pendingInternalWire.to.assetTag,
             label: `${pendingInternalWire.to.assetTag}:${pendingInternalWire.to.terminalLabel}`
           }}
-          proposedWireId={proposedInternalWire.wireId}
-          defaults={panelWireSettings.defaults}
-          onCancel={() => setPendingInternalWire(null)}
+          wireNumber={proposedInternalWireNumber}
+          initialDescription={previousInternalWireDescription}
+          catalogEntries={wireCatalogEntries}
+          onManageCatalog={openWireCatalog}
+          onCancel={() => {
+            const draft = pendingInternalWire;
+            setPendingInternalWire(null);
+            setConnectionMode("connecting");
+            setConnectionDraft({
+              from: draft
+                ? {
+                    placementId: draft.from.placementId,
+                    anchorKey: draft.from.anchorKey
+                  }
+                : connectionDraft.from,
+              waypoints: draft?.waypoints ?? connectionDraft.waypoints ?? [],
+              snapState: {},
+              alignmentFeedback: []
+            });
+            setConnectionHoverInspection(null);
+            setMessage("Select another destination terminal or adjust the route.");
+          }}
           onConfirm={createPendingInternalWire}
         />
       ) : null}
@@ -4090,7 +4900,6 @@ export function DrawingCanvasShell({
       {isPanelDiscoveryOpen &&
       panelDiscoveryIndex &&
       panelConnectivityGraph &&
-      panelGuidedWorkflow &&
       detailedPanelContext ? (
         <PanelDiscoveryDialog
           index={panelDiscoveryIndex}
@@ -4099,15 +4908,12 @@ export function DrawingCanvasShell({
           activeSheetId={resolvedActiveSheetId}
           internalWires={panelInternalWires}
           connectionPatterns={panelConnectionPatterns}
-          wireSettings={panelWireSettings!}
-          endpointCatalog={panelInternalWireEndpointCatalog}
-          proposedWireId={proposedInternalWire?.wireId ?? ""}
-          workflow={panelGuidedWorkflow}
+          legacyWireCount={legacyWireUpgradePreview.rows.length}
           readOnly={detailedPanelReadOnly}
           initialTab={panelDiscoveryInitialTab}
           initialFocusId={panelDiscoveryFocusId ?? undefined}
           onCancel={() => setIsPanelDiscoveryOpen(false)}
-          onPlaceAsset={placeDetailedPanelAsset}
+          onPlaceAssets={placeDetailedPanelAssets}
           onSelectPlacement={selectDetailedPanelAsset}
           onRemovePlacement={removeDetailedPanelAsset}
           onMapTermination={mapDetailedPanelTermination}
@@ -4117,18 +4923,76 @@ export function DrawingCanvasShell({
           onSelectInternalWireRoute={selectDetailedPanelWireRoute}
           onAddInternalWireRoute={addDetailedPanelWireRoute}
           onDeleteInternalWire={requestInternalWireDelete}
-          onUpdateWireSettings={updateDetailedPanelWireSettings}
+          onManageWireCatalog={openWireCatalog}
+          onUpgradeLegacyWires={() => setIsLegacyWireUpgradeOpen(true)}
           onSelectPatternRoute={selectDetailedPanelPatternRoute}
           onAddPatternRepresentation={addDetailedPanelPatternRoute}
           onRemovePatternRepresentation={removeDetailedPanelPatternRoute}
           onDeletePattern={setPanelPatternDeleteId}
-          onFocusAsset={focusDetailedPanelWorkflowAsset}
-          onCreateInternalWire={createDetailedPanelInternalWire}
-          onPickInternalWire={pickGuidedInternalWire}
           onCenterEquipment={centerDetailedPanelAssets}
-          onStartPattern={startGuidedPanelPattern}
-          onOpenReview={openGuidedPanelReview}
-          onOpenDeliverables={openGuidedPanelDeliverables}
+          onStartPattern={startPanelPatternFromWorkbench}
+        />
+      ) : null}
+      {editingTerminalStripAssetId ? (
+        <TerminalStripBuilder
+          model={model}
+          activeSheetModel={activeSheetCanvasModel}
+          symbols={symbols}
+          editingAssetId={editingTerminalStripAssetId}
+          onCancel={() => setEditingTerminalStripAssetId(null)}
+          onSubmit={submitTerminalStrip}
+        />
+      ) : null}
+      {terminalStripReuseSource ? (
+        <TerminalStripReuseDialog
+          model={model}
+          symbols={symbols}
+          sourceSheetId={terminalStripReuseSource.sheetId}
+          sourcePlacementId={terminalStripReuseSource.placementId}
+          onCancel={() => setTerminalStripReuseSource(null)}
+          onSubmit={submitTerminalStripReuse}
+        />
+      ) : null}
+      {isCopyTerminalBlockOpen ? (
+        <TerminalStripCopyDialog
+          model={model}
+          symbols={symbols}
+          targetSheetId={resolvedActiveSheetId}
+          onCancel={() => setIsCopyTerminalBlockOpen(false)}
+          onSubmit={submitDestinationTerminalStripCopy}
+        />
+      ) : null}
+      {/* Defer the first mount; retain the instance afterward so closing keeps its draft. */}
+      {hasRequestedWireCatalog ? (
+        <WireCatalogManager
+          open={isWireCatalogOpen}
+          initialEntries={wireCatalogEntries}
+          onClose={() => closeLocalDialog(setIsWireCatalogOpen, wireCatalogReturnFocusRef)}
+          onEntriesUpdated={setWireCatalogEntries}
+        />
+      ) : null}
+      {isLegacyWireUpgradeOpen ? (
+        <LegacyWireIdentityUpgradeDialog
+          preview={legacyWireUpgradePreview}
+          onCancel={() => setIsLegacyWireUpgradeOpen(false)}
+          onApply={() => {
+            try {
+              const mutations = upgradeLegacyWireIdentities(panelWiringSource);
+              commitModel(applyPanelWiringMutations(model, mutations));
+              setIsLegacyWireUpgradeOpen(false);
+              setMessage(
+                `${legacyWireUpgradePreview.rows.length} internal wire identifier${
+                  legacyWireUpgradePreview.rows.length === 1 ? "" : "s"
+                } upgraded.`
+              );
+            } catch (error) {
+              setMessage(
+                error instanceof Error
+                  ? error.message
+                  : "Wire identifiers could not be upgraded."
+              );
+            }
+          }}
         />
       ) : null}
       {isPanelReviewOpen && panelQualityReport ? (
@@ -4173,168 +5037,32 @@ export function DrawingCanvasShell({
         />
       ) : null}
 
-      <div className="tool-panel flex flex-wrap items-center justify-between gap-3 p-4">
-        <div>
-          <h1 className="text-lg font-semibold">{title}</h1>
-          <p className="mt-1 text-xs text-slate-500">
-            {drawing.drawingKey} / {drawing.status.replace("_", " ")}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {viewMode === "preview" ? (
-            <>
-              <button
-                type="button"
-                className="icon-button"
-                disabled={isPending}
-                onClick={exportPdf}
-              >
-                <FileDown aria-hidden="true" size={14} />
-                Preview PDF
-              </button>
-              <button
-                type="button"
-                className="icon-button icon-button-primary"
-                onClick={() => setViewMode("edit")}
-              >
-                Exit preview
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="icon-button"
-                disabled={isPending}
-                onClick={() => {
-                  setAssetManagerInitialAssetId(null);
-                  setIsAssetManagerOpen(true);
-                }}
-              >
-                <PackageSearch aria-hidden="true" size={14} />
-                Asset Manager
-              </button>
-              <button
-                type="button"
-                className="icon-button"
-                disabled={isPending || detailedPanelReadOnly}
-                onClick={save}
-              >
-                <Save aria-hidden="true" size={14} />
-                Save
-              </button>
-              <button
-                type="button"
-                className="icon-button"
-                disabled={isPending}
-                onClick={openPackagePreview}
-              >
-                <Eye aria-hidden="true" size={14} />
-                Package Preview
-              </button>
-              <button
-                type="button"
-                className="icon-button"
-                disabled={isPending}
-                onClick={exportPdf}
-              >
-                <FileDown aria-hidden="true" size={14} />
-                Preview PDF
-              </button>
-              {detailedPanelAssetIds.length > 0 ? (
-                <button
-                  type="button"
-                  className="icon-button"
-                  disabled={isPending}
-                  onClick={openPanelDeliverables}
-                >
-                  <FileSpreadsheet aria-hidden="true" size={14} />
-                  Deliverables
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="icon-button"
-                disabled={isPending || detailedPanelReadOnly}
-                onClick={addNote}
-              >
-                <StickyNote aria-hidden="true" size={14} />
-                Add note
-              </button>
-              {isDetailedPanelDrawing || panelReviewAssetId ? (
-                <button
-                  type="button"
-                  className="icon-button"
-                  disabled={isPending}
-                  onClick={openPanelReview}
-                >
-                  <ShieldCheck aria-hidden="true" size={14} />
-                  Panel Review
-                  {panelQualityReport?.counts.blockingErrors ? (
-                    <span className="inline-flex min-w-5 justify-center rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
-                      {panelQualityReport.counts.blockingErrors}
-                    </span>
-                  ) : null}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="icon-button icon-button-primary"
-                disabled={
-                  isPending ||
-                  (!detailedPanelDrawingsEnabled && detailedPanelAssetIds.length > 0)
-                }
-                onClick={approve}
-              >
-                <CheckCircle2 aria-hidden="true" size={14} />
-                Approve
-              </button>
-              {isDetailedPanelDrawing && !detailedPanelReadOnly ? (
-                <button
-                  type="button"
-                  className={[
-                    "icon-button",
-                    panelPatternDraft ? "icon-button-primary" : ""
-                  ].join(" ")}
-                  aria-pressed={Boolean(panelPatternDraft)}
-                  disabled={isPending}
-                  onClick={
-                    panelPatternDraft
-                      ? cancelPanelPatternAuthoring
-                      : startPanelPatternAuthoring
-                  }
-                >
-                  <Network aria-hidden="true" size={14} />
-                  Pattern
-                </button>
-              ) : null}
-              {!isDetailedPanelDrawing || !detailedPanelReadOnly ? (
-                <button
-                  type="button"
-                  className={[
-                    "icon-button",
-                    connectionMode === "connecting" && !panelPatternDraft
-                      ? "icon-button-primary"
-                      : ""
-                  ].join(" ")}
-                  aria-pressed={
-                    connectionMode === "connecting" && !panelPatternDraft
-                  }
-                  disabled={isPending}
-                  onClick={toggleConnectMode}
-                >
-                  {isDetailedPanelDrawing ? (
-                    <Cable aria-hidden="true" size={14} />
-                  ) : (
-                    <Link2 aria-hidden="true" size={14} />
-                  )}
-                  {isDetailedPanelDrawing ? "Wire" : "Connect"}
-                </button>
-              ) : null}
-            </>
-          )}
-        </div>
-      </div>
+      <DrawingPackageToolbar
+        title={title}
+        viewMode={viewMode}
+        isDirty={editRevision !== savedRevision}
+        isSaving={isSaving}
+        isPending={isPending}
+        readOnly={detailedPanelReadOnly}
+        approveDisabled={
+          !detailedPanelDrawingsEnabled && detailedPanelAssetIds.length > 0
+        }
+        onOpenAssetManager={() => {
+          setAssetManagerInitialAssetId(selectedAssetManagerAssetId);
+          setIsAssetManagerOpen(true);
+        }}
+        onOpenDrawingSettings={() =>
+          openLocalDialog(
+            setIsDrawingSettingsOpen,
+            drawingSettingsReturnFocusRef
+          )
+        }
+        onSave={save}
+        onPackagePreview={openPackagePreview}
+        previewPdfHref={previewPdfHref}
+        onApprove={approve}
+        onExitPreview={() => setViewMode("edit")}
+      />
 
       {detailedPanelReadOnly ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-900">
@@ -4349,11 +5077,12 @@ export function DrawingCanvasShell({
           sectionIndex={drawingSectionIndex}
           drawingTitle={title}
           symbols={symbols}
-          panelExternalTerminationsBySheetId={
-            panelExternalTerminationDisplayIndex
+          placementWireContextRowsBySheetId={
+            placementWireContextDisplayIndex.rowsBySheetId
           }
+          connectedWireScheduleProjections={connectedWireScheduleIndex}
           onExitPreview={() => setViewMode("edit")}
-          onPreviewPdf={exportPdf}
+          previewPdfHref={previewPdfHref}
         />
       ) : (
         <div
@@ -4399,7 +5128,6 @@ export function DrawingCanvasShell({
                   context={detailedPanelContext}
                   warning={detailedPanelContextWarning}
                   discovery={panelDiscoveryIndex}
-                  workflow={panelGuidedWorkflow}
                   onOpenWorkQueue={
                     panelDiscoveryIndex
                       ? () => {
@@ -4489,7 +5217,7 @@ export function DrawingCanvasShell({
               ) : (
                 <>
                   <SymbolLibraryPanel
-                    symbols={symbols}
+                    summaries={symbolCatalogSummaries}
                     context={symbolLibraryContext}
                     headerAction={
                       <button
@@ -4504,11 +5232,10 @@ export function DrawingCanvasShell({
                     }
                     onAddSymbol={addSymbolFromLibrary}
                   />
-                  {activeAssociatedPanel ? (
+                  {activeAssociatedPanelLabel ? (
                     <PanelAssociatedAssetsSection
-                      panelLabel={`${activeAssociatedPanel.placement.tag} / ${getPanelEnclosureTitle(
-                        activeAssociatedPanel.placement
-                      )}`}
+                      panelLabel={activeAssociatedPanelLabel}
+                      targetKind={activeAssociatedTarget?.kind}
                       items={associatedPanelAssets}
                       onPlaceAsset={placeAssociatedPanelAsset}
                     />
@@ -4526,28 +5253,55 @@ export function DrawingCanvasShell({
           activeSheetId={resolvedActiveSheetId}
           focusSheetRequestKey={sheetFocusRequestKey}
           symbols={symbols}
-          panelExternalTerminations={
-            panelExternalTerminationDisplayIndex.get(resolvedActiveSheetId) ?? []
+          placementWireContextRows={
+            placementWireContextDisplayIndex.rowsBySheetId.get(
+              resolvedActiveSheetId
+            ) ?? []
           }
+          connectedWireScheduleProjections={connectedWireScheduleIndex}
           selection={selection}
           selectedPlacementId={selectedPlacementId}
           viewportTransform={viewportTransform}
           viewportCenter={viewportCenter}
           setViewportTransform={setViewportTransform}
           dragState={dragState}
-          onAddSheet={() => setIsAddSheetOpen(true)}
           onOpenSheetLoader={() => setIsSheetLoaderOpen(true)}
+          onEditActiveSheet={() =>
+            openLocalDialog(
+              setIsSheetSettingsOpen,
+              sheetSettingsReturnFocusRef
+            )
+          }
+          onOpenConnections={() =>
+            openLocalDialog(setIsConnectionsOpen, connectionsReturnFocusRef)
+          }
           onAddPanel={() => setIsAddPanelOpen(true)}
-          onAddTerminalBlock={() => setIsAddTerminalBlockOpen(true)}
-          onAddSheetFromTemplate={openTemplateLibrary}
-          onSaveSheetTemplate={() => {
-            setTemplateError(null);
-            setIsSaveTemplateOpen(true);
-          }}
-          onDuplicateSheet={requestDuplicateSheet}
-          onMoveSheet={moveSheet}
-          onMoveSheetToEnd={moveSheetToEnd}
-          onDeleteSheet={requestDeleteSheet}
+          onAddTerminalBlock={() =>
+            void openTerminalStripBuilder({ kind: "create" })
+          }
+          onCopyTerminalBlock={() => setIsCopyTerminalBlockOpen(true)}
+          onAddNote={addNote}
+          onAddConnectedWireSchedule={addConnectedWireSchedule}
+          canAddConnectedWireSchedule={Boolean(selectedScheduleSource)}
+          toolbarDisabled={isPending}
+          readOnly={detailedPanelReadOnly}
+          showConnectAction={
+            !isDetailedPanelDrawing || !detailedPanelReadOnly
+          }
+          connectLabel={isDetailedPanelDrawing ? "Wire" : "Connect"}
+          connectActive={
+            connectionMode === "connecting" && !panelPatternDraft
+          }
+          onToggleConnect={toggleConnectMode}
+          showPatternAction={
+            isDetailedPanelDrawing && !detailedPanelReadOnly
+          }
+          patternActive={Boolean(panelPatternDraft)}
+          onTogglePattern={
+            panelPatternDraft
+              ? cancelPanelPatternAuthoring
+              : startPanelPatternAuthoring
+          }
           onSelectPlacement={selectPlacement}
           onSelectionChange={replaceSelection}
           onPlacementChange={updatePlacement}
@@ -4569,10 +5323,32 @@ export function DrawingCanvasShell({
           onUndo={undo}
           onRedo={redo}
           connectionMode={connectionMode}
-          connectionDraft={connectionDraft}
+          connectionDraft={
+            pendingInternalWire
+              ? {
+                  from: {
+                    placementId: pendingInternalWire.from.placementId,
+                    anchorKey: pendingInternalWire.from.anchorKey
+                  },
+                  hoveredDestination: {
+                    placementId: pendingInternalWire.to.placementId,
+                    anchorKey: pendingInternalWire.to.anchorKey
+                  },
+                  waypoints: pendingInternalWire.waypoints,
+                  alignmentFeedback: []
+                }
+              : connectionDraft
+          }
+          enableGuidedConnectionRouting={!panelPatternDraft}
           selectedConnectionId={selectedConnectionId}
           onConnectionAnchorClick={handleConnectionAnchorClick}
+          onConnectionAnchorHover={handleConnectionAnchorHover}
+          onConnectionAnchorInspectionChange={
+            handleConnectionAnchorInspectionChange
+          }
           onConnectionPointerMove={handleConnectionPointerMove}
+          onConnectionWaypointAdd={handleConnectionWaypointAdd}
+          onConnectionWaypointRemove={removeLastConnectionWaypoint}
           onConnectionSelect={selectConnection}
           onConnectionRouteChange={updateConnectionRoute}
           onConnectionRemove={removeConnection}
@@ -4606,42 +5382,31 @@ export function DrawingCanvasShell({
               </button>
             </div>
           ) : (
-            <div className="space-y-4">
-              {isDetailedPanelDrawing && !detailedPanelReadOnly ? (
-                <PanelDrawingContextEditor
-                  context={detailedPanelContext}
-                  options={compatiblePanelOptions}
-                  warning={detailedPanelContextWarning}
-                  headerAction={
-                    <button
-                      type="button"
-                      className="sidebar-toggle"
-                      onClick={() => setIsPropertiesCollapsed(true)}
-                      aria-label="Collapse drawing properties panel"
-                      title="Collapse drawing properties panel"
-                    >
-                      <PanelRightClose aria-hidden="true" size={17} />
-                    </button>
-                  }
-                  onPanelAssetChange={updateActiveDetailedPanelContext}
+            <div
+              className="drawing-properties-scroll-region"
+              data-testid="drawing-properties-scroll-region"
+              aria-label="Drawing properties editor"
+              tabIndex={0}
+            >
+              {isDetailedPanelDrawing &&
+              connectionDraft.from &&
+              connectionSourceInspection ? (
+                <ConnectionEndpointInspector
+                  source={connectionSourceInspection}
+                  hovered={connectionHoverInspection ?? undefined}
                 />
               ) : null}
               <fieldset
                 disabled={detailedPanelReadOnly}
                 className="min-w-0 border-0 p-0 disabled:opacity-75"
               >
-              <PlacementPropertiesPanel
-              title={title}
+              <DrawingObjectInspector
               model={activeSheetCanvasModel}
               packageModel={model}
               activeSheet={activeSheet}
-              activeSheetNumber={activeSheetNumber}
-              sheetCount={model.sheets.length}
-              sectionLabel={activeSectionLabel}
-              sectionMemberCount={activeDrawingSection?.memberSheetIds.length}
-              sectionMoveOptions={activeSectionMoveOptions}
-              symbols={symbols}
-              headerAction={isDetailedPanelDrawing && !detailedPanelReadOnly ? undefined :
+              symbols={activeSheetRenderableSymbols}
+              measurementUnit={model.measurementUnit}
+              headerAction={
                 <button
                   type="button"
                   className="sidebar-toggle"
@@ -4652,33 +5417,49 @@ export function DrawingCanvasShell({
                   <PanelRightClose aria-hidden="true" size={17} />
                 </button>
               }
-              onTitleChange={(nextTitle) => {
-                setTitle(nextTitle);
-                setEditRevision((current) => current + 1);
-              }}
-              onTitleBlockChange={updateTitleBlock}
-              onSheetMetadataChange={updateActiveSheetMetadata}
-              onSectionTitlePageChange={updateActiveSectionTitlePage}
-              onMoveSheetToSection={(targetSectionId) =>
-                moveSheetToSection(resolvedActiveSheetId, targetSectionId)
-              }
               selection={selection}
-              selectedPlacementId={selectedPlacementId}
-              onPlacementAssetTagChange={updatePlacementAssetTag}
+              onArrangeSelection={arrangeSelection}
+              onAssetChange={updateSelectedAsset}
               onOpenAssetLinkDialog={openAssetLinkDialog}
-              onPlacementTitleChange={updatePlacementTitle}
               onPlacementChange={updatePlacement}
-              onPanelTitleChange={updatePanelTitle}
-              onTerminalBlockChange={updateTerminalBlockConfig}
-              onPlacementContainerChange={updatePlacementContainer}
+              onConnectionDisplayModeChange={updateConnectionDisplayMode}
+              onFitPanelConnectionView={fitPanelConnectionView}
+              placementWireContextSummary={
+                selectedPlacementId
+                  ? placementWireContextDisplayIndex.summariesBySheetPlacement.get(
+                      placementWireContextKey(
+                        resolvedActiveSheetId,
+                        selectedPlacementId
+                      )
+                    )
+                  : undefined
+              }
+              terminalAvailabilitySummary={
+                selectedTerminalAvailabilitySummary
+              }
+              connectedWireScheduleProjection={
+                selectedAnnotationId
+                  ? connectedWireScheduleIndex.get(selectedAnnotationId)
+                  : undefined
+              }
+              onEditTerminalStrip={(assetId) =>
+                void openTerminalStripBuilder({ kind: "edit", assetId })
+              }
+              onReuseTerminalStrip={(placementId) =>
+                setTerminalStripReuseSource({
+                  sheetId: resolvedActiveSheetId,
+                  placementId
+                })
+              }
               onAssetComponentSelectionsChange={updateAssetComponentSelections}
               selectedConnectionId={selectedConnectionId}
-              selectedAnnotationId={selectedAnnotationId}
-              onConnectionSelect={selectConnection}
               onConnectionChange={updateConnection}
               onConnectionRemove={removeConnection}
+              onConnectionRouteRecover={recoverConnectionRoute}
               onConnectionRouteReset={resetConnectionRoute}
               onInternalWireChange={updateDetailedPanelInternalWire}
+              wireCatalogEntries={wireCatalogEntries}
+              onManageWireCatalog={openWireCatalog}
               onPanelPatternChange={updateDetailedPanelPattern}
               onPanelPatternLegendVisibilityChange={
                 updatePanelPatternLegendVisibility
@@ -4686,6 +5467,15 @@ export function DrawingCanvasShell({
               showConnections={!isDetailedPanelDrawing}
               onAnnotationChange={updateAnnotation}
               onAnnotationRemove={removeAnnotation}
+              onConnectedWireScheduleSynchronize={
+                synchronizeConnectedWireScheduleContinuations
+              }
+              onConnectedWireSchedulePaginationRemove={
+                removeConnectedWireScheduleContinuations
+              }
+              onConnectedWireScheduleOpenPartOne={
+                openConnectedWireSchedulePartOne
+              }
               />
               </fieldset>
             </div>
@@ -4728,11 +5518,11 @@ function BackplanePanelPickerDialog({
           </div>
           <button
             type="button"
-            className="rounded-md border border-slate-200 px-2 py-1 text-sm font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-800"
+            className="dialog-close"
             onClick={onCancel}
             aria-label="Close backplane panel picker"
           >
-            x
+            <X aria-hidden="true" size={22} strokeWidth={2.25} />
           </button>
         </div>
         <div className="max-h-80 space-y-2 overflow-auto p-5">

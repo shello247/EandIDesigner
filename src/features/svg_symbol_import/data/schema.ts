@@ -3,10 +3,11 @@ import {
   networkDeviceTypeSchema,
   networkPortMediaSchema,
   symbolAnchorSchema,
-  symbolCategorySchema,
+  symbolTechnicalKindSchema,
   symbolMetadataSchema,
   symbolTerminalSchema
 } from "@/features/symbol_registry/data/schema";
+import { symbolCategoryIdSchema } from "@/features/symbol_categories/api/public";
 
 export const svgImportSourceAssetSchema = z.object({
   fileName: z.string().trim().min(1).max(240),
@@ -20,7 +21,8 @@ export const svgImportMetadataFormSchema = z.object({
   displayName: z.string().trim().min(1).max(200),
   manufacturer: z.string().trim().max(160).optional(),
   model: z.string().trim().max(160).optional(),
-  category: symbolCategorySchema
+  categoryId: symbolCategoryIdSchema,
+  technicalKind: symbolTechnicalKindSchema
 });
 
 export const svgImportNetworkPortDraftSchema = z.object({
@@ -41,6 +43,7 @@ export const svgImportNetworkProfileDraftSchema = z.object({
 export const svgSymbolImportDraftSchema = z.object({
   svg: z.string().trim().min(1),
   sourceAsset: svgImportSourceAssetSchema,
+  categoryId: symbolCategoryIdSchema,
   metadata: symbolMetadataSchema
 });
 

@@ -11,10 +11,14 @@ import {
 import type { SaveDrawingInput } from "../data/schema";
 import type {
   ActionResult,
+  ApprovedDrawingSymbol,
   DrawingApprovalOutcome,
-  DrawingDetail
+  DrawingDetail,
+  DrawingSaveAcknowledgment
 } from "../types";
-import { listSymbolsForDrawing } from "@/features/symbol_registry/api/public";
+import {
+  listDrawingRenderSymbols
+} from "@/features/symbol_registry/api/public";
 import { detailedPanelDrawingsEnabled } from "@/features/drawing_panel_wiring/api/release";
 import { buildDrawingApprovalDecision } from "../logic/services/drawing-approval-quality";
 import { getDrawingDetail } from "../data/queries";
@@ -49,6 +53,19 @@ async function detailedPanelMutationBlocked(
   return current ? hasDetailedPanelMutation(current.model, input.model) : true;
 }
 
+export async function loadDrawingSymbolVersionAction(
+  versionId: string
+): Promise<ActionResult<ApprovedDrawingSymbol>> {
+  try {
+    const [symbol] = await listDrawingRenderSymbols([versionId]);
+    return symbol
+      ? { ok: true, data: { ...symbol, selectable: true } }
+      : { ok: false, error: "Symbol version was not found." };
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
 export async function createDrawingAction(
   formData: FormData
 ): Promise<ActionResult<DrawingDetail>> {
@@ -73,7 +90,7 @@ export async function createDrawingAction(
 
 export async function saveDrawingAction(
   input: SaveDrawingInput
-): Promise<ActionResult<DrawingDetail>> {
+): Promise<ActionResult<DrawingSaveAcknowledgment>> {
   try {
     if (await detailedPanelMutationBlocked(input)) {
       return {
@@ -82,7 +99,7 @@ export async function saveDrawingAction(
         error: "Detailed Panel Drawings are read-only in this deployment."
       };
     }
-    const symbols = await listSymbolsForDrawing(
+    const symbols = await listDrawingRenderSymbols(
       collectDrawingSymbolVersionIds(input.model)
     );
     const componentIssue = validateDrawingAssetComponentConfigurations({
@@ -97,15 +114,13 @@ export async function saveDrawingAction(
         error: componentIssue.message
       };
     }
-    const drawing = await saveDrawing(input);
+    const acknowledgment = await saveDrawing(input);
 
-    if (!drawing) {
-      return { ok: false, error: "Drawing could not be saved." };
-    }
-
-    revalidatePath("/drawings");
-    revalidatePath(`/drawings/${drawing.id}`);
-    return { ok: true, data: drawing };
+    // The editor already owns the saved model and consumes the returned
+    // updated timestamp. The drawing list is force-dynamic and is fetched
+    // afresh on explicit navigation, so invalidating it here only expands and
+    // prolongs this action's RSC response.
+    return { ok: true, data: acknowledgment };
   } catch (error) {
     return toActionError(error);
   }
@@ -125,7 +140,7 @@ export async function approveDrawingAction(
         error: "Detailed Panel packages cannot be approved while the feature is read-only."
       };
     }
-    const symbols = await listSymbolsForDrawing(
+    const symbols = await listDrawingRenderSymbols(
       collectDrawingSymbolVersionIds(input.model)
     );
     const componentIssue = validateDrawingAssetComponentConfigurations({

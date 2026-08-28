@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Link2, Minus, PackagePlus, Plus, X } from "lucide-react";
-import type { DrawingModel, DrawingSheetCanvasModel } from "../../data/schema";
+import type { DrawingModel } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import {
   allocateNextPackageTag,
@@ -13,10 +13,6 @@ import {
   getCompatibleReferenceAssets,
   stepEngineeringTag
 } from "../../logic/services/drawing-asset-identity";
-import {
-  getPanelEnclosureTitle,
-  getVisibleSheetContainers
-} from "../../logic/services/drawing-asset-containment";
 import type { DrawingComponentSelection } from "@/features/symbol_components/api/public";
 import {
   resolveAutomaticComponentSelections,
@@ -28,7 +24,6 @@ export type AddSymbolAssetSubmission = {
   symbol: ApprovedDrawingSymbol;
   assetId: string;
   tag: string;
-  containerAssetId?: string;
   componentSelections?: DrawingComponentSelection[];
 };
 
@@ -49,14 +44,12 @@ function sheetReferenceSummary(
 export function AddSymbolAssetDialog({
   symbol,
   model,
-  activeSheetModel,
   symbols,
   onCancel,
   onPlace
 }: {
   symbol: ApprovedDrawingSymbol;
   model: DrawingModel;
-  activeSheetModel: DrawingSheetCanvasModel;
   symbols: ApprovedDrawingSymbol[];
   onCancel: () => void;
   onPlace: (submission: AddSymbolAssetSubmission) => void;
@@ -67,19 +60,13 @@ export function AddSymbolAssetDialog({
     () => getCompatibleReferenceAssets(model, symbols, symbol),
     [model, symbol, symbols]
   );
-  const visibleContainers = useMemo(
-    () => getVisibleSheetContainers(activeSheetModel),
-    [activeSheetModel]
-  );
   const canReference =
     canReferenceExistingAsset(symbol) || existingAssets.length > 0;
-  const canAssignContainer = symbol.category !== "cable_assembly";
   const [mode, setMode] = useState<AddMode>("create");
   const [tag, setTag] = useState(() => allocateNextPackageTag(model, symbol));
   const [selectedAssetId, setSelectedAssetId] = useState(
     existingAssets[0]?.assetId ?? ""
   );
-  const [containerAssetId, setContainerAssetId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [componentSelections, setComponentSelections] = useState<
     DrawingComponentSelection[]
@@ -116,8 +103,7 @@ export function AddSymbolAssetDialog({
       onPlace({
         symbol,
         assetId: selectedAsset.assetId,
-        tag: selectedAsset.tag,
-        containerAssetId: containerAssetId || undefined
+        tag: selectedAsset.tag
       });
       return;
     }
@@ -140,7 +126,6 @@ export function AddSymbolAssetDialog({
       symbol,
       assetId: createDrawingAssetId(),
       tag: normalizedTag,
-      containerAssetId: containerAssetId || undefined,
       componentSelections:
         symbol.metadata.componentPositions?.length
           ? componentSelections
@@ -315,29 +300,6 @@ export function AddSymbolAssetDialog({
                   No compatible assets exist yet for this symbol.
                 </div>
               )}
-            </div>
-          ) : null}
-
-          {canAssignContainer ? (
-            <div>
-              <label className="field-label" htmlFor="add-symbol-container">
-                Contained in panel
-              </label>
-              <select
-                id="add-symbol-container"
-                className="field-input"
-                value={containerAssetId}
-                onChange={(event) =>
-                  setContainerAssetId(event.currentTarget.value)
-                }
-              >
-                <option value="">No panel</option>
-                {visibleContainers.map((container) => (
-                  <option key={container.assetId} value={container.assetId}>
-                    {container.placement.tag} / {getPanelEnclosureTitle(container.placement)}
-                  </option>
-                ))}
-              </select>
             </div>
           ) : null}
 

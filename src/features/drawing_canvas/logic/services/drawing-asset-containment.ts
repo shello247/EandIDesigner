@@ -4,6 +4,7 @@ import type {
   DrawingPlacement,
   DrawingSheetCanvasModel
 } from "../../data/schema";
+import { isPanelConnectionViewPlacement } from "./drawing-panel-connection-views";
 import {
   allocateNextTagFromPrefix,
   createDrawingAssetId,
@@ -21,6 +22,15 @@ import {
   PANEL_ENCLOSURE_TAG_PREFIX,
   type PanelEnclosureKind
 } from "./drawing-enclosure-constants";
+import {
+  centerPhysicalLayoutBounds,
+  getPhysicalLayoutPrintableArea,
+  maximumAutoScalePhysicalSize,
+  PANEL_ENCLOSURE_SCALE_DENOMINATORS,
+  resolvePhysicalLayoutScale,
+  type PhysicalLayoutBounds,
+  type ResolvedPhysicalLayoutScale
+} from "./drawing-physical-layout-scale";
 export {
   DEFAULT_PANEL_ENCLOSURE_HEIGHT,
   DEFAULT_PANEL_ENCLOSURE_KIND,
@@ -62,6 +72,12 @@ export function isGeneratedPanelEnclosurePlacement(
       placement.versionId === GENERATED_PANEL_ENCLOSURE_VERSION_ID &&
       placement.enclosure
   );
+}
+
+export function isLegacyPanelEnclosureLayout(
+  placement: DrawingPlacement
+): boolean {
+  return isGeneratedPanelEnclosurePlacement(placement) && !placement.layoutScale;
 }
 
 export function isContainablePlacement(placement: DrawingPlacement): boolean {
@@ -137,6 +153,18 @@ export function createPanelEnclosurePlacement({
   const placementId = `panel_${Date.now()}`;
   const panelWidth = Math.max(MIN_PANEL_ENCLOSURE_WIDTH, width);
   const panelHeight = Math.max(MIN_PANEL_ENCLOSURE_HEIGHT, height);
+  const sheet = {
+    ...activeSheet.page,
+    titleBlock: model.titleBlock
+  };
+  const scale = resolvePhysicalLayoutScale({
+    sheet,
+    physicalWidth: panelWidth,
+    physicalHeight: panelHeight,
+    denominators: PANEL_ENCLOSURE_SCALE_DENOMINATORS
+  });
+  const displayWidth = panelWidth * scale.factor;
+  const displayHeight = panelHeight * scale.factor;
 
   return {
     id: placementId,
@@ -145,10 +173,13 @@ export function createPanelEnclosurePlacement({
     versionId: GENERATED_PANEL_ENCLOSURE_VERSION_ID,
     role: "enclosure",
     tag: normalizedTag,
-    x: Math.max(0, Math.min(activeSheet.page.width - panelWidth, x ?? 24)),
-    y: Math.max(0, Math.min(activeSheet.page.height - panelHeight, y ?? 28)),
+    x: Math.max(0, Math.min(activeSheet.page.width - displayWidth, x ?? 24)),
+    y: Math.max(0, Math.min(activeSheet.page.height - displayHeight, y ?? 28)),
     rotation: 0,
     scale: 1,
+    layoutScale: {
+      mode: "auto"
+    },
     enclosure: {
       kind,
       title: normalizePanelEnclosureTitle(title, kind),
@@ -224,7 +255,7 @@ export function getVisibleSheetContainers(
   return model.placements
     .filter(isGeneratedPanelEnclosurePlacement)
     .map((placement) => ({
-      ...getPanelEnclosureBounds(placement),
+      ...getPanelEnclosureDisplayBounds(model.sheet, placement),
       placement,
       assetId: placementAssetId(placement)
     }));
@@ -285,19 +316,22 @@ export function containedPlacementIdsForPanels(
   model: DrawingSheetCanvasModel,
   panelPlacementIds: Iterable<string>
 ): string[] {
+  const selectedPanels = [...panelPlacementIds].flatMap((placementId) => {
+    const placement = model.placements.find(
+      (candidate) => candidate.id === placementId
+    );
+    return placement ? [placement] : [];
+  });
   const panelAssetIds = new Set(
-    [...panelPlacementIds].flatMap((placementId) => {
-      const placement = model.placements.find(
-        (candidate) => candidate.id === placementId
-      );
-
-      return isGeneratedPanelEnclosurePlacement(placement)
-        ? [placementAssetId(placement)]
-        : [];
-    })
+    selectedPanels
+      .filter(isGeneratedPanelEnclosurePlacement)
+      .map(placementAssetId)
+  );
+  const connectionViewIds = new Set(
+    selectedPanels.filter(isPanelConnectionViewPlacement).map(({ id }) => id)
   );
 
-  if (panelAssetIds.size === 0) {
+  if (panelAssetIds.size === 0 && connectionViewIds.size === 0) {
     return [];
   }
 
@@ -305,9 +339,12 @@ export function containedPlacementIdsForPanels(
     .filter(
       (placement) =>
         !isGeneratedPanelEnclosurePlacement(placement) &&
+        !isPanelConnectionViewPlacement(placement) &&
         Boolean(
-          placement.containerAssetId &&
-            panelAssetIds.has(placement.containerAssetId)
+          (placement.containerAssetId &&
+            panelAssetIds.has(placement.containerAssetId)) ||
+            (placement.layoutParentId &&
+              connectionViewIds.has(placement.layoutParentId))
         )
     )
     .map((placement) => placement.id);
@@ -335,6 +372,113 @@ export function resizePanelEnclosure(
       width: Math.max(MIN_PANEL_ENCLOSURE_WIDTH, updates.width),
       height: Math.max(MIN_PANEL_ENCLOSURE_HEIGHT, updates.height)
     }
+  };
+}
+
+export function resolvePanelEnclosureLayoutScale(
+  sheet: { width: number; height: number },
+  placement: DrawingPlacement
+): ResolvedPhysicalLayoutScale {
+  // Enclosures created before hierarchical physical scaling stored their
+  // dimensions directly in sheet coordinates. Preserve that geometry until
+  // an engineer explicitly fits or edits the panel, which writes layoutScale.
+  if (isLegacyPanelEnclosureLayout(placement)) {
+    return resolvePhysicalLayoutScale({
+      sheet,
+      physicalWidth:
+        placement.enclosure?.width ?? DEFAULT_PANEL_ENCLOSURE_WIDTH,
+      physicalHeight:
+        placement.enclosure?.height ?? DEFAULT_PANEL_ENCLOSURE_HEIGHT,
+      layoutScale: { mode: "manual", value: 1 },
+      denominators: PANEL_ENCLOSURE_SCALE_DENOMINATORS
+    });
+  }
+
+  return resolvePhysicalLayoutScale({
+    sheet,
+    physicalWidth:
+      placement.enclosure?.width ?? DEFAULT_PANEL_ENCLOSURE_WIDTH,
+    physicalHeight:
+      placement.enclosure?.height ?? DEFAULT_PANEL_ENCLOSURE_HEIGHT,
+    layoutScale: placement.layoutScale,
+    denominators: PANEL_ENCLOSURE_SCALE_DENOMINATORS
+  });
+}
+
+export function getPanelEnclosureDisplayBounds(
+  sheet: { width: number; height: number },
+  placement: DrawingPlacement
+): PhysicalLayoutBounds {
+  const physicalBounds = getPanelEnclosureBounds(placement);
+  const scale = resolvePanelEnclosureLayoutScale(sheet, placement);
+
+  return {
+    x: placement.x,
+    y: placement.y,
+    width: Number((physicalBounds.width * scale.factor).toFixed(2)),
+    height: Number((physicalBounds.height * scale.factor).toFixed(2))
+  };
+}
+
+export function getPanelEnclosureCenteredPosition(
+  sheet: { width: number; height: number },
+  placement: DrawingPlacement
+): Pick<PhysicalLayoutBounds, "x" | "y"> {
+  const physicalBounds = getPanelEnclosureBounds(placement);
+
+  return centerPhysicalLayoutBounds({
+    area: getPhysicalLayoutPrintableArea(sheet),
+    physicalWidth: physicalBounds.width,
+    physicalHeight: physicalBounds.height,
+    scale: resolvePanelEnclosureLayoutScale(sheet, placement)
+  });
+}
+
+export function constrainPanelEnclosureDimensions({
+  placement,
+  sheet,
+  containedBounds,
+  width,
+  height
+}: {
+  placement: DrawingPlacement;
+  sheet: { width: number; height: number };
+  containedBounds: Array<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
+  width: number;
+  height: number;
+}): { width: number; height: number } {
+  const displayBounds = getPanelEnclosureDisplayBounds(sheet, placement);
+  const scale = resolvePanelEnclosureLayoutScale(sheet, placement);
+  const maximumSize = maximumAutoScalePhysicalSize(sheet);
+  const contentWidth = containedBounds.reduce(
+    (maximum, bounds) =>
+      Math.max(
+        maximum,
+        (bounds.x + bounds.width - displayBounds.x) / scale.factor
+      ),
+    MIN_PANEL_ENCLOSURE_WIDTH
+  );
+  const contentHeight = containedBounds.reduce(
+    (maximum, bounds) =>
+      Math.max(
+        maximum,
+        (bounds.y + bounds.height - displayBounds.y) / scale.factor
+      ),
+    MIN_PANEL_ENCLOSURE_HEIGHT
+  );
+
+  return {
+    width: Number(
+      Math.min(maximumSize.width, Math.max(contentWidth, width)).toFixed(2)
+    ),
+    height: Number(
+      Math.min(maximumSize.height, Math.max(contentHeight, height)).toFixed(2)
+    )
   };
 }
 

@@ -12,6 +12,7 @@ import {
 import { createPanelEnclosurePlacement } from "../logic/services/drawing-asset-containment";
 import { createBackplanePlacement } from "../logic/services/drawing-backplane-layouts";
 import type { ApprovedDrawingSymbol } from "../types";
+import { resolveDefaultTerminalBlockModule } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
 
 const terminalModule: ApprovedDrawingSymbol = {
   symbolId: "symbol_terminal_module",
@@ -192,6 +193,100 @@ describe("terminal block group commands", () => {
         count: 4
       })
     ).toThrow("cannot remove terminals");
+  });
+
+  it("replaces the rendered module without changing tag, terminal keys, or wiring", () => {
+    const base = createLayoutFixture();
+    const created = createAndPlaceTerminalBlockGroup({
+      model: base,
+      symbols: [terminalModule],
+      input: {
+        sheetId: base.sheets[0].id,
+        backplaneId: "backplane_1",
+        name: "Push-in strip",
+        count: 5,
+        placementId: "terminal_group_push_in",
+        assetId: "asset_terminal_group_push_in"
+      }
+    });
+    const connected = drawingPackageModelSchema.parse({
+      ...created.model,
+      sheets: created.model.sheets.map((sheet) => ({
+        ...sheet,
+        connections: [
+          ...sheet.connections,
+          {
+            id: "connection_push_in",
+            from: {
+              placementId: created.placement.id,
+              anchorKey: "T5_TOP"
+            },
+            to: {
+              placementId: created.placement.id,
+              anchorKey: "T1_BOTTOM"
+            }
+          }
+        ]
+      }))
+    });
+    const pushInModule: ApprovedDrawingSymbol = {
+      ...terminalModule,
+      symbolId: "symbol_push_in",
+      symbolKey: "phoenix_contact_pt_2_5_3209510",
+      versionId: "version_push_in",
+      metadata: {
+        ...terminalModule.metadata,
+        physicalHeightMm: 48.6,
+        viewBox: { x: 0, y: 0, width: 20, height: 184 },
+        anchors: [
+          { key: "1", x: 10, y: 10, kind: "terminal" },
+          { key: "2", x: 10, y: 170, kind: "terminal" }
+        ],
+        terminalBlockModule: {
+          kind: "feed_through",
+          defaultForGeneratedGroups: true
+        }
+      }
+    };
+    const resolution = resolveDefaultTerminalBlockModule([pushInModule]);
+    if (!resolution.ok) throw new Error(resolution.error);
+
+    const updated = updateTerminalBlockGroup({
+      model: connected,
+      assetId: created.assetId,
+      module: resolution.module
+    });
+    const asset = updated.assets.find(
+      (candidate) => candidate.id === created.assetId
+    );
+    const placement = updated.sheets[0].placements.find(
+      (candidate) => candidate.id === created.placement.id
+    );
+
+    expect(asset).toMatchObject({
+      tag: "TB-101",
+      terminalBlock: {
+        count: 5,
+        startNumber: 1,
+        moduleTemplate: {
+          symbolId: "symbol_push_in",
+          versionId: "version_push_in",
+          pitchMm: 5.2,
+          heightMm: 48.6
+        }
+      }
+    });
+    expect(placement).toMatchObject({
+      layoutDimensions: { lengthMm: 26, widthMm: 48.6 },
+      terminalBlock: {
+        count: 5,
+        startNumber: 1,
+        moduleHeight: 184
+      }
+    });
+    expect(updated.sheets[0].connections[0]).toEqual(
+      connected.sheets[0].connections[0]
+    );
   });
 
   it("requires a panel-associated backplane and a default module", () => {

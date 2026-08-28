@@ -12,6 +12,7 @@ const GROUP_LABELS: Record<PanelComponentPaletteGroup, string> = {
   relays: "Relays",
   power: "Power",
   control_io: "Control and I/O",
+  networking: "Networking",
   isolation_conversion: "Isolation and Conversion",
   terminal_blocks: "Terminal Blocks",
   earth_ground: "Earth / Ground",

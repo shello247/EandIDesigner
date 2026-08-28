@@ -18,6 +18,14 @@ import type {
   PanelWireEndpointValidation,
   PanelWiringCommandResult
 } from "../../types";
+import {
+  allocateInternalWireNumber,
+  assertUniqueInternalWireIdentity,
+  createInternalWireRecordId,
+  deriveInternalWireIdFromSource,
+  getEffectiveInternalWireId
+} from "./internal-wire-identity";
+import type { WireSpecificationSnapshot } from "@/features/wire_catalog/api/public";
 import { buildPackageConnectivityGraph } from "./connectivity-graph";
 import {
   buildPanelTerminalCatalog,
@@ -220,6 +228,7 @@ export function createInternalPanelWire(
     wireId?: string;
     domain?: PanelInternalWireRecord["domain"];
     ownerPatternId?: string;
+    specification?: WireSpecificationSnapshot;
     attributes?: PanelWireAttributes;
     origin?: PanelRecordOrigin;
   }
@@ -230,27 +239,50 @@ export function createInternalPanelWire(
   if (!validation.valid) {
     return { mutations: [], warnings: validation.findings, affectedIds: [] };
   }
-  const allocation = allocateInternalWireId({ source, panelAssetId: input.panelAssetId });
-  const wireId = input.wireId?.trim() || allocation.wireId;
-  assertUniqueWireId(source, wireId);
-  const settings = nextSettingsForManualId(allocation.settings, wireId);
+  const modernAllocation = input.specification
+    ? allocateInternalWireNumber(source)
+    : undefined;
+  const legacyAllocation = modernAllocation
+    ? undefined
+    : allocateInternalWireId({ source, panelAssetId: input.panelAssetId });
+  const wireNumber = modernAllocation?.wireNumber;
+  const wireId = wireNumber
+    ? deriveInternalWireIdFromSource(source, input.from, wireNumber)
+    : input.wireId?.trim() || legacyAllocation!.wireId;
+  if (wireNumber) {
+    assertUniqueInternalWireIdentity({ source, wireNumber, wireId });
+  } else {
+    assertUniqueWireId(source, wireId);
+  }
+  const settings = legacyAllocation
+    ? nextSettingsForManualId(legacyAllocation.settings, wireId)
+    : undefined;
   const wire = panelInternalWireRecordSchema.parse({
-    id: `internal_wire:${encodeURIComponent(input.panelAssetId)}:${encodeURIComponent(wireId)}`,
+    id: wireNumber
+      ? createInternalWireRecordId(wireNumber)
+      : `internal_wire:${encodeURIComponent(input.panelAssetId)}:${encodeURIComponent(wireId)}`,
     panelAssetId: input.panelAssetId,
+    wireNumber,
     wireId,
     from: input.from,
     to: input.to,
     domain: input.domain,
     ownerPatternId: input.ownerPatternId,
+    specification: input.specification,
     attributes: input.attributes
       ? panelWireAttributesSchema.parse(input.attributes)
-      : settings.defaults,
+      : settings?.defaults,
     origin: input.origin ?? "engineer"
   });
   return {
     mutations: [
       { kind: "upsert-internal-wire", wire },
-      { kind: "upsert-panel-wire-settings", settings }
+      ...(modernAllocation
+        ? [{
+            kind: "upsert-wire-number-settings" as const,
+            settings: modernAllocation.settings
+          }]
+        : [{ kind: "upsert-panel-wire-settings" as const, settings: settings! }])
     ],
     warnings: [],
     affectedIds: [wire.id, wire.panelAssetId, wire.from.assetId, wire.to.assetId],
@@ -260,27 +292,49 @@ export function createInternalPanelWire(
 
 export function updateInternalPanelWire(
   inputSource: PanelWiringSourcePackage,
-  input: { id: string; wireId: string; attributes?: PanelWireAttributes }
+  input: {
+    id: string;
+    wireId?: string;
+    specification?: WireSpecificationSnapshot;
+    attributes?: PanelWireAttributes;
+  }
 ): PanelWiringCommandResult & { wire?: PanelInternalWireRecord } {
   const source = panelWiringSourcePackageSchema.parse(inputSource);
   const current = source.panelWiring?.internalWires.find((wire) => wire.id === input.id);
   if (!current) {
     throw new Error("The internal wire no longer exists.");
   }
-  assertUniqueWireId(source, input.wireId, current.id);
+  const wireId = current.wireNumber
+    ? deriveInternalWireIdFromSource(source, current.from, current.wireNumber)
+    : input.wireId?.trim() || current.wireId;
+  if (current.wireNumber) {
+    assertUniqueInternalWireIdentity({
+      source,
+      wireNumber: current.wireNumber,
+      wireId,
+      ignoreRecordId: current.id
+    });
+  } else {
+    assertUniqueWireId(source, wireId, current.id);
+  }
   const wire = panelInternalWireRecordSchema.parse({
     ...current,
-    wireId: input.wireId.trim(),
+    wireId,
+    specification: input.specification ?? current.specification,
     attributes: input.attributes
   });
-  const settings = nextSettingsForManualId(
-    getPanelWireSettings(source, current.panelAssetId),
-    wire.wireId
-  );
+  const settings = current.wireNumber
+    ? undefined
+    : nextSettingsForManualId(
+        getPanelWireSettings(source, current.panelAssetId),
+        wire.wireId
+      );
   return {
     mutations: [
       { kind: "upsert-internal-wire", wire },
-      { kind: "upsert-panel-wire-settings", settings }
+      ...(settings
+        ? [{ kind: "upsert-panel-wire-settings" as const, settings }]
+        : [])
     ],
     warnings: [],
     affectedIds: [wire.id],
@@ -322,8 +376,35 @@ export function updatePanelWireSettings(
   };
 }
 
-export function getPanelWireDisplayLabel(wire: PanelInternalWireRecord): string {
+export function getPanelWireDisplayLabel(
+  wire: Pick<PanelInternalWireRecord, "wireId" | "wireNumber">
+): string {
   return wire.wireId;
+}
+
+export function getPreviousInternalWireDescription(
+  wires: ReadonlyArray<
+    Pick<PanelInternalWireRecord, "wireNumber" | "attributes">
+  >,
+  proposedWireNumber: number
+): string {
+  let previousWire:
+    | Pick<PanelInternalWireRecord, "wireNumber" | "attributes">
+    | undefined;
+
+  for (const wire of wires) {
+    if (
+      !wire.wireNumber ||
+      wire.wireNumber >= proposedWireNumber ||
+      (previousWire?.wireNumber &&
+        previousWire.wireNumber >= wire.wireNumber)
+    ) {
+      continue;
+    }
+    previousWire = wire;
+  }
+
+  return previousWire?.attributes?.description ?? "";
 }
 
 export function buildPanelInternalWireCatalog({
@@ -374,5 +455,11 @@ export function buildPanelInternalWireCatalog({
         )
       };
     })
-    .sort((first, second) => first.wire.wireId.localeCompare(second.wire.wireId, undefined, { numeric: true }));
+    .sort((first, second) =>
+      getEffectiveInternalWireId(graph.source, first.wire).localeCompare(
+        getEffectiveInternalWireId(graph.source, second.wire),
+        undefined,
+        { numeric: true }
+      )
+    );
 }
