@@ -4,6 +4,7 @@
 
 - Tasks index: `delivery/TASKS.md`
 - Project brain: `delivery/PROJECT.md`
+- Production-readiness baseline: `delivery/reports/PRODUCTION-READINESS-ASSESSMENT-2026-08-28.md`
 - Final assessment: `delivery/reports/PLAN-002-final-assessment.md`
 - Recovery map: `delivery/reports/PLAN-002-recovery-map.md`
 
@@ -40,6 +41,7 @@
 - `delivery/PROJECT.md`
 - `delivery/TASKS.md`
 - `delivery/plans/completed/PLAN-002-drawing-performance-improvements.md`
+- `delivery/reports/PRODUCTION-READINESS-ASSESSMENT-2026-08-28.md`
 - `delivery/reports/PLAN-002-final-assessment.md`
 - `delivery/reports/PLAN-002-recovery-map.md`
 - `delivery/reports/PLAN-002-TASK-023-recovery-rehearsal.md`

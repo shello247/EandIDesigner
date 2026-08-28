@@ -24,6 +24,7 @@
 
 - PLAN-001 — Drawing performance investigation — `delivery/plans/completed/PLAN-001-drawing-performance-investigation.md` — completed 2026-08-26.
 - PLAN-002 — Drawing performance improvements — `delivery/plans/completed/PLAN-002-drawing-performance-improvements.md` — completed 2026-08-26 in approximately 6 hours elapsed across 23 tasks.
+- Production-readiness baseline — `delivery/reports/PRODUCTION-READINESS-ASSESSMENT-2026-08-28.md` — drawing core approved as an integration candidate; unrestricted cloud production not yet approved.
 
 ### In progress (Active plan)
 
