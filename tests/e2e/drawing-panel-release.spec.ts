@@ -6,6 +6,7 @@ import {
 } from "./drawing-fixtures";
 import {
   ensureWireCatalogConfigured,
+  loadSheetFromSheetLoader,
   openPanelEngineeringWorkbench,
   selectPanelEngineeringView,
 } from "./panel-workflow-helpers";
@@ -20,14 +21,11 @@ test("completes the JB001 Detailed Panel controlled-pilot workflow", async ({
   try {
     await test.step("load the Detailed Panel sheet and discover source data", async () => {
       await page.goto(`/drawings/${fixture.drawingId}`);
-      await page.getByRole("button", { name: "Open sheet loader" }).click();
-      await page
-        .getByRole("dialog", { name: "Sheet Loader" })
-        .getByRole("row", {
-          name: /JB001 Detailed Panel Drawing Detailed Panel/,
-        })
-        .getByRole("button", { name: "Load" })
-        .click();
+      await loadSheetFromSheetLoader(
+        page,
+        "JB001 Detailed Panel Drawing",
+        /JB001 Detailed Panel Drawing Detailed Panel/
+      );
       const queue = await openPanelEngineeringWorkbench(page);
       await expect(queue.getByRole("row", { name: /TB-101/ })).toContainText(
         "Available",
@@ -112,14 +110,23 @@ test("completes the JB001 Detailed Panel controlled-pilot workflow", async ({
 
     await test.step("generate deliverables and review the package", async () => {
       await page.getByRole("button", { name: "Preview", exact: true }).click();
-      await page.getByRole("menuitem", { name: /Panel Deliverables/ }).click();
-      const deliverables = page.getByRole("dialog", {
-        name: "Panel Engineering Deliverables",
+      await expect(
+        page.getByRole("menuitem", { name: /Panel Deliverables/ }),
+      ).toHaveCount(0);
+      const reportQuery = new URLSearchParams({
+        scope: "active_panel",
+        panelAssetId: "asset_jb_001",
+        reports: "terminal_schedule,internal_wire_schedule",
+        issueMode: "issued",
+        composition: "schedules_only",
       });
-      await expect(deliverables).toContainText("TB-101");
-      await expect(deliverables).toContainText("TB-101:T1(001)");
-      await deliverables.getByRole("button", { name: "Close" }).click();
-      await page.getByRole("button", { name: "Preview", exact: true }).click();
+      const report = await page.request.get(
+        `/drawings/${fixture.drawingId}/print?${reportQuery}`,
+      );
+      expect(report.ok()).toBe(true);
+      const reportHtml = await report.text();
+      expect(reportHtml).toContain("TB-101");
+      expect(reportHtml).toContain("TB-101:T1(001)");
       await page.getByRole("menuitem", { name: /Package Preview/ }).click();
       await expect(page.getByTestId("drawing-package-preview")).toBeVisible();
       await page.getByRole("button", { name: "Exit preview" }).first().click();
@@ -132,9 +139,11 @@ test("completes the JB001 Detailed Panel controlled-pilot workflow", async ({
       await page.reload();
       await page.getByRole("button", { name: "Asset Manager" }).click();
       const manager = page.getByRole("dialog", { name: "Asset Manager" });
+      await manager.getByLabel("Search drawing assets").fill("MCB-101");
       await expect(
         manager.getByRole("button", { name: /^MCB-101 / }),
       ).toHaveCount(1);
+      await manager.getByLabel("Search drawing assets").fill("TB-101");
       await expect(
         manager.getByRole("button", { name: /^TB-101 / }),
       ).toHaveCount(1);

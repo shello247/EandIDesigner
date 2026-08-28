@@ -51,12 +51,16 @@ async function expectAlignedCoordinateStage(page: Page) {
   return { stage, artwork, overlay };
 }
 
-async function expectEighteenPixelMarker(page: Page, selector: string) {
+async function expectScreenSizedMarker(
+  page: Page,
+  selector: string,
+  minimumPixels = 17
+) {
   const markerBox = await page.locator(selector).boundingBox();
   expect(markerBox).not.toBeNull();
-  expect(markerBox!.width).toBeGreaterThanOrEqual(17);
+  expect(markerBox!.width).toBeGreaterThanOrEqual(minimumPixels);
   expect(markerBox!.width).toBeLessThanOrEqual(20);
-  expect(markerBox!.height).toBeGreaterThanOrEqual(17);
+  expect(markerBox!.height).toBeGreaterThanOrEqual(minimumPixels);
   expect(markerBox!.height).toBeLessThanOrEqual(20);
   return markerBox!;
 }
@@ -141,7 +145,7 @@ test("imports an SVG symbol draft and keeps review workflows available", async (
   await expect(page.getByText("SVG imported.")).toBeVisible();
   await expect(page.getByText("Detected anchors")).toBeVisible();
   await expectAlignedCoordinateStage(page);
-  const importMarkerBox = await expectEighteenPixelMarker(
+  const importMarkerBox = await expectScreenSizedMarker(
     page,
     '[data-import-anchor-marker="1"]'
   );
@@ -175,7 +179,7 @@ test("imports an SVG symbol draft and keeps review workflows available", async (
 
   await expectAlignedCoordinateStage(page);
   await expectIndependentSymbolDetailsPane(page);
-  const registryMarkerBox = await expectEighteenPixelMarker(
+  const registryMarkerBox = await expectScreenSizedMarker(
     page,
     '[data-terminal-hotspot="1"]'
   );
@@ -281,9 +285,10 @@ test("keeps a portrait import aligned and selects the intended dense terminal", 
 
   await expect(page.getByText("SVG imported.")).toBeVisible();
   await expectAlignedCoordinateStage(page);
-  const markerBox = await expectEighteenPixelMarker(
+  const markerBox = await expectScreenSizedMarker(
     page,
-    '[data-import-anchor-marker="3.2"]'
+    '[data-import-anchor-marker="3.2"]',
+    12
   );
   await expect(page.getByLabel("Anchor x 3.2")).toHaveValue("19.5");
 

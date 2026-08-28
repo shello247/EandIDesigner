@@ -3,6 +3,7 @@ import {
   createE2ePanelQualityPackage,
   deleteE2eDrawing
 } from "./drawing-fixtures";
+import { loadSheetFromSheetLoader } from "./panel-workflow-helpers";
 
 test("reviews, traces, and exports deterministic panel deliverables", async ({
   page
@@ -11,68 +12,80 @@ test("reviews, traces, and exports deterministic panel deliverables", async ({
 
   try {
     await page.goto(`/drawings/${drawingId}`);
-    await page.getByRole("button", { name: "Open sheet loader" }).click();
-    await page
-      .getByRole("dialog", { name: "Sheet Loader" })
-      .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
-      .getByRole("button", { name: "Load" })
-      .click();
-
-    await page.getByRole("button", { name: "Preview", exact: true }).click();
-    await page
-      .getByRole("menuitem", { name: /Panel Deliverables/ })
-      .click();
-    let dialog = page.getByRole("dialog", {
-      name: "Panel Engineering Deliverables"
-    });
-    await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText("TB-101");
-    await expect(dialog).toContainText("C-101-P1-WHT");
-    await expect(
-      dialog.getByText("Save drawing before exporting", { exact: true })
-    ).toHaveCount(0);
-
-    const csvDownload = page.waitForEvent("download");
-    await dialog.getByRole("button", { name: "CSV" }).click();
-    await expect((await csvDownload).suggestedFilename()).toMatch(
-      /^DRAFT_.*terminal_schedule\.csv$/
+    await loadSheetFromSheetLoader(
+      page,
+      "JB001 Detailed Panel Drawing",
+      /JB001 Detailed Panel Drawing Detailed Panel/
     );
 
-    await dialog.getByRole("button", { name: "Panel Assets" }).click();
-    await expect(dialog).toContainText("Field Junction Box");
-    await expect(dialog).not.toContainText("Field Cable 101");
-
-    await dialog.getByLabel("Issue status").selectOption("issued");
-    await expect(dialog).toContainText(
-      "Issued output requires Approved status and zero blocking panel QC findings."
-    );
-    await expect(dialog.getByRole("button", { name: "XLSX" })).toBeDisabled();
-
-    await dialog.getByLabel("Issue status").selectOption("draft");
-    await dialog.getByRole("button", { name: "Terminal Schedule" }).click();
-    await dialog.getByRole("button", { name: "Open field source" }).first().click();
-    await expect(page.getByTestId("active-sheet-readout")).toContainText(
-      "JB001 Field Terminations"
-    );
     await page.getByRole("button", { name: "Preview", exact: true }).click();
     await expect(
       page.getByRole("menuitem", { name: /Panel Deliverables/ })
-    ).toBeVisible();
+    ).toHaveCount(0);
     await page.getByRole("button", { name: "Preview", exact: true }).click();
 
-    await page.getByRole("button", { name: "Preview", exact: true }).click();
-    await page
-      .getByRole("menuitem", { name: /Panel Deliverables/ })
-      .click();
-    dialog = page.getByRole("dialog", {
-      name: "Panel Engineering Deliverables"
+    const exportBase = {
+      scope: "active_panel",
+      panelAssetId: "asset_jb_001",
+      issueMode: "draft",
+      composition: "schedules_only"
+    };
+    const terminalCsvQuery = new URLSearchParams({
+      ...exportBase,
+      report: "terminal_schedule"
     });
-    const workbookDownload = page.waitForEvent("download");
-    await dialog.getByRole("button", { name: "XLSX" }).click();
-    await expect((await workbookDownload).suggestedFilename()).toMatch(
-      /^DRAFT_.*panel_deliverables\.xlsx$/
+    const terminalCsvResponse = await page.request.get(
+      `/drawings/${drawingId}/deliverables/csv?${terminalCsvQuery}`
     );
+    expect(terminalCsvResponse.ok()).toBe(true);
+    expect(terminalCsvResponse.headers()["content-type"]).toContain("text/csv");
+    expect(terminalCsvResponse.headers()["content-disposition"]).toMatch(
+      /DRAFT_.*terminal_schedule\.csv/
+    );
+    const terminalCsv = await terminalCsvResponse.text();
+    expect(terminalCsv).toContain("TB-101");
+    expect(terminalCsv).toContain("C-101-P1-WHT");
 
+    const assetCsvQuery = new URLSearchParams({
+      ...exportBase,
+      report: "panel_asset_schedule"
+    });
+    const assetCsvResponse = await page.request.get(
+      `/drawings/${drawingId}/deliverables/csv?${assetCsvQuery}`
+    );
+    expect(assetCsvResponse.ok()).toBe(true);
+    const assetCsv = await assetCsvResponse.text();
+    expect(assetCsv).toContain("Field Junction Box");
+    expect(assetCsv).not.toContain("Field Cable 101");
+
+    const issuedQuery = new URLSearchParams({
+      ...exportBase,
+      report: "terminal_schedule",
+      issueMode: "issued"
+    });
+    expect(
+      (
+        await page.request.get(
+          `/drawings/${drawingId}/deliverables/csv?${issuedQuery}`
+        )
+      ).status()
+    ).toBe(400);
+
+    const workbookQuery = new URLSearchParams({
+      ...exportBase,
+      reports: "terminal_schedule,panel_asset_schedule"
+    });
+    const workbookResponse = await page.request.get(
+      `/drawings/${drawingId}/deliverables/xlsx?${workbookQuery}`
+    );
+    expect(workbookResponse.ok()).toBe(true);
+    expect(workbookResponse.headers()["content-type"]).toContain(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    expect(workbookResponse.headers()["content-disposition"]).toMatch(
+      /DRAFT_.*panel_deliverables\.xlsx/
+    );
+    expect((await workbookResponse.body()).byteLength).toBeGreaterThan(1000);
     const scheduleQuery = new URLSearchParams({
       scope: "active_panel",
       panelAssetId: "asset_jb_001",

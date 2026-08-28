@@ -4,6 +4,7 @@ import {
   deleteE2eDrawing,
 } from "./drawing-fixtures";
 import {
+  loadSheetFromSheetLoader,
   openPanelEngineeringWorkbench,
   selectPanelEngineeringView,
 } from "./panel-workflow-helpers";
@@ -15,12 +16,11 @@ test("discovers, places, removes, and reloads an existing panel asset occurrence
 
   try {
     await page.goto(`/drawings/${drawingId}`);
-    await page.getByRole("button", { name: "Open sheet loader" }).click();
-    const loader = page.getByRole("dialog", { name: "Sheet Loader" });
-    await loader
-      .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
-      .getByRole("button", { name: "Load" })
-      .click();
+    await loadSheetFromSheetLoader(
+      page,
+      "JB001 Detailed Panel Drawing",
+      /JB001 Detailed Panel Drawing Detailed Panel/
+    );
 
     const queue = await openPanelEngineeringWorkbench(page);
     const assetRow = queue.getByRole("row", { name: /TB-101/ });
@@ -49,12 +49,11 @@ test("discovers, places, removes, and reloads an existing panel asset occurrence
       "Drawing saved.",
     );
     await page.reload();
-    await page.getByRole("button", { name: "Open sheet loader" }).click();
-    await page
-      .getByRole("dialog", { name: "Sheet Loader" })
-      .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
-      .getByRole("button", { name: "Load" })
-      .click();
+    await loadSheetFromSheetLoader(
+      page,
+      "JB001 Detailed Panel Drawing",
+      /JB001 Detailed Panel Drawing Detailed Panel/
+    );
     const reloadedQueue = await openPanelEngineeringWorkbench(page);
     await expect(
       reloadedQueue.getByRole("row", { name: /TB-101/ }),
