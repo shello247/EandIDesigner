@@ -507,11 +507,6 @@ export const saveSymbolMetadataChangesInputSchema = z.object({
     .optional()
 });
 
-export const approvedNetworkVersionIdsSchema = z
-  .array(z.string().trim().min(1).max(120))
-  .max(5000)
-  .transform((versionIds) => [...new Set(versionIds)]);
-
 export const drawingSymbolVersionIdsSchema = z
   .array(z.string().trim().min(1).max(120))
   .max(5000)
@@ -681,9 +676,6 @@ export type ValidationIssue = z.infer<typeof validationIssueSchema>;
 export type SaveSymbolDraftInput = z.infer<typeof saveSymbolDraftInputSchema>;
 export type SaveSymbolMetadataChangesInput = z.infer<
   typeof saveSymbolMetadataChangesInputSchema
->;
-export type ApprovedNetworkVersionIds = z.infer<
-  typeof approvedNetworkVersionIdsSchema
 >;
 export type DrawingSymbolVersionIds = z.infer<
   typeof drawingSymbolVersionIdsSchema

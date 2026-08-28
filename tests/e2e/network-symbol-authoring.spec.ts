@@ -42,6 +42,9 @@ test("imports a managed four-port network switch", async ({ page }) => {
   await page.getByLabel("Symbol key").fill(symbolKey);
   await page
     .getByLabel("Category", { exact: true })
+    .selectOption({ label: "Network Device" });
+  await page
+    .getByLabel("Symbol function", { exact: true })
     .selectOption("network_device");
   await expect(
     page.getByRole("button", { name: "Save imported symbol" })
