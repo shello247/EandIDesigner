@@ -777,33 +777,6 @@ async function main() {
   `);
 
   await execute(`
-    CREATE TABLE IF NOT EXISTS "NetworkMap" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "mapKey" TEXT NOT NULL,
-      "title" TEXT NOT NULL,
-      "status" TEXT NOT NULL DEFAULT 'draft',
-      "modelJson" TEXT NOT NULL,
-      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updatedAt" DATETIME NOT NULL
-    );
-  `);
-
-  await execute(`
-    CREATE UNIQUE INDEX IF NOT EXISTS "NetworkMap_mapKey_key"
-    ON "NetworkMap"("mapKey");
-  `);
-
-  await execute(`
-    CREATE INDEX IF NOT EXISTS "NetworkMap_status_idx"
-    ON "NetworkMap"("status");
-  `);
-
-  await execute(`
-    CREATE INDEX IF NOT EXISTS "NetworkMap_updatedAt_idx"
-    ON "NetworkMap"("updatedAt");
-  `);
-
-  await execute(`
     CREATE TABLE IF NOT EXISTS "DrawingValidationIssue" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "drawingId" TEXT NOT NULL,

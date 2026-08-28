@@ -291,19 +291,6 @@ model Drawing {
   @@index([updatedAt])
 }
 
-model NetworkMap {
-  id        String   @id @default(cuid())
-  mapKey    String   @unique
-  title     String
-  status    String   @default("draft")
-  modelJson String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([status])
-  @@index([updatedAt])
-}
-
 model DrawingValidationIssue {
   id        String   @id @default(cuid())
   drawingId String
