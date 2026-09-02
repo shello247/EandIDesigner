@@ -4,6 +4,7 @@ import {
   deleteE2eDrawing,
 } from "./drawing-fixtures";
 import {
+  loadSheetFromSheetLoader,
   openPanelEngineeringWorkbench,
   selectPanelEngineeringView,
 } from "./panel-workflow-helpers";
@@ -18,14 +19,11 @@ test("runs discovery and deliverables for MCP-201 without JB-specific assumption
   try {
     await test.step("load the generic panel context", async () => {
       await page.goto(`/drawings/${drawingId}`);
-      await page.getByRole("button", { name: "Open sheet loader" }).click();
-      await page
-        .getByRole("dialog", { name: "Sheet Loader" })
-        .getByRole("row", {
-          name: /MCP-201 Detailed Panel Drawing Detailed Panel/,
-        })
-        .getByRole("button", { name: "Load" })
-        .click();
+      await loadSheetFromSheetLoader(
+        page,
+        "MCP-201 Detailed Panel Drawing",
+        /MCP-201 Detailed Panel Drawing Detailed Panel/
+      );
       const panelSummary = page.getByRole("complementary", {
         name: "Symbol library",
       });
@@ -62,13 +60,26 @@ test("runs discovery and deliverables for MCP-201 without JB-specific assumption
       );
       await page.reload();
       await page.getByRole("button", { name: "Preview", exact: true }).click();
-      await page.getByRole("menuitem", { name: /Panel Deliverables/ }).click();
-      const deliverables = page.getByRole("dialog", {
-        name: "Panel Engineering Deliverables",
+      await expect(
+        page.getByRole("menuitem", { name: /Panel Deliverables/ }),
+      ).toHaveCount(0);
+      await page.getByRole("button", { name: "Preview", exact: true }).click();
+
+      const reportQuery = new URLSearchParams({
+        scope: "active_panel",
+        panelAssetId: "asset_mcp_201",
+        reports: "terminal_schedule,internal_wire_schedule",
+        issueMode: "draft",
+        composition: "schedules_only",
       });
-      await expect(deliverables).toContainText("MCP201-XT1");
-      await expect(deliverables).toContainText("MCP201-FW1");
-      await expect(deliverables).not.toContainText("JB001");
+      const report = await page.request.get(
+        `/drawings/${drawingId}/print?${reportQuery}`,
+      );
+      expect(report.ok()).toBe(true);
+      const reportHtml = await report.text();
+      expect(reportHtml).toContain("MCP201-XT1");
+      expect(reportHtml).toContain("MCP201-FW1");
+      expect(reportHtml).not.toContain("JB001");
     });
   } finally {
     await deleteE2eDrawing(drawingId);

@@ -5,6 +5,7 @@ coverage/
 playwright-report/
 test-results/
 artifacts/panel-performance/
+artifacts/networking-retirement/
 *.db
 *.db-journal
 *.db-shm

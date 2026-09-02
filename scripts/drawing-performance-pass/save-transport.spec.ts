@@ -38,7 +38,7 @@ function unrelatedPrefetch(records: RequestRecord[]) {
     (record) =>
       record.method === "GET" &&
       (record.rsc || record.prefetch) &&
-      ["/symbols", "/networking", "/bom"].some(
+      ["/symbols", "/bom"].some(
         (root) => record.path === root || record.path.startsWith(`${root}/`)
       )
   );

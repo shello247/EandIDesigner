@@ -7,7 +7,6 @@ import {
   ClipboardList,
   DraftingCompass,
   LibraryBig,
-  Network,
   PackageSearch,
   PanelLeftClose,
   PanelLeftOpen,
@@ -29,13 +28,6 @@ const navItems = [
     icon: DraftingCompass,
     isActive: (pathname: string) =>
       pathname === "/drawings" || pathname.startsWith("/drawings/")
-  },
-  {
-    href: "/networking",
-    label: "Networking",
-    icon: Network,
-    isActive: (pathname: string) =>
-      pathname === "/networking" || pathname.startsWith("/networking/")
   },
   {
     href: "/bom",

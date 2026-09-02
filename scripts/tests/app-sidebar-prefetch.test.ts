@@ -13,7 +13,6 @@ describe("drawing-scoped sidebar prefetch", () => {
     "/drawings",
     "/drawings/new",
     "/symbols",
-    "/networking",
     "/bom",
     "/bom/items"
   ])("retains the default navigation policy outside an editor at %s", (pathname) => {

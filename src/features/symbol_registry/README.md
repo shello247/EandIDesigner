@@ -37,7 +37,9 @@ because symbols are the controlled source of geometry, terminals, and anchors.
 
 ## Routes
 
-- `/symbols` - registry list.
+- `/symbols` - registry list, filtered by managed category and server-paginated
+  at ten rows per page. Each row reports whether its Symbol Mini BOM links to
+  Items Library records.
 - `/symbols/new` - SVG-only import workflow.
 - `/symbols/[id]` - category-specific symbol review, engineer notes, documents,
   validation, and approval.
@@ -95,8 +97,9 @@ The canvas should not bypass this module to read symbol internals directly.
 - Network port keys and referenced network anchor keys normalize to uppercase.
 - Port keys are unique and each port must reference an anchor whose kind is
   `network_port`.
-- Network symbols remain excluded from the E&I drawing symbol query and are
-  exposed to Networking only after approval and successful metadata parsing.
+- Approved network-device versions remain available to drawing and panel
+  workflows through the same exact-version symbol contracts used by other
+  physical equipment.
 - Imported network marker geometry is removed before the production SVG is
   stored; the original SVG remains available as the source asset.
 
@@ -121,38 +124,22 @@ The canvas should not bypass this module to read symbol internals directly.
 The automated approval reference is a runtime-created managed four-port
 industrial switch. It is not a seeded registry dependency.
 
-## Network Mapping Reads
+## Network Device Compatibility
 
-The registry exposes three network-map read paths:
+`network_device`, `networkProfile`, and `network_port` describe physical
+equipment and its ports. They remain part of the Symbol Registry so approved
+switches and similar devices can be placed, rendered, wired, reviewed, and
+reloaded in electrical drawings without losing manufacturer or port metadata.
 
-- `listNetworkSymbolCatalogForMapping()` returns approved `network_device`
-  catalog projections without raw SVG or complete metadata. Malformed profiles
-  are excluded.
-- `listApprovedNetworkSymbolVersionsByIds(versionIds)` returns complete SVG and
-  metadata only for requested approved versions. Duplicate IDs are removed and
-  large requests are split into SQLite-safe chunks.
-- `getApprovedNetworkSymbolSvgAsset(versionId)` supports the read-only preview
-  route at `/symbols/network-assets/[versionId]`.
-
-The preview route returns sanitized `image/svg+xml` with `nosniff`, an immutable
-version-ID `ETag`, and `Cache-Control: public, max-age=0, must-revalidate`.
-Matching conditional requests return `304`; draft, archived, malformed, and
-non-network versions return `404`.
-
-`listNetworkSymbolsForMapping()` remains as a deprecated compatibility read.
-New map, print, and PDF callers must use the catalog and referenced-version
-queries so a large catalog is not serialized with complete SVG strings.
-
-The network map editor uses the selected catalog version for one-shot placement
-and caches complete approved versions by immutable `versionId` for the editor
-session. The registry remains responsible only for approved catalog and asset
-reads; placement, movement, selection, and node metadata stay owned by
-`network_maps`.
+The standalone network-map product and its map-only catalog, asset-preview, and
+placement APIs have been retired. Drawing consumers continue to resolve pinned
+symbol versions through the standard drawing symbol queries; they do not depend
+on a separate network-map catalogue.
 
 ## Tests
 
 ```powershell
-npm run test -- src/features/symbol_registry/tests/symbol_registry.test.ts src/features/symbol_registry/tests/network-symbol-review.test.ts src/features/symbol_registry/tests/network-symbol-catalog.test.ts
+npm run test -- src/features/symbol_registry/tests
 ```
 
 Full app verification:

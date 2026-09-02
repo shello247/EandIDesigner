@@ -3,6 +3,7 @@ import {
   createE2eDetailedPanelDrawingPackage,
   deleteE2eDrawing
 } from "./drawing-fixtures";
+import { loadSheetFromSheetLoader } from "./panel-workflow-helpers";
 
 test("creates and reloads a Detailed Panel Drawing without duplicating its asset", async ({
   page
@@ -51,20 +52,19 @@ test("creates and reloads a Detailed Panel Drawing without duplicating its asset
       "Drawing saved."
     );
     await page.reload();
-    await page.getByRole("button", { name: "Open sheet loader" }).click();
-
-    const loader = page.getByRole("dialog", { name: "Sheet Loader" });
-    const detailedRow = loader.getByRole("row", {
-      name: /JB001 Detailed Panel Drawing Detailed Panel/
-    });
-    await expect(detailedRow).toContainText("1");
-    await detailedRow.getByRole("button", { name: "Load" }).click();
+    await loadSheetFromSheetLoader(
+      page,
+      "JB001 Detailed Panel Drawing",
+      /JB001 Detailed Panel Drawing Detailed Panel/
+    );
     await expect(page.getByTestId("active-sheet-readout")).toContainText(
       "JB001 Detailed Panel Drawing"
     );
     await page.getByRole("button", { name: "Asset Manager" }).click();
+    const manager = page.getByRole("dialog", { name: "Asset Manager" });
+    await manager.getByLabel("Search drawing assets").fill("JB001");
     await expect(
-      page.getByRole("button", { name: "JB001 Field Junction Box 0" })
+      manager.getByRole("button", { name: "JB001 Field Junction Box 0" })
     ).toHaveCount(1);
 
     const pdfResponse = await page.request.get(`/drawings/${drawingId}/pdf`);

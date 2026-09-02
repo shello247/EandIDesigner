@@ -86,11 +86,12 @@ Network device imports require a device type and explicit media for every port.
 Managed status may be managed, unmanaged, or unspecified. Missing profiles,
 duplicate port keys, and missing or non-network anchor references are rejected.
 
-## Next Phase
+## Network Device Use
 
 Network-specific symbol review and approval is implemented in
-`symbol_registry`. Network canvas placement and link authoring remain outside
-this importer phase and are the next networking workflow increment.
+`symbol_registry`. The imported profile and port anchors describe the physical
+device for electrical drawing, panel-equipment, and wiring workflows. The
+standalone network-map workspace is not a consumer of this importer.
 
 ## Tests
 

@@ -1,20 +1,10 @@
 import {
-  getApprovedNetworkSymbolSvgAsset as getApprovedNetworkSymbolSvgAssetQuery,
-  listApprovedNetworkSymbolVersionsByIds as listApprovedNetworkSymbolVersionsByIdsQuery,
   listDrawingSymbolCatalogSummaries as listDrawingSymbolCatalogSummariesQuery,
   listDrawingSymbolVersions,
   listDrawingSymbolVersionsByIds,
-  listNetworkSymbolCatalog,
-  listNetworkSymbolVersions,
   listSymbolIdentitiesByIds
 } from "../data/queries";
 import type { SaveSymbolDraftInput } from "../data/schema";
-import type {
-  ApprovedNetworkSymbol,
-  ApprovedNetworkSymbolCatalogItem
-} from "../logic/services/network-symbol-catalog";
-
-export type { ApprovedNetworkSymbol, ApprovedNetworkSymbolCatalogItem };
 
 export type {
   AnchorKind,
@@ -85,29 +75,6 @@ export async function listDrawingRenderSymbols(
 
 export async function listDrawingSymbolCatalogSummaries() {
   return listDrawingSymbolCatalogSummariesQuery();
-}
-
-export async function listNetworkSymbolCatalogForMapping(): Promise<
-  ApprovedNetworkSymbolCatalogItem[]
-> {
-  return listNetworkSymbolCatalog();
-}
-
-export async function listApprovedNetworkSymbolVersionsByIds(
-  versionIds: readonly string[]
-): Promise<ApprovedNetworkSymbol[]> {
-  return listApprovedNetworkSymbolVersionsByIdsQuery(versionIds);
-}
-
-export async function getApprovedNetworkSymbolSvgAsset(versionId: string) {
-  return getApprovedNetworkSymbolSvgAssetQuery(versionId);
-}
-
-/** @deprecated Use the lightweight catalog and referenced-version bulk query. */
-export async function listNetworkSymbolsForMapping(): Promise<
-  ApprovedNetworkSymbol[]
-> {
-  return listNetworkSymbolVersions();
 }
 
 export { listSymbolIdentitiesByIds };

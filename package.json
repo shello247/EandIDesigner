@@ -24,6 +24,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:setup": "prisma generate && tsx scripts/bootstrap-sqlite.ts",
+    "db:retire-network-maps": "tsx scripts/retire-network-map-storage.ts",
     "db:retire-sheet-templates": "tsx scripts/retire-drawing-sheet-template-storage.ts",
     "db:seed": "tsx prisma/seed.ts",
     "import:symbols": "tsx scripts/import-existing-symbols.ts"

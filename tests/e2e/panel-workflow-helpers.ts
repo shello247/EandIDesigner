@@ -7,6 +7,20 @@ export type PanelEngineeringView =
   | "Internal Wires"
   | "Connection Patterns";
 
+export async function loadSheetFromSheetLoader(
+  page: Page,
+  query: string,
+  rowName: RegExp
+): Promise<void> {
+  await page.getByRole("button", { name: "Open sheet loader" }).click();
+  const loader = page.getByRole("dialog", { name: "Sheet Loader" });
+  await loader.getByRole("searchbox", { name: "Search sheets" }).fill(query);
+  await loader
+    .getByRole("row", { name: rowName })
+    .getByRole("button", { name: "Load", exact: true })
+    .click();
+}
+
 export async function openPanelEngineeringWorkbench(
   page: Page,
 ): Promise<Locator> {
