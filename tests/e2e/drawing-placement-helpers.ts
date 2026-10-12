@@ -25,7 +25,7 @@ export async function confirmCanvasPlacement(page: Page, point?: { x: number; y:
   }
   await page.mouse.move(screen.x, screen.y);
   await expect(page.getByTestId("placement-ghost")).toHaveAttribute("data-valid", "true");
-  const committed = page.locator(".drawing-sheet-rendered [data-placement-id], .drawing-sheet-rendered [data-annotation-id]");
+  const committed = page.locator(".drawing-sheet-rendered [data-placement-id], .drawing-sheet-rendered [data-annotation-id], .drawing-sheet-rendered [data-connected-wire-schedule]");
   const countBefore = await committed.count();
   if (ctrlKey) await page.keyboard.down("Control");
   try { await page.mouse.click(screen.x, screen.y); }
