@@ -1,9 +1,11 @@
 import { expect, type Page } from "./drawing-test";
+import { waitForDrawingViewport } from "./drawing-viewport-helpers";
 
 /** Confirms a pending insertion on the paper, never on an application control. */
 export async function confirmCanvasPlacement(page: Page, point?: { x: number; y: number }, finish = true, ctrlKey = false) {
   const paper = page.locator('[data-sheet-paper="true"]');
   await page.getByRole("button", { name: "Fit drawing", exact: true }).click();
+  await waitForDrawingViewport(page);
   const frame = page.getByTestId("drawing-sheet-frame");
   const width = Number(await frame.getAttribute("data-sheet-width"));
   const height = Number(await frame.getAttribute("data-sheet-height"));
@@ -23,9 +25,13 @@ export async function confirmCanvasPlacement(page: Page, point?: { x: number; y:
   }
   await page.mouse.move(screen.x, screen.y);
   await expect(page.getByTestId("placement-ghost")).toHaveAttribute("data-valid", "true");
+  const committed = page.locator(".drawing-sheet-rendered [data-placement-id], .drawing-sheet-rendered [data-annotation-id]");
+  const countBefore = await committed.count();
   if (ctrlKey) await page.keyboard.down("Control");
   try { await page.mouse.click(screen.x, screen.y); }
   finally { if (ctrlKey) await page.keyboard.up("Control"); }
+  // Never disguise a missed placement by cancelling the pending session.
+  await expect.poll(() => committed.count(), { message: "The canvas click must commit an insertion" }).toBeGreaterThan(countBefore);
   if (finish && await page.getByTestId("placement-session").count()) {
     await page.keyboard.press("Escape");
   }

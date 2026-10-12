@@ -59,6 +59,12 @@ The clean release checkout then passed all 1,308 unit tests in 202 files (157.81
 
 ## Verification commands and limitations
 
+### Firefox viewport follow-up
+
+Local requalification: isolated webpack build passed (120.165 s, build FBPh8iE61XRpbCmqSaFHw); all 24 targeted Chromium/Firefox placement, workbench, internal-wire and hit-testing checks passed without retries (115.235 s). Source fingerprint bb2d28d04b466ca1ff833029326b3cc3b0e9fc9dd302f9066259efbd3db98128 remained unchanged. Lint, standalone types and two isolation checks passed. The live server stayed up throughout this separate-build qualification.
+
+GitHub run 38307927765 passed static checks, all 1,309 units, dependency policy, isolation contracts and webpack build; 140/142 browser checks passed. Retained Firefox traces showed the wire test's screen coordinates changing during smooth scrolling, and a placement helper cancelling a still-pending insertion without checking that it committed. Test helpers now wait for a stable SVG screen transform and assert that committed content increases before any cancellation. No routing, selection or placement behavior was weakened. The clean release checkout has its own explicitly registered synthetic database/build directory so further local qualification does not interrupt the live runtime.
+
 Use [release runbook](../../docs/application/releases/2026-10-12.md) for exact guarded commands. Do not bootstrap the canonical catalogue. No shared runtime build while engineers have unsaved work.
 
 Software release is not manufacturer record revalidation. Existing evidence/classification gaps and wider engineering programmes remain separate and unfinished. Historical drawings are not automatically moved into sections or reclassified.

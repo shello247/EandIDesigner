@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const configurations = {
+  'package-information-release-20261012': { run: 'package-information-release', database: 'test-package-information-release.db' },
   'reconcile-live-engineering-20260930': { run: 'runtime-reconciliation', database: 'test-runtime-reconciliation.db' },
   'engineering-attributes': { run: 'engineering-attributes', database: 'test-engineering-attributes.db' },
   'standards-assurance-integration': { run: 'standards-assurance', database: 'test-standards-assurance.db' },
