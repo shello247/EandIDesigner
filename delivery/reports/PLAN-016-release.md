@@ -41,8 +41,6 @@ The GitHub repository is public. A clean release branch is based on origin/main;
 
 Publication must use a same-name upstream branch, reviewed pull request and squash merge. Canonical main is updated only by fast-forward pull. Dirty original worktrees remain recoverable. Actual PR/main identity and local live review are recorded below when confirmed.
 
-## Commands and limitations
-
 ## Live checkpoint — 12 October 2026, 16:49 AST
 
 Restarted with `npm run dev:webpack` from the reconciled worktree, resolving canonical main SQLite. Port 3000 listener PID 21904 was verified against that checkout; test port 3121 was stopped. PID is evidence for this checkpoint, not a reusable stop command.
@@ -50,6 +48,12 @@ Restarted with `npm run dev:webpack` from the reconciled worktree, resolving can
 Read-only browser review confirmed expanded Package Information, Add Section, the existing Title Sheet and Needs section warnings for legacy working sheets. No placement, rearrangement or Save action was performed. Projects and the drawing route returned HTTP 200. Canonical database SHA-256 remained 5A0E478664D6B70E0AB5E2C663A33BBF9EA8B4AE8A5D101021E517E4596DEBAA.
 
 Publication and GitHub CI remain pending at this checkpoint; use the PR's actual check result before merging.
+
+## Clean-checkout CI follow-up
+
+PR #13 at ff32cc4 passed dependency audit, lint and types on GitHub. Run 38306652489 then exposed a local-path-only Standards test guard and an unbound raw-transaction issue in the legacy Project upgrade. The test guard now uses the existing exact GitHub repository/workspace/run-identity validation. The schema/data upgrade uses a Prisma transaction-bound connection; backup, dry-run and preflight protections remain. No upgrade was executed against canonical storage.
+
+Added four guard cases and a complete rollback regression. Focused Standards/upgrade verification passed 31 tests in 10 files locally. Original CI failures remain visible. GitHub also warns about existing v4 action runtime deprecation and the upcoming ubuntu-latest image change; no protection or required check was disabled.
 
 ## Verification commands and limitations
 

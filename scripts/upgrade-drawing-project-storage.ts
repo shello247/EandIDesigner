@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type Prisma } from "@prisma/client";
 import { normalizeDrawingClientName } from "../src/features/drawing_clients/api/public";
 import {
   DRAWING_PROJECT_NUMBER_SCOPE,
@@ -79,7 +79,7 @@ function legacyClientId(normalizedName: string): string {
   return `client_${sha256(normalizedName).slice(0, 24)}`;
 }
 
-async function tableExists(prisma: PrismaClient, tableName: string) {
+async function tableExists(prisma: Prisma.TransactionClient, tableName: string) {
   const rows = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
     tableName
@@ -270,7 +270,7 @@ async function projectFingerprints(
   }));
 }
 
-async function highestProjectNumberSequence(prisma: PrismaClient) {
+async function highestProjectNumberSequence(prisma: Prisma.TransactionClient) {
   if (!(await tableExists(prisma, "Project"))) return 0;
   const rows = await prisma.$queryRawUnsafe<
     Array<{ projectNumber: string | null }>
@@ -333,7 +333,7 @@ function isDataCurrent(state: DataState) {
   );
 }
 
-async function materializeLegacyClients(prisma: PrismaClient) {
+async function materializeLegacyClients(prisma: Prisma.TransactionClient) {
   const projects = await prisma.$queryRawUnsafe<
     Array<{ id: string; client: string; clientId: string | null }>
   >(`
@@ -363,7 +363,7 @@ async function materializeLegacyClients(prisma: PrismaClient) {
   }
 }
 
-async function initializeProjectNumberSequence(prisma: PrismaClient) {
+async function initializeProjectNumberSequence(prisma: Prisma.TransactionClient) {
   const highestSequence = await highestProjectNumberSequence(prisma);
   await prisma.$executeRawUnsafe(
     `INSERT INTO "ProjectNumberSequence" ("scope", "lastValue", "updatedAt")
@@ -380,9 +380,10 @@ async function initializeProjectNumberSequence(prisma: PrismaClient) {
   );
 }
 
-async function applySchema(prisma: PrismaClient, state: SchemaState) {
-  await prisma.$executeRawUnsafe("BEGIN EXCLUSIVE");
-  try {
+async function applySchema(client: PrismaClient, state: SchemaState) {
+  // Raw BEGIN/COMMIT on a pooled client do not bind subsequent calls to the
+  // same SQLite connection. Pin the complete schema/data update atomically.
+  await client.$transaction(async (prisma) => {
     if (!state.clientTable) {
       await prisma.$executeRawUnsafe(`
         CREATE TABLE "Client" (
@@ -459,11 +460,7 @@ async function applySchema(prisma: PrismaClient, state: SchemaState) {
     );
     await materializeLegacyClients(prisma);
     await initializeProjectNumberSequence(prisma);
-    await prisma.$executeRawUnsafe("COMMIT");
-  } catch (error) {
-    await prisma.$executeRawUnsafe("ROLLBACK").catch(() => undefined);
-    throw error;
-  }
+  }, { timeout: 30000 });
 }
 
 export async function upgradeDrawingProjectStorage({

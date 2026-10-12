@@ -213,6 +213,20 @@ describe("Drawing Project storage upgrade", () => {
     ).toEqual({ status: "current", drawingCount: 1 });
   });
 
+  it("rolls back schema and data together when a legacy uniqueness check fails", async () => {
+    const { root, databasePath, prisma } = await projectStorageV1Fixture();
+    await prisma.$executeRawUnsafe('UPDATE "Project" SET "normalizedProjectNumber" = ? WHERE "id" = ?', "prj-000042", "project_2");
+    await expect(upgradeDrawingProjectStorage({
+      prisma, databasePath, archiveBasePath: path.join(root, "archives"),
+      sourceCommit: "9".repeat(40), apply: true
+    })).rejects.toThrow();
+    expect(await prisma.$queryRawUnsafe("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('Client', 'ProjectNumberSequence')")).toEqual([]);
+    const columns = await prisma.$queryRawUnsafe<Array<{ name: string }>>('PRAGMA table_info("Project")');
+    expect(columns.some(column => column.name === "clientId")).toBe(false);
+    const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>('SELECT "id" FROM "Project" ORDER BY "id"');
+    expect(rows).toEqual([{ id: "project_1" }, { id: "project_2" }]);
+  });
+
   it("refuses an existing archive destination", async () => {
     const { root, databasePath, prisma } = await legacyFixture();
     const archiveBasePath = path.join(root, "archives");
