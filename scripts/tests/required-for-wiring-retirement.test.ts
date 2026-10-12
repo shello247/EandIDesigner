@@ -281,7 +281,7 @@ describe("requiredForWiring metadata retirement", () => {
   it("refuses a locked database without creating an archive", async () => {
     const { root, databasePath, prisma } = await fixture();
     const locker = new PrismaClient({
-      datasourceUrl: toPrismaSqliteFileUrl(databasePath)
+      datasourceUrl: retirementDatabaseUrl(databasePath)
     });
     clients.push(locker);
     await locker.$executeRawUnsafe("BEGIN EXCLUSIVE");

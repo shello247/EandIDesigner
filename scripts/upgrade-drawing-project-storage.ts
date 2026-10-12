@@ -18,7 +18,7 @@ import {
 import {
   findCanonicalMainWorktree,
   parseGitWorktreeList,
-  toPrismaSqliteFileUrl
+  toPrismaMaintenanceSqliteFileUrl
 } from "./development-runtime";
 
 const ARCHIVE_DIRECTORY_NAME = "drawing-project-storage";
@@ -622,7 +622,7 @@ async function main() {
     { encoding: "utf8" }
   ).trim();
   const prisma = new PrismaClient({
-    datasourceUrl: toPrismaSqliteFileUrl(databasePath)
+    datasourceUrl: toPrismaMaintenanceSqliteFileUrl(databasePath)
   });
   try {
     const result = await upgradeDrawingProjectStorage({

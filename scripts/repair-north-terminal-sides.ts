@@ -38,7 +38,7 @@ import {
 import {
   findCanonicalMainWorktree,
   parseGitWorktreeList,
-  toPrismaSqliteFileUrl
+  toPrismaMaintenanceSqliteFileUrl
 } from "./development-runtime";
 
 export const NORTH_DRAWING_ID = "cmrp7wbpx000buoqojvnguwqk";
@@ -721,7 +721,7 @@ async function main() {
     ARCHIVE_DIRECTORY_NAME
   );
   const prisma = new PrismaClient({
-    datasourceUrl: toPrismaSqliteFileUrl(canonicalDatabasePath)
+    datasourceUrl: toPrismaMaintenanceSqliteFileUrl(canonicalDatabasePath)
   });
 
   try {

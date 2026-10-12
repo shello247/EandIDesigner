@@ -59,6 +59,16 @@ The clean release checkout then passed all 1,308 unit tests in 202 files (157.81
 
 ## Verification commands and limitations
 
+### Complete local browser gate
+
+All 142 Chromium/Firefox production-build scenarios passed in one clean run without retries (622.982 s), against f40367d / fingerprint c96ba90c5d88ef9b8e90139f20a1626f5d96a8a2f2b0910bec83e7d3116c3c02, build FBPh8iE61XRpbCmqSaFHw. No source drift. Subsequent source changes are limited to maintenance scripts and their tests; the application UI/engine is unchanged. Lint and standalone types passed after those maintenance changes. Required GitHub CI remains authoritative for the final branch head before squash merge.
+
+### Remaining maintenance connection audit
+
+GitHub run 38310564804 exposed the same manual-transaction/pool mismatch in the legacy NetworkMap retirement script. Reviewed all explicit SQLite BEGIN/COMMIT maintenance paths: item/classification/standards upgrades and catalogue reconciliation already pin one connection, and Symbol guidance uses a single native SQLite connection. Added a shared maintenance-only URL helper for NetworkMap retirement, North terminal-side repair and Drawing Project preflight, plus matching lock fixtures. Ordinary development database URLs remain unchanged. All 47 focused maintenance tests in nine files passed, including lock/archive refusal, backup/idempotency, rollback and unrelated-data preservation. No maintenance command was applied to canonical data.
+
+
+
 ### Firefox viewport follow-up
 
 The following full local run was deliberately stopped after its new success assertion omitted the connected-wire schedule's distinct SVG marker (the schedule itself was correctly inserted). Expanded the committed-content selector to include that marker, retaining the success assertion. The superseded GitHub run 38310212419 was cancelled; neither aborted run is counted as a passing gate. Original trace and no-source-drift receipts remain retained.

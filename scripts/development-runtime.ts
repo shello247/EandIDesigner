@@ -45,6 +45,11 @@ export function toPrismaSqliteFileUrl(databasePath: string): string {
   return `file:${path.resolve(databasePath).replaceAll("\\", "/")}`;
 }
 
+/** Manual SQLite maintenance transactions and PRAGMA locks are connection-local. */
+export function toPrismaMaintenanceSqliteFileUrl(databasePath: string): string {
+  return toPrismaSqliteFileUrl(databasePath) + "?connection_limit=1";
+}
+
 export function resolveDevelopmentDatabaseUrl({
   canonicalDatabasePath,
   explicitOverride

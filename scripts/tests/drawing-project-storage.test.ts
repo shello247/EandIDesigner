@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { afterEach, describe, expect, it } from "vitest";
-import { toPrismaSqliteFileUrl } from "../development-runtime";
+import { toPrismaMaintenanceSqliteFileUrl } from "../development-runtime";
 import {
   parseDrawingProjectUpgradeArguments,
   upgradeDrawingProjectStorage
@@ -15,7 +15,7 @@ async function legacyFixture() {
   const root = mkdtempSync(path.join(tmpdir(), "ei-drawing-project-upgrade-"));
   const databasePath = path.join(root, "fixture.db");
   const prisma = new PrismaClient({
-    datasourceUrl: toPrismaSqliteFileUrl(databasePath)
+    datasourceUrl: toPrismaMaintenanceSqliteFileUrl(databasePath)
   });
   clients.push(prisma);
   await prisma.$executeRawUnsafe("PRAGMA foreign_keys = ON");
@@ -249,7 +249,7 @@ describe("Drawing Project storage upgrade", () => {
   it("refuses a locked database before creating an archive", async () => {
     const { root, databasePath, prisma } = await legacyFixture();
     const locker = new PrismaClient({
-      datasourceUrl: toPrismaSqliteFileUrl(databasePath)
+      datasourceUrl: toPrismaMaintenanceSqliteFileUrl(databasePath)
     });
     clients.push(locker);
     await locker.$executeRawUnsafe("BEGIN EXCLUSIVE");

@@ -10,7 +10,7 @@ import {
   type DrawingModel
 } from "../../src/features/drawing_canvas/data/schema";
 import type { ApprovedDrawingSymbol } from "../../src/features/drawing_canvas/types";
-import { toPrismaSqliteFileUrl } from "../development-runtime";
+import { toPrismaMaintenanceSqliteFileUrl } from "../development-runtime";
 import {
   buildNorthTerminalSideRepair,
   NORTH_DRAWING_ID,
@@ -329,7 +329,7 @@ async function buildDatabaseFixture() {
   const root = mkdtempSync(path.join(tmpdir(), "ei-north-terminal-repair-"));
   const databasePath = path.join(root, "fixture.db");
   const prisma = new PrismaClient({
-    datasourceUrl: toPrismaSqliteFileUrl(databasePath)
+    datasourceUrl: toPrismaMaintenanceSqliteFileUrl(databasePath)
   });
   clients.push(prisma);
   await prisma.$executeRawUnsafe(`
@@ -519,7 +519,7 @@ describe("North Oropouche terminal-side repair", () => {
     const { root, databasePath, prisma } = await buildDatabaseFixture();
     const archiveBasePath = path.join(root, "archives");
     const locker = new PrismaClient({
-      datasourceUrl: toPrismaSqliteFileUrl(databasePath)
+      datasourceUrl: toPrismaMaintenanceSqliteFileUrl(databasePath)
     });
     clients.push(locker);
     await locker.$executeRawUnsafe("BEGIN EXCLUSIVE");
