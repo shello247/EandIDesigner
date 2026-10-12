@@ -1,29 +1,31 @@
 "use client";
 
 import type { SymbolMetadata } from "../../data/schema";
-import type { SymbolCategoryRecord } from "@/features/symbol_categories/api/public";
-import {
-  SymbolCategoryManager,
-  type SymbolCategoryManagerUpdate
-} from "@/features/symbol_categories/ui/components/symbol-category-manager";
+import { useState } from "react";
+import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
+import { getDeviceTypeLabel, type DeviceType } from "@/shared/device-classification/device-types";
+const ClassificationReviewDialog = dynamic(() => import("@/features/device_classification/api/ui").then(module => module.ClassificationReviewDialog));
 
 export function SymbolRegistryDetailsPanel({
   metadata,
-  categories,
-  categoryId,
+  versionId,
+  deviceType,
+  classificationBlocked,
   readOnly,
-  onChange,
-  onCategoryChange,
-  onCategoriesUpdated
+  onChange
 }: {
   metadata: SymbolMetadata;
-  categories: SymbolCategoryRecord[];
-  categoryId: string;
+  versionId: string;
+  deviceType?: DeviceType | null;
+  classificationBlocked: boolean;
   readOnly: boolean;
   onChange: (updater: (current: SymbolMetadata) => SymbolMetadata) => void;
-  onCategoryChange: (categoryId: string) => void;
-  onCategoriesUpdated: (update: SymbolCategoryManagerUpdate) => void;
 }) {
+  const router = useRouter();
+  const [reviewing, setReviewing] = useState(false);
+  const [savedType, setSavedType] = useState(deviceType);
+  const [message, setMessage] = useState("");
   return (
     <section className="tool-panel p-4">
       <div className="mb-4">
@@ -50,35 +52,16 @@ export function SymbolRegistryDetailsPanel({
             }}
           />
         </label>
-        <div className="grid grid-cols-4 items-center">
-          <div className="col-span-1 flex min-w-0 items-center gap-1">
-            <label
-              className="field-label whitespace-nowrap"
-              htmlFor="symbol-category"
-            >
-              Category
-            </label>
-            <SymbolCategoryManager
-              initialCategories={categories}
-              trigger="icon"
-              onCategoriesUpdated={onCategoriesUpdated}
-            />
-          </div>
-          <select
-            id="symbol-category"
-            className="field-input col-span-3"
-            aria-label="Symbol category"
-            value={categoryId}
-            disabled={readOnly}
-            onChange={(event) => onCategoryChange(event.currentTarget.value)}
-          >
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </select>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div><span className="field-label">Device Type</span><p className="text-sm">{getDeviceTypeLabel(savedType)}</p></div>
+          <button type="button" className="icon-button" disabled={readOnly || classificationBlocked}
+            title={classificationBlocked ? "Save detail changes before reviewing classification." : undefined}
+            onClick={() => setReviewing(true)}>Review classification</button>
         </div>
+        {message ? <p role="status" className="text-xs text-teal-800">{message}</p> : null}
+        {reviewing ? <ClassificationReviewDialog versionId={versionId} onClose={() => setReviewing(false)} onSaved={type => {
+          setSavedType(type); setReviewing(false); setMessage("Classification saved. Existing drawing snapshots are unchanged."); router.refresh();
+        }} /> : null}
         <label className="grid gap-1.5">
           <span className="field-label">Description</span>
           <textarea

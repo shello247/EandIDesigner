@@ -71,7 +71,8 @@ test("imports a managed four-port network switch", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: symbolName, exact: true })
   ).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("Needs review")).toBeVisible();
+  await expect(page.getByText("Needs review", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^(Validate|Approve|Archive)$/ })).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Network Profile", exact: true })
   ).toBeVisible();
@@ -120,7 +121,7 @@ test("imports a managed four-port network switch", async ({ page }) => {
   await page.getByLabel("Network port media ETH1").selectOption("fiber");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Symbol metadata saved.")).toBeVisible();
-  await expect(page.getByText("No validation issues found.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^(Validate|Approve|Archive)$/ })).toHaveCount(0);
 
   const symbol = await prisma.symbol.findUnique({
     where: { symbolKey },
@@ -137,7 +138,7 @@ test("imports a managed four-port network switch", async ({ page }) => {
   });
 
   expect(symbol?.category).toBe("network_device");
-  expect(symbol?.status).toBe("needs_review");
+  expect(symbol?.status).toBe("approved"); // Compatibility token: available immediately after saving.
   expect(symbol?.manufacturer).toBe("Network Works");
   expect(symbol?.model).toBe("NWS-4F");
 
@@ -168,20 +169,13 @@ test("imports a managed four-port network switch", async ({ page }) => {
   const approvedVersionId = version?.id;
   const approvedSvg = version?.svg;
 
-  await expect(page.getByRole("button", { name: "Approve" })).toBeEnabled();
-  await page.getByRole("button", { name: "Approve" }).click();
-  await expect(page.getByText("Approved", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText(
-      "Approved metadata can be updated. SVG artwork and Figma-authored geometry remain controlled."
-    )
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /^(Validate|Approve|Archive)$/ })).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Save changes" })
   ).toBeDisabled();
 
   await page.reload();
-  await expect(page.getByText("Approved", { exact: true })).toBeVisible();
+  await expect(page.getByText("Approved", { exact: true })).toHaveCount(0);
   const updatedSymbolName = `${symbolName} Updated`;
   await page.getByLabel("Symbol name").fill(updatedSymbolName);
   await page
@@ -198,7 +192,7 @@ test("imports a managed four-port network switch", async ({ page }) => {
   ).toBeEnabled();
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Symbol metadata saved.")).toBeVisible();
-  await expect(page.getByText("Approved", { exact: true })).toBeVisible();
+  await expect(page.getByText("Approved", { exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: updatedSymbolName, exact: true })
   ).toBeVisible();

@@ -1,5 +1,18 @@
 # EI Designer
 
+## Current application release
+
+The current application includes project-organized drawing packages, controlled
+Items and Symbol versions, shared Device Types, equipment identity and component
+configuration, cursor placement, panel layouts, wiring, schedules/BOM, engineering
+attributes, and read-only schematic/assurance views.
+
+Start with the [numbered feature register](docs/application/REGISTER.md) and
+[release/runbook](docs/application/releases/2026-10-12.md). The older milestone
+description below is historical context, not the complete current feature list.
+Software qualification does not constitute manufacturer revalidation or
+engineering approval of saved records.
+
 EI Designer is a local Next.js application for building controlled Electrical,
 Instrumentation, and Control wiring drawings from approved SVG symbols.
 
@@ -72,7 +85,7 @@ computer, including the private SQLite restore process, see
 ```powershell
 npm ci
 $env:DATABASE_URL='file:./dev.db'; npm run db:setup
-$env:DATABASE_URL='file:./dev.db'; npm run dev:webpack
+npm run dev:webpack
 ```
 
 `npm ci` automatically generates Prisma Client. Stop every development server before running `npm ci` or `npx prisma generate` manually so Windows does not hold generated-client files open. Ordinary development startup only regenerates Prisma Client; it does not migrate, seed, bootstrap, or otherwise modify a database.
@@ -90,7 +103,7 @@ If Turbopack panics or enters a repeated compile/HMR loop, stop it completely
 before returning to webpack:
 
 ```powershell
-$env:DATABASE_URL='file:./dev.db'; npm run dev:webpack
+npm run dev:webpack
 ```
 
 Keep development logs in the terminal. Do not redirect changing server logs into the repository because file-watcher updates can trigger unnecessary rebuilds.
@@ -134,8 +147,10 @@ Before new work, run:
 git status --short
 ```
 
-There is no `delivery/` folder in this repository at this point, so Delivery OS
-handoff files are not available unless that structure is bootstrapped later.
+Delivery OS records are available under `delivery/`. Public release records
+exclude local customer data, database snapshots and private engineering evidence.
+Consult the feature register and release runbook for the current application;
+older milestone and task records remain historical.
 
 ## Next Stage Candidates
 

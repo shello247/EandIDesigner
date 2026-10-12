@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { deviceTypeSchema } from "@/shared/device-classification/device-types";
 import {
   networkDeviceTypeSchema,
   networkPortMediaSchema,
@@ -41,9 +42,10 @@ export const svgImportNetworkProfileDraftSchema = z.object({
 });
 
 export const svgSymbolImportDraftSchema = z.object({
+  deviceType: deviceTypeSchema.nullable().optional(),
   svg: z.string().trim().min(1),
   sourceAsset: svgImportSourceAssetSchema,
-  categoryId: symbolCategoryIdSchema,
+  categoryId: symbolCategoryIdSchema.optional(),
   metadata: symbolMetadataSchema
 });
 

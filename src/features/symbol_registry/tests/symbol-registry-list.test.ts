@@ -38,7 +38,6 @@ function symbolRow({
     status: "approved",
     updatedAt: new Date("2026-08-28T12:00:00.000Z"),
     versions: [{ id: `version_${id}`, versionNumber: 3 }],
-    validationIssues: [],
     managedCategory: { id: "category_instrument", name: "Instrument" },
     bomTemplate:
       linkedItemCount > 0
@@ -90,6 +89,8 @@ describe("Symbol Registry list pagination", () => {
     });
     expect(result.items.map((item) => item.linkedItemCount)).toEqual([2, 0]);
     expect(database.symbolFindMany).toHaveBeenCalledTimes(1);
+    expect(database.symbolFindMany.mock.calls[0][0].select).not.toHaveProperty("validationIssues");
+    expect(result.items[0]).not.toHaveProperty("blockingIssueCount");
     expect(database.symbolFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {

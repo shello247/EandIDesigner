@@ -241,7 +241,7 @@ describe("editable symbol metadata", () => {
     ).toThrow(/controlled by the imported Figma artwork/i);
   });
 
-  it("updates an approved version in place and preserves approval", async () => {
+  it("updates an available version in place without changing pinned identity", async () => {
     const detail = await saveSymbolMetadataChanges(changes());
 
     expect(detail).toMatchObject({
@@ -274,7 +274,7 @@ describe("editable symbol metadata", () => {
     });
   });
 
-  it("refreshes warning evidence without deactivating an approved symbol", async () => {
+  it("saves without producing or deleting workflow validation records", async () => {
     database.validateRegisteredSymbolComponents.mockResolvedValue([
       {
         severity: "warning",
@@ -286,30 +286,14 @@ describe("editable symbol metadata", () => {
 
     await saveSymbolMetadataChanges(changes());
 
-    expect(database.validationIssueDeleteMany).toHaveBeenCalledWith({
-      where: {
-        symbolId: "symbol_1",
-        versionId: "version_1"
-      }
-    });
-    expect(database.validationIssueCreateMany).toHaveBeenCalledWith({
-      data: [
-        {
-          symbolId: "symbol_1",
-          versionId: "version_1",
-          severity: "warning",
-          code: "COMPONENT_REVIEW",
-          message: "Review this component assignment.",
-          path: "componentPositions.0"
-        }
-      ]
-    });
+    expect(database.validationIssueDeleteMany).not.toHaveBeenCalled();
+    expect(database.validationIssueCreateMany).not.toHaveBeenCalled();
     expect(database.versionUpdate.mock.calls[0][0].data.status).toBe(
       "approved"
     );
   });
 
-  it("moves draft metadata changes into needs review", async () => {
+  it("makes saved draft metadata immediately available without approval", async () => {
     database.versionFindUnique.mockResolvedValue({
       id: "version_1",
       symbolId: "symbol_1",
@@ -327,12 +311,12 @@ describe("editable symbol metadata", () => {
     await saveSymbolMetadataChanges(changes());
 
     expect(database.versionUpdate.mock.calls[0][0].data.status).toBe(
-      "needs_review"
+      "approved"
     );
     expect(database.symbolUpdate).toHaveBeenCalledWith({
       where: { id: "symbol_1" },
       data: {
-        status: "needs_review",
+        status: "approved",
         displayName: "Relay Base Updated",
         categoryId: "category_termination"
       }

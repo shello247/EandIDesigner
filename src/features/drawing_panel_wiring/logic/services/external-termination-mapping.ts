@@ -125,9 +125,7 @@ export function buildExternalTerminationMappingCandidates({
           (finding) => finding.severity === "error" || finding.code === "linked_terminal_configuration_mismatch"
         );
         const disabledReason =
-          side === "internal"
-            ? "Field terminations cannot use the internal side."
-            : terminalConflict
+          terminalConflict
               ? terminalConflict.message
               : otherOccupants.length > 0
                 ? `${otherOccupants[0].label} already occupies this terminal side.`

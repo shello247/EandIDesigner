@@ -105,9 +105,6 @@ function addTerminalNodes(
           label: terminal.label,
           function: terminal.function,
           supportedSides: [...terminal.supportedSides].sort(),
-          requiredSides: terminal.requiredSides
-            ? [...terminal.requiredSides].sort()
-            : undefined,
           allowedDomains: terminal.allowedDomains
             ? [...terminal.allowedDomains].sort()
             : undefined,

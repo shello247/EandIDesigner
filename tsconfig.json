@@ -39,6 +39,9 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "artifacts/standards-assurance",
+    "artifacts/runtime-reconciliation",
+    "artifacts/device-classification-release"
   ]
 }

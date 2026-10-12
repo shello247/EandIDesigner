@@ -3,16 +3,19 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type Dispatch,
+  type ReactNode,
   type KeyboardEvent,
   type PointerEvent,
-  type SetStateAction,
-  type WheelEvent
+  type SetStateAction
 } from "react";
 import { CheckCircle2 } from "lucide-react";
+import { PlacementSessionOverlay } from "../canvas/PlacementSessionOverlay";
+import type { PlacementSource, PlacementCandidate, PlacementPoint } from "../../logic/services/drawing-placement";
 import type {
   DrawingAnnotation,
   DrawingModel as DrawingPackageModel,
@@ -64,15 +67,16 @@ import {
   calculateScrollForZoomAnchor,
   calculateFitTransform,
   clampZoom,
+  wheelDeltaInPixels,
   type ViewportTransform
 } from "../../logic/services/viewport-transform";
+import { useCanvasWheelZoom } from "../canvas/hooks/useCanvasWheelZoom";
 import {
   buildRenderableDrawingSymbols,
   getRenderableSymbolForPlacement
 } from "../../logic/services/drawing-generated-symbols";
 import {
-  getLayoutLabelPoint,
-  resolveLayoutLabel
+  resolveLayoutLabelGeometry
 } from "../../logic/services/drawing-layout-labels";
 import {
   isBackplanePlacement,
@@ -113,6 +117,7 @@ import type { ConnectedWireScheduleProjection } from "@/features/drawing_connect
 import { isConnectedWireScheduleAnnotation } from "@/features/drawing_connected_wire_schedule/api/public";
 import { PlacementOverlay } from "../canvas/PlacementOverlay";
 import { PlacementTitleOverlay } from "../canvas/PlacementTitleOverlay";
+import { PanelLayoutLabelOverlay } from "../canvas/PanelLayoutLabelOverlay";
 import { RouteAlignmentGuidesOverlay } from "../canvas/RouteAlignmentGuidesOverlay";
 import { RouteHandlesOverlay } from "../canvas/RouteHandlesOverlay";
 import { RouteLabelOverlay } from "../canvas/RouteLabelOverlay";
@@ -414,6 +419,11 @@ function getSelectionGuideBounds({
 }
 
 export function SvgDrawingSurface({
+  representationControl,
+  alternateView,
+  placementSession,
+  onPlacementSessionCancel,
+  onPlacementSessionCommit,
   model: drawingModel,
   sectionIndex: drawingSectionIndex,
   drawingTitle,
@@ -485,6 +495,11 @@ export function SvgDrawingSurface({
   onViewportCenterChange,
   statusMessage
 }: {
+  representationControl?: ReactNode;
+  alternateView?: (toolbarHost: HTMLDivElement | null) => ReactNode;
+  placementSession?: PlacementSource | null;
+  onPlacementSessionCancel?: () => void;
+  onPlacementSessionCommit?: (candidate: PlacementCandidate, point: PlacementPoint, ctrlKey: boolean) => { ok: boolean; error?: string };
   model: DrawingPackageModel;
   sectionIndex: DrawingSectionIndex;
   drawingTitle: string;
@@ -601,6 +616,10 @@ export function SvgDrawingSurface({
   statusMessage?: string | null;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const showingAlternateView = Boolean(alternateView);
+  const wasShowingAlternateView = useRef(false);
+  const outlineScrollRef = useRef<{ sheetId: string; left: number; top: number } | null>(null);
+  const [previewToolbarHost, setPreviewToolbarHost] = useState<HTMLDivElement | null>(null);
   const didInitialFitRef = useRef(false);
   const lastFocusSheetRequestKeyRef = useRef(focusSheetRequestKey);
   const activeSheetFrameRef = useRef<HTMLDivElement | null>(null);
@@ -905,10 +924,14 @@ export function SvgDrawingSurface({
     () =>
       interactiveModel.placements.flatMap((placement) => {
         const symbol = getRenderableSymbolForPlacement(placement, symbols);
-        const renderPlacement = renderPlacementForSheet(placement);
+        // Match the SVG renderer's physical footprint before projecting labels.
+        // Legacy saved dimensions must not shift the handle or drag preview.
+        const labelPlacement = symbol && isLayoutHelperPlacement(placement)
+          ? normalizeLayoutHelperDimensionsForSymbol(placement, symbol) : placement;
+        const renderPlacement = renderPlacementForSheet(labelPlacement);
 
         if (isLayoutHelperPlacement(placement)) {
-          const layoutLabel = resolveLayoutLabel({
+          const layoutLabel = resolveLayoutLabelGeometry({
             placement: renderPlacement,
             symbol
           });
@@ -918,10 +941,8 @@ export function SvgDrawingSurface({
                 {
                   placementId: placement.id,
                   label: layoutLabel.text,
-                  point: getLayoutLabelPoint({
-                    placement: renderPlacement,
-                    position: layoutLabel.position
-                  })
+                  point: layoutLabel.point,
+                  panelLabel: { placement, displayed: renderPlacement, symbol }
                 }
               ]
             : [];
@@ -960,7 +981,7 @@ export function SvgDrawingSurface({
     ) ?? null;
   const activeAnchorHotspot =
     anchorHotspots.find((hotspot) => hotspot.id === activeAnchorId) ?? null;
-  const showAnchorAvailability = workspaceContext === "detailed_panel";
+  const showAnchorAvailability = Boolean(getConnectionAnchorState);
   const activeAnchorAvailability =
     showAnchorAvailability && activeAnchorHotspot
       ? getConnectionAnchorState?.({
@@ -1261,6 +1282,9 @@ export function SvgDrawingSurface({
 
     lastFocusSheetRequestKeyRef.current = focusSheetRequestKey;
     requestActiveSheetScroll();
+    // Return keyboard ownership after sheet creation/loading closes its dialog.
+    // This explicit request does not run on normal zoom or pointer updates.
+    viewportRef.current?.focus({ preventScroll: true });
   }, [focusSheetRequestKey, requestActiveSheetScroll]);
 
   const scheduleZoomAnchorCorrection = useCallback(
@@ -1338,6 +1362,7 @@ export function SvgDrawingSurface({
   ]);
 
   const syncViewportCenterState = useCallback(() => {
+    if (showingAlternateView) return;
     const viewportElement = viewportRef.current;
     const frameElement = activeSheetFrameRef.current;
     const paperElement = frameElement?.querySelector<HTMLElement>(
@@ -1375,9 +1400,16 @@ export function SvgDrawingSurface({
 
     lastViewportCenterRef.current = nextViewportCenter;
     onViewportCenterChange(nextViewportCenter);
-  }, [model.sheet.height, model.sheet.width, onViewportCenterChange, viewportTransform.zoom]);
+  }, [model.sheet.height, model.sheet.width, onViewportCenterChange, showingAlternateView, viewportTransform.zoom]);
 
   const handleViewportScroll = useCallback(() => {
+    // Firefox can emit a zero scroll when display:none is applied. Hidden-view
+    // events must not replace the last visible position or synchronize its centre.
+    if (showingAlternateView) return;
+    const viewport = viewportRef.current;
+    if (viewport) outlineScrollRef.current = {
+      sheetId: effectiveActiveSheetId, left: viewport.scrollLeft, top: viewport.scrollTop
+    };
     if (scrollCenterSyncTimeoutRef.current !== null) {
       window.clearTimeout(scrollCenterSyncTimeoutRef.current);
     }
@@ -1386,7 +1418,19 @@ export function SvgDrawingSurface({
       scrollCenterSyncTimeoutRef.current = null;
       syncViewportCenterState();
     }, 120);
-  }, [syncViewportCenterState]);
+  }, [effectiveActiveSheetId, showingAlternateView, syncViewportCenterState]);
+
+  useLayoutEffect(() => {
+    if (showingAlternateView && scrollCenterSyncTimeoutRef.current !== null) {
+      window.clearTimeout(scrollCenterSyncTimeoutRef.current);
+      scrollCenterSyncTimeoutRef.current = null;
+    }
+    const saved = outlineScrollRef.current;
+    if (wasShowingAlternateView.current && !showingAlternateView && saved?.sheetId === effectiveActiveSheetId) {
+      viewportRef.current?.scrollTo({ left: saved.left, top: saved.top, behavior: "instant" });
+    }
+    wasShowingAlternateView.current = showingAlternateView;
+  }, [effectiveActiveSheetId, showingAlternateView]);
 
   useEffect(() => {
     syncViewportCenterState();
@@ -1444,19 +1488,18 @@ export function SvgDrawingSurface({
   );
 
   const handleWheel = useCallback(
-    (event: WheelEvent<HTMLDivElement>) => {
-      if (!event.ctrlKey) {
-        return;
-      }
-
-      event.preventDefault();
+    (event: WheelEvent) => {
       const currentZoom = latestZoomRef.current;
       const anchor = zoomAnchorFromPointer({
         clientX: event.clientX,
         clientY: event.clientY,
         zoom: currentZoom
       });
-      const nextZoom = clampZoom(currentZoom * Math.exp(-event.deltaY * 0.0015));
+      const deltaPixels = wheelDeltaInPixels(
+        event,
+        viewportRef.current?.clientHeight ?? 1
+      );
+      const nextZoom = clampZoom(currentZoom * Math.exp(-deltaPixels * 0.0015));
 
       latestZoomRef.current = nextZoom;
       pendingActiveSheetScrollRef.current = false;
@@ -1480,6 +1523,8 @@ export function SvgDrawingSurface({
       setViewportTransform
     ]
   );
+
+  useCanvasWheelZoom(viewportRef, handleWheel);
 
   useEffect(() => {
     const viewportElement = viewportRef.current;
@@ -1632,6 +1677,7 @@ export function SvgDrawingSurface({
 
   const selectHotspotPlacement = useCallback(
     (event: PointerEvent<SVGSVGElement>) => {
+      if (placementSession) return;
       if (event.button !== 0 || connectionMode === "connecting") {
         return;
       }
@@ -1654,7 +1700,7 @@ export function SvgDrawingSurface({
       onConnectionSelect(undefined);
       setSelectedAnnotationLeaderId(null);
     },
-    [connectionMode, onConnectionSelect, onSelectPlacement]
+    [connectionMode, onConnectionSelect, onSelectPlacement, placementSession]
   );
 
   const {
@@ -2133,21 +2179,35 @@ export function SvgDrawingSurface({
   };
 
   return (
-    <section className="tool-panel drawing-canvas-panel overflow-hidden">
+    <section className="tool-panel drawing-canvas-panel" data-testid="drawing-sheet-panel">
       <div className="drawing-canvas-header">
-        <div className="min-w-0">
-          <h2 className="text-sm font-bold">
-            {activeSheetPresentation?.heading ?? "Drawing Sheet"}
+        <div className="drawing-canvas-heading">
+          <h2 className="text-sm font-bold" data-testid="active-sheet-heading">
+            {activeFrame?.sheet.name?.trim() || activeSheetPresentation?.heading || "Drawing Sheet"}
           </h2>
           <p
             className="mt-0.5 truncate text-xs font-medium text-slate-500"
             data-testid="active-sheet-readout"
           >
             Sheet {activeSheetNumber} of {sheetCount}
-            {activeFrame?.sheet.name ? ` / ${activeFrame.sheet.name}` : ""}
           </p>
         </div>
-        <DrawingSheetToolbar
+        {representationControl}
+      </div>
+      <DrawingSheetToolbar
+          preview={Boolean(alternateView)}
+          previewToolbarRef={setPreviewToolbarHost}
+          insertionControl={<DrawingCanvasAddMenu
+            key={`${effectiveActiveSheetId}:${toolbarDisabled}:${readOnly}`}
+            onAddPanel={onAddPanel}
+            onAddTerminalBlock={onAddTerminalBlock}
+            onCopyTerminalBlock={onCopyTerminalBlock}
+            onAddNote={onAddNote}
+            onAddConnectedWireSchedule={onAddConnectedWireSchedule}
+            canAddConnectedWireSchedule={canAddConnectedWireSchedule}
+            disabled={toolbarDisabled || readOnly || activeFrame?.sheet.kind === "title_sheet"}
+            showDrawingItems={workspaceContext === "field_drawing"}
+          />}
           zoom={viewportTransform.zoom}
           disabled={toolbarDisabled}
           readOnly={readOnly}
@@ -2159,6 +2219,7 @@ export function SvgDrawingSurface({
           guidesVisible={guidesVisible}
           onOpenSheetLoader={onOpenSheetLoader}
           onEditActiveSheet={onEditActiveSheet}
+          isTitleSheet={activeFrame?.sheet.kind === "title_sheet"}
           onOpenConnections={onOpenConnections}
           onToggleConnect={onToggleConnect}
           onTogglePattern={onTogglePattern}
@@ -2168,8 +2229,13 @@ export function SvgDrawingSurface({
           onZoomIn={() => zoomByStep("in")}
           onZoomOut={() => zoomByStep("out")}
         />
-      </div>
-      <div className="drawing-canvas-viewport-shell">
+      {alternateView ? <div id="drawing-schematic-panel" role="region" aria-label="Schematic preview" className="min-w-0">{alternateView(previewToolbarHost)}</div> : null}
+      <div className="drawing-canvas-viewport-shell" id="drawing-outline-panel" role="region" aria-label="Outline drawing" style={alternateView ? { display: "none" } : undefined}>
+        {placementSession && onPlacementSessionCancel && onPlacementSessionCommit ? (
+          <PlacementSessionOverlay key={placementSession.id} source={placementSession} model={drawingModel} symbols={approvedSymbols}
+            viewportRef={viewportRef} viewportRevision={`${viewportTransform.zoom}:${viewportTransform.panX}:${viewportTransform.panY}`}
+            onCancel={onPlacementSessionCancel} onCommit={onPlacementSessionCommit} />
+        ) : null}
         {statusMessage ? (
           <div
             className="drawing-canvas-toast"
@@ -2180,16 +2246,6 @@ export function SvgDrawingSurface({
             <span>{statusMessage}</span>
           </div>
         ) : null}
-        <DrawingCanvasAddMenu
-          onAddPanel={onAddPanel}
-          onAddTerminalBlock={onAddTerminalBlock}
-          onCopyTerminalBlock={onCopyTerminalBlock}
-          onAddNote={onAddNote}
-          onAddConnectedWireSchedule={onAddConnectedWireSchedule}
-          canAddConnectedWireSchedule={canAddConnectedWireSchedule}
-          disabled={toolbarDisabled || readOnly}
-          showDrawingItems={workspaceContext === "field_drawing"}
-        />
         <div
           ref={viewportRef}
           className={[
@@ -2197,7 +2253,6 @@ export function SvgDrawingSurface({
             isScrollPanning ? "drawing-canvas-viewport-middle-panning" : ""
           ].join(" ")}
           data-testid="drawing-canvas-viewport"
-          onWheel={handleWheel}
           onScroll={handleViewportScroll}
           onAuxClick={preventMiddleButtonAutoscroll}
           onMouseDown={preventMiddleButtonAutoscroll}
@@ -2224,26 +2279,13 @@ export function SvgDrawingSurface({
               ref={(element) => {
                 activeSheetFrameRef.current = element;
               }}
-              className={[
-                "drawing-sheet-frame drawing-sheet-frame-active",
-                guidesVisible && !readOnly
-                  ? "drawing-sheet-frame-with-rulers"
-                  : ""
-              ].join(" ")}
+              className="drawing-sheet-frame drawing-sheet-frame-active"
               data-testid="drawing-sheet-frame"
               data-sheet-id={effectiveActiveSheetId}
               data-sheet-width={model.sheet.width}
               data-sheet-height={model.sheet.height}
               data-active-sheet="true"
             >
-              <div className="drawing-sheet-caption">
-                <span className="drawing-sheet-caption-index">
-                  Sheet {activeSheetNumber} of {sheetCount}
-                </span>
-                <span className="drawing-sheet-caption-name">
-                  {activeFrame.sheet.name}
-                </span>
-              </div>
               <div
                 className="drawing-sheet-stage"
                 data-testid="drawing-sheet-stage"
@@ -2561,7 +2603,16 @@ export function SvgDrawingSurface({
                             onRouteLabelPointerEnd={endRouteLabelDrag}
                             onRouteLabelPointerCancel={cancelRouteLabelDrag}
                           />
-                          <PlacementTitleOverlay
+                          {selectedPlacementTitle?.panelLabel ? (
+                            !readOnly && !alternateView && !toolbarDisabled && !placementSession &&
+                            connectionMode === "idle" && !dragState && !patternActive ? (
+                              <PanelLayoutLabelOverlay
+                                key={`${effectiveActiveSheetId}:${selectedPlacementTitle.placementId}`}
+                                {...selectedPlacementTitle.panelLabel}
+                                sheet={model.sheet} zoom={viewportTransform.zoom}
+                                onCommit={onPlacementChange} onFocusCanvas={focusCanvas} />
+                            ) : null
+                          ) : <PlacementTitleOverlay
                             selectedPlacementTitle={selectedPlacementTitle}
                             viewportZoom={viewportTransform.zoom}
                             onPlacementTitlePointerDown={
@@ -2570,7 +2621,7 @@ export function SvgDrawingSurface({
                             onPlacementTitlePointerMove={updateDraggedPlacementTitle}
                             onPlacementTitlePointerEnd={endPlacementTitleDrag}
                             onPlacementTitlePointerCancel={cancelPlacementTitleDrag}
-                          />
+                          />}
                         </svg>
                           <AnchorTooltip
                             hotspot={connectionDraft.from ? null : activeAnchorHotspot}

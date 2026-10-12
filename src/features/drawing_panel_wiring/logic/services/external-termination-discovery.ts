@@ -76,10 +76,10 @@ function defaultTerminalTarget(
   const anchor = terminal.anchors.find(
     (candidate) => candidate.anchorKey === anchorKey
   );
-  const side =
-    anchor?.sideHint === "external" || anchor?.sideHint === "single"
-      ? anchor.sideHint
-      : undefined;
+  // Record kind and physical landing side are independent. A field connection
+  // remains an external/field record even when an engineer lands it on the
+  // internal end of a feed-through terminal.
+  const side = anchor?.sideHint;
 
   return side && node.supportedSides.includes(side)
     ? {

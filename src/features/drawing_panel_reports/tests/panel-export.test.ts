@@ -9,7 +9,7 @@ describe("panel schedule export", () => {
   it("writes deterministic UTF-8 CSV with stable metadata columns", () => {
     const csv = buildPanelScheduleCsv(createPanelReportBundle(), "terminal_schedule");
     expect(csv.startsWith("\uFEFFIssue Status,Drawing,QC Status,Panel")).toBe(true);
-    expect(csv).toContain("DRAFT,DRW-REPORTS,BLOCKED,ENC-001");
+    expect(csv).toContain("DRAFT,DRW-REPORTS,CLEAR,ENC-001");
     expect(csv.endsWith("\r\n")).toBe(true);
   });
 
@@ -50,7 +50,7 @@ describe("panel schedule export", () => {
     const bundle = createPanelReportBundle();
     const quality = {
       reports: [],
-      counts: bundle.manifest.qcCounts,
+      counts: { ...bundle.manifest.qcCounts, blockingErrors: 1 },
       canApprove: false
     };
     const draft = {

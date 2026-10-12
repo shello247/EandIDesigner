@@ -1,3 +1,4 @@
+import { confirmCanvasPlacement } from "./drawing-placement-helpers";
 import { expect, test, type Page } from "./drawing-test";
 import {
   createE2eTerminalBlockGroupPackage,
@@ -36,8 +37,9 @@ test("copies an existing terminal strip from the destination panel sheet", async
     });
     await builder.getByLabel("Name").fill("JB001 field terminal strip");
     await builder
-      .getByRole("button", { name: "Create terminal strip" })
+      .getByRole("button", { name: "Continue to placement" })
       .click();
+    await confirmCanvasPlacement(page);
     await expect(builder).toHaveCount(0);
 
     await activateSheet(page, "PLC001 Panel Layout Drawing");
@@ -62,19 +64,18 @@ test("copies an existing terminal strip from the destination panel sheet", async
       "TB-102 will be created from TB-101"
     );
     await copyDialog
-      .getByRole("button", { name: "Copy terminal strip", exact: true })
+      .getByRole("button", { name: "Continue to placement", exact: true })
       .click();
+    await confirmCanvasPlacement(page);
 
     await expect(copyDialog).toHaveCount(0);
-    await expect(page.getByTestId("drawing-toast")).toContainText(
-      "TB-102 created from TB-101"
-    );
+    await expect(page.getByTestId("placement-session")).toHaveCount(0);
     await expect(page.locator("[data-terminal-strip-member]")).toHaveCount(7);
     await expect(page.locator('[data-connection-id]')).toHaveCount(0);
 
     await page.getByRole("button", { name: "Asset Manager" }).click();
     const assetManager = page.getByRole("dialog", { name: "Asset Manager" });
-    const terminalCategory = assetManager.getByRole("button", { name: "Terminal Blocks, 2 assets" });
+    const terminalCategory = assetManager.getByRole("button", { name: "Terminal Block, 2 assets" });
     await expect(terminalCategory).toHaveAttribute("aria-expanded", /^(true|false)$/);
     if (await terminalCategory.getAttribute("aria-expanded") === "false") {
       await terminalCategory.click();

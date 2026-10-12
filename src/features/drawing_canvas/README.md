@@ -13,6 +13,73 @@ SVG/vector editor.
 
 ## Current Status
 
+### Manual panel labels
+
+Panel Layout labels resolve Compact (2.0 sheet-mm, regular) by default, including
+legacy drawings without new saved preferences. Standard is 2.5 and Large 3.0.
+The existing Label card provides visibility, preset/manual position, unit-aware
+sheet X/Y, orientation and optional straight leaders. Reset changes position only.
+No automatic arrangement, tag fitting or engineering-identity edits occur.
+
+The pure drawing-layout-labels service owns style, rotated text bounds, leader
+geometry and display-to-storage translation. Canvas, preview and export use the
+same output. PanelLayoutLabelOverlay holds a local rAF preview and commits once
+on release; Escape/cancel discard it. Ordinary title/wire-label paths are separate.
+Leaders are visual annotations, off by default, not connections. Existing
+overlaps remain for manual review. See PLAN-013 and drawing-panel-labels.spec.ts.
+
+### Compact Drawing Settings
+
+Drawing Settings uses the shared compact dialog with General and Printed Title
+Block tabs. One local draft survives tab changes and asynchronous project loads;
+Apply updates the drawing draft, and the main Save persists it. Title Sheet editing
+still shares the same package information without a second data store.
+
+Use project details previews client/project replacements for confirmation.
+Missing source values never erase text, and changed sources invalidate stale
+reviews. All fields are validated together, with errors selecting and focusing
+their tab. Dirty dismissal is guarded; background canvas shortcuts are isolated
+while normal text editing inside inputs remains available.
+
+Verification: existing settings unit suites and tests/e2e/drawing-settings-dialog.spec.ts,
+included in scripts/canvas-toolbar/playwright.config.ts (guarded synthetic3121,
+Chromium/Firefox, one worker). See delivery/plans/planned/PLAN-012-compact_drawing_settings.md.
+
+### Cursor-based insertion
+
+Spatial insertion follows choose → configure → preview → click to place. New
+equipment is placed once by default. Hold **Ctrl** while clicking to place a copy
+and keep the tool active; a plain click places the final copy and exits.
+Use **R** to rotate supported tools and **Esc** to cancel the pending preview.
+There is no repeat preference, Finish button or container dropdown.
+Ctrl+wheel remains pointer-anchored on the canvas through 800% zoom; middle-button
+panning remains available. Controls and positions outside the sheet never insert.
+
+The translucent preview uses the committed geometry, including physical backplane
+scale, fitted backplanes, full-span helpers and dimension offsets. New placements
+use the container under the pointer, never a nearest-neighbour or free-space search.
+Overlapping containers require an unambiguous pointer position or selecting the
+intended container before starting the tool. References retain ownership. Invalid
+positions show a reason instead of silently moving the object elsewhere.
+
+Only an accepted click creates records or consumes a tag. Package-wide numbering
+still reuses gaps and reserves unplaced assets' tags. References keep their existing
+identity and do not add physical BOM quantity. Each accepted insertion is one undo
+step; redo restores the same identities. Undo/redo, sheet changes and conflicting
+tools cancel the pending preview. Previews are never saved, exported or dirty state.
+
+Implementation: `data/placement-schema.ts` validates commit contracts;
+`logic/services/drawing-placement.ts` resolves pure geometry and detached commands;
+`ui/canvas/hooks/usePlacementSession.ts` owns transient sessions;
+`ui/canvas/PlacementSessionOverlay.tsx` handles cached artwork and animation-frame
+pointer updates; the memoized `PlacementInstructions.tsx` isolates static guidance.
+Ctrl continuation is checked against each accepted click, not saved session state.
+Existing insertion commands retain explicit automatic-position
+defaults for non-interactive callers. No new storage schema or endpoints are used.
+
+This is deliberate placement, not DIN-rail mounting-point snapping, manufacturer
+clearance checking or engineering approval.
+
 The current sheet milestone is complete enough to pause and move to the next
 application stage.
 
@@ -100,10 +167,12 @@ Intentionally not supported in the current drawing workflow:
 ## Route Surface
 
 - `/drawings` - list drawings.
-- `/drawings/new` - create blank drawings.
+- `/drawings/new?projectId=<active-project-id>` - create blank drawings within an active Project. Missing or unavailable project context redirects to Projects; creation rejects unassigned drawings.
 - `/drawings/[id]` - interactive drawing workspace.
 - `/drawings/[id]/pdf` - server-generated PDF using Playwright.
 - `/drawings/[id]/print` - print-focused HTML preview.
+- `/projects` - paginated organizational Project register.
+- `/projects/[id]` - Project identity, lifecycle, and linked drawing summaries.
 
 ## Data Model
 
@@ -112,10 +181,17 @@ Prisma stores drawings in:
 - `Drawing`
   - `id`
   - `drawingKey`
+    - immutable server-generated compatibility identifier; not user-managed.
   - `title`
+  - optional `description`
+  - optional `projectId` relation to `Project`
   - `status`
   - `modelJson`
   - timestamps
+- `Project`
+  - organizational name, optional case-insensitively unique number, client,
+    description, and active/archived lifecycle.
+  - drawing membership is independent from printable title-block fields.
 - `DrawingValidationIssue`
   - still present for compatibility, but drawing validation is not exposed in
     the current canvas workflow.
@@ -135,7 +211,7 @@ Prisma stores drawings in:
 - `sheets[]`
   - ordered sheets with `id`, `name`, optional `description`, and A3 landscape
     `page` dimensions.
-  - optional `kind`, currently `drawing` or `section_title`.
+  - optional `kind`: `drawing`, `title_sheet` (package cover), or `section_title` (section divider).
   - isolated `placements`, `connections`, and `annotations`.
   - legacy saved `panel_layout` sheets are normalized as regular drawing sheets
     on parse so old records do not crash the canvas.
@@ -143,9 +219,38 @@ Prisma stores drawings in:
 
 ### Drawing Package Sections
 
+- Newly created packages begin with a **Title Sheet**, edited using **Edit Title Sheet**.
+  The cover reads the drawing title and shared `titleBlock` fields; it stores no duplicate
+  project, client, revision, date or authorship information. Apply changes the local
+  draft, then Save persists it using the existing drawing revision check.
+- Existing packages are unchanged on read. **Edit active sheet → Convert to Title Sheet**
+  is available only for an empty ordinary first sheet (no description, panel context,
+  section details, annotations, connections or placements), with explicit confirmation.
+- A package cover is first and unique, cannot be moved into a section, and does not
+  increment section numbers. Canvas, package preview, print and PDF use the same cover
+  renderer. The `createDefaultDrawingModel` utility retains its plain-sheet default for
+  programmatic authoring; the user-facing creation mutation requests `withTitleSheet`.
+- Saved `title_sheet` packages require this version of the reader; no database migration
+  or automatic rewrite of existing drawings is performed.
+
 - A Section Title Page starts a section. Every following sheet belongs to that
   section until the next Section Title Page.
-- Sheets before the first title page are Front Matter and remain unnumbered.
+- Sheets before the first Section Title Page appear under **Package Information**
+  (internal `front_matter` identity retained). This group is not a numbered section;
+  sheet/page numbering still applies. Its package Title Sheet describes the whole package.
+- Package Information opens expanded. Leading working sheets show **Needs section**
+  and stay in their original positions until explicitly moved to a named section.
+  Opening the loader does not normalize, move, renumber or save those sheets.
+- **Add Section** creates a named section and its title page at the package end;
+  section numbering starts at 1. **Add Sheet** requires an existing section or a
+  new section title. The active section is preselected when available; otherwise
+  the engineer must choose. Creating a new section and its first working sheet is
+  one local commit/undo action, including Detailed Panel reference/create flows.
+- Interactive sheet destinations are validated against the current model by
+  `drawing-sheet-destination.ts`. Cancel/error discards intermediate changes;
+  no blank section is left behind. New working sheets append inside the chosen
+  section; Package Information is not an interactive destination. Non-interactive
+  generator commands retain their existing insertion contracts.
 - Section identity is the title-page sheet ID. Section number and member-sheet
   membership are derived from `sheets[]` order and are not duplicated in new
   persisted metadata.
@@ -155,7 +260,8 @@ Prisma stores drawings in:
   Normal sheet move commands remain inside the current section; cross-section
   movement is an explicit command.
 - Removing a section divider preserves its member sheets and merges them into
-  the preceding section or Front Matter.
+  the preceding section or Package Information. Removing the first divider
+  therefore marks its former working members Needs section, with an explicit warning.
 
 Version 1 single-sheet drawings are still accepted by `parseDrawingModelJson`.
 They are migrated in memory into a one-sheet v2 package and are written back as
@@ -353,9 +459,12 @@ Adjacent drawing features:
   mappings are derived from source connections, while engineer corrections are
   stored as canonical `{assetId, terminalKey, side}` overrides. Resetting an
   override restores automatic resolution without changing the source connection.
-- Terminal side occupancy includes field terminations and existing panel wiring
-  records. Occupied external/single sides, internal sides, out-of-panel terminals,
-  and conflicting linked definitions are not valid field-mapping targets.
+- Terminal-side occupancy includes field terminations and existing panel wiring
+  records across every sheet occurrence of the same physical asset. Any resolved
+  internal, external, or single side may be selected for a field record when it
+  is free; occupied, out-of-panel, unresolved, and conflicting targets are
+  rejected. Rendering follows the selected anchor while schedules retain the
+  canonical field-record identity.
 - Wire mode creates canonical internal wires by selecting terminals directly on
   the sheet. It uses the same validation, ID allocation, orthogonal routing,
   history, and renderer as the workbench records.
@@ -373,7 +482,7 @@ Adjacent drawing features:
 - Edit mode renders only the active sheet. This keeps drag, zoom, connection
   authoring, and panel-layout interaction focused on one mounted sheet.
 - The Sheet Loader is the edit-mode navigation surface. It groups sheets by
-  Front Matter and sequential sections, supports explicit section reordering
+  Package Information and sequential sections, supports explicit section reordering
   and cross-section sheet movement, and loads one sheet at a time into the edit
   workspace.
 - Loading a sheet clears transient edit state such as selections, connection
@@ -484,9 +593,9 @@ Adjacent drawing features:
   connectivity QC. Blocking panel findings preserve `needs_review`; warnings do
   not block. Packages without Detailed Panel contexts retain manual approval.
 - The canvas toolbar has no standalone **Panel Review** action; a dedicated
-  approval workflow is deferred. Existing blocked-approval handling still opens
-  the panel's deterministic engineering report with filters, sheet-object
-  navigation, and confirmed safe repairs. Findings are derived, not persisted.
+  approval workflow is deferred. A blocked approval opens the saved package in
+  the read-only Panel Analysis workspace. Findings are derived, not persisted,
+  and the drawing editor no longer mounts review or repair dialogs.
 
 ## Boundaries
 
@@ -505,8 +614,8 @@ Adjacent drawing features:
 - Route and identification logic should remain testable without React.
 - Do not reintroduce bundle routing unless the product direction changes. Cable
   assemblies are symbols.
-- Do not reintroduce drawing validation UI unless the product direction changes.
-  Engineering checks happen outside the application for now.
+- Keep package-wide engineering findings in Panel Analysis rather than adding
+  competing validation cards or dialogs to the drawing editor.
 
 ## Tests
 
@@ -527,12 +636,11 @@ $env:DATABASE_URL='file:./dev.db'; npm run build
 npm run test:e2e -- --reporter=line
 ```
 
-## Panel Deliverables
+## Panel Analysis reports
 
-Packages containing Detailed Panel contexts expose a global Deliverables dialog.
-It derives read-only terminal, internal-wire, panel-asset, and BOM tables from the
-structured package graph. Active panel is the default scope; All panels
-deduplicates repeated contexts by physical panel asset ID.
+Panel Analysis derives read-only terminal, internal-wire, panel-asset, and BOM
+tables from the latest saved structured package graph. Its report sections share
+the existing deterministic projections and permit package or panel filtering.
 
 CSV and XLSX downloads rebuild from the saved model. Existing print/PDF URLs stay
 drawing-only unless explicit composition parameters request schedules-only or
@@ -542,7 +650,12 @@ QC. Unsaved canvas revisions must be saved before any download.
 
 ## Schematic Panel Connection References
 
-On ordinary connection drawings, **Panel / enclosure → Reference existing**
+For physical layouts, **Panel / enclosure → Place existing panel** reuses a
+registered panel's identity, tag and title without requiring a backplane. Place
+the enclosure first, then add its backplane. The same panel cannot be physically
+placed twice on one sheet. **Create new panel** still creates a new identity.
+
+On ordinary connection drawings, **Panel / enclosure → Add schematic reference**
 creates a compact schematic frame linked to one authoritative physical
 backplane. It reuses the panel asset identity but deliberately ignores the
 enclosure and backplane dimensions, scale, rails, trays, and physical equipment
@@ -616,6 +729,23 @@ As of the latest restart point:
     approved symbols for wire duct accessories, glands, wire tray tees, and
     panel labels.
 
+## Fixed canvas header and active-view toolbar
+
+- The active sheet name and sheet count appear once above the canvas. The
+  View select replaces representation tabs; title sheets retain Outline only.
+- Add opens an anchored keyboard menu in the toolbar, outside the scrolling
+  canvas. Arrow/Home/End navigate enabled actions; Escape dismisses and returns
+  focus. Existing insertion commands, placement controls and safeguards remain.
+- Schematic Preview uses the public embedded presentation contract to portal
+  its own controls into the header. Authoring controls are absent in preview;
+  read-only/source/review qualifications remain. The standalone demo is unchanged.
+- Outline stays mounted and restores its scroll position across view changes.
+  Outline zoom (20–800%) and preview width zoom (50–200%) remain independent.
+  UI navigation does not alter the drawing model, history or save state.
+- Serial Chromium/Firefox checks use synthetic SQLite on guarded port 3121 via
+  scripts/canvas-toolbar/playwright.config.ts. Stop only the owned shared server
+  during qualification because this worktree shares its Next build directory.
+
 ## Branch Baseline
 
 - Branch: `codex/detailed-panel-drawings`.
@@ -638,10 +768,10 @@ As of the latest restart point:
   and note gestures use transient drafts and create one model/history commit on
   pointer-up. Escape or pointer cancellation restores the start model.
 - Package Preview keeps exact placeholders and mounts at most 12 full-sheet SVGs.
-- Panel Engineering Workbench, Panel Review, Asset Manager, and Deliverables are dynamically
-  loaded. Large engineering tables use deferred search and 50/100/250-row pages.
+- Panel Engineering Workbench and Asset Manager are dynamically loaded. Large
+  engineering tables use deferred search and bounded pagination.
 - `PanelEngineeringSnapshot` shares one validated source and graph. QC is derived
-  only for Review, approval, or Deliverables; report rows share one linear
+  for saved Panel Analysis, approval, and exports; report rows share one linear
   `PanelReportIndex`.
 - Saves and approval use `expectedUpdatedAt`. Conflicts preserve local work and
   offer JSON recovery download or explicit reload; no automatic merge occurs.

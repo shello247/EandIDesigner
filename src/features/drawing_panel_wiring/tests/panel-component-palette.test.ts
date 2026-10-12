@@ -25,14 +25,12 @@ function componentSymbol(
         label: "Line",
         anchorKey: "LINE",
         panelSide: "single",
-        requiredForWiring: true
       },
       {
         key: "T",
         label: "Load",
         anchorKey: "LOAD",
         panelSide: "single",
-        requiredForWiring: true
       }
     ],
     panelWiring: {
@@ -45,6 +43,7 @@ function componentSymbol(
 
   return {
     symbolId: "symbol_breaker",
+    deviceType: "breaker" as const,
     versionId: "version_breaker",
     symbolKey: metadata.symbolKey,
     displayName: metadata.displayName,
@@ -67,7 +66,7 @@ describe("Detailed Panel component palette", () => {
       assetType: "breaker",
       tagPrefix: "MCB",
       schematicScale: 0.45,
-      group: "circuit_protection"
+      group: "breaker"
     });
     expect(row.warnings[0]).toContain("Physical dimensions");
     expect(row.terminals.map((terminal) => terminal.terminalKey)).toEqual([
@@ -84,13 +83,11 @@ describe("Detailed Panel component palette", () => {
           key: "1",
           label: "1 external",
           anchorKey: "LINE",
-          requiredForWiring: true
         },
         {
           key: "1",
           label: "1 internal",
           anchorKey: "LOAD",
-          requiredForWiring: true
         }
       ]
     });

@@ -34,6 +34,7 @@ function titleFromFileName(fileName: string): string {
 export function BomItemDocumentsStep({
   disabled,
   existingDocuments,
+  expectedEngineeringRevisionId,
   itemId,
   onExistingDeleted,
   onStagedDocumentsChange,
@@ -41,8 +42,9 @@ export function BomItemDocumentsStep({
 }: {
   disabled: boolean;
   existingDocuments: BomItemDocumentMetadata[];
+  expectedEngineeringRevisionId: string | null;
   itemId?: string;
-  onExistingDeleted: (documentId: string) => void;
+  onExistingDeleted: (documentId: string, revisionId: string | null) => void;
   onStagedDocumentsChange: (documents: StagedBomItemDocument[]) => void;
   stagedDocuments: StagedBomItemDocument[];
 }) {
@@ -118,6 +120,7 @@ export function BomItemDocumentsStep({
       setMessage(null);
       const result = await deleteBomItemDocumentAction({
         itemId,
+        expectedEngineeringRevisionId,
         documentId: deleteDocument.id
       });
 
@@ -126,7 +129,7 @@ export function BomItemDocumentsStep({
         return;
       }
 
-      onExistingDeleted(deleteDocument.id);
+      onExistingDeleted(deleteDocument.id, result.data.revisionId);
       setDeleteDocument(null);
     });
   };
@@ -289,7 +292,7 @@ export function BomItemDocumentsStep({
               </h3>
             </div>
             <div className="px-5 py-4 text-sm text-slate-600">
-              <strong className="text-slate-950">{deleteDocument.title}</strong> will be permanently removed from this item.
+              <strong className="text-slate-950">{deleteDocument.title}</strong> will be removed from the current Item. Earlier engineering revisions retain their document references.
             </div>
             <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
               <button

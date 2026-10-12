@@ -3,24 +3,14 @@ import { parseDrawingModelJson } from "@/features/drawing_canvas/data/schema";
 import { mergeImportedComponentConfiguration } from "@/features/symbol_components/api/public";
 import { validateRegisteredSymbolComponents } from "@/features/symbol_components/api/server";
 import {
-  createEngineerNoteInputSchema,
   parseMetadataJson,
   saveSymbolMetadataChangesInputSchema,
   saveSymbolDraftInputSchema,
-  symbolStatusSchema,
   stringifyMetadata,
-  type CreateEngineerNoteInput,
   type SaveSymbolMetadataChangesInput,
-  type SaveSymbolDraftInput,
-  uploadSymbolDocumentInputSchema,
-  type UploadSymbolDocumentInput,
-  type ValidationIssue
+  type SaveSymbolDraftInput
 } from "./schema";
 import { createSymbolPackage } from "../logic/use_cases/export-symbol-package";
-import {
-  assertSymbolVersionEditable,
-  isSymbolVersionEditable
-} from "../logic/services/symbol-version-lifecycle";
 import { mergeEditableSymbolMetadata } from "../logic/services/editable-symbol-metadata";
 import { validateSymbol } from "../logic/use_cases/validate-symbol";
 import { getSymbolDetail, getSymbolVersionForExport } from "./queries";
@@ -40,34 +30,6 @@ function normalizeSymbolKey(value: string): string {
   return normalized.length > 0 ? normalized : "symbol";
 }
 
-async function replaceValidationIssues(params: {
-  symbolId: string;
-  versionId: string;
-  issues: ValidationIssue[];
-}) {
-  await prisma.symbolValidationIssue.deleteMany({
-    where: {
-      symbolId: params.symbolId,
-      versionId: params.versionId
-    }
-  });
-
-  if (params.issues.length === 0) {
-    return;
-  }
-
-  await prisma.symbolValidationIssue.createMany({
-    data: params.issues.map((issue) => ({
-      symbolId: params.symbolId,
-      versionId: params.versionId,
-      severity: issue.severity,
-      code: issue.code,
-      message: issue.message,
-      path: issue.path
-    }))
-  });
-}
-
 async function getNextVersionNumber(symbolId: string): Promise<number> {
   const latest = await prisma.symbolVersion.findFirst({
     where: { symbolId },
@@ -76,17 +38,6 @@ async function getNextVersionNumber(symbolId: string): Promise<number> {
   });
 
   return (latest?.versionNumber ?? 0) + 1;
-}
-
-function assertStoredVersionEditable(version: {
-  status: string;
-  symbol: { status: string };
-}) {
-  if (version.symbol.status === "archived") {
-    throw new Error("Archived symbols are immutable.");
-  }
-
-  assertSymbolVersionEditable(symbolStatusSchema.parse(version.status));
 }
 
 function validationErrorMessage(validation: ReturnType<typeof validateSymbol>) {
@@ -176,7 +127,7 @@ export async function saveSymbolDraft(input: SaveSymbolDraftInput) {
       model: metadata.model,
       category: metadata.category,
       categoryId: requestedCategory.id,
-      status: "needs_review"
+      status: "draft"
     },
     create: {
       symbolKey,
@@ -185,7 +136,7 @@ export async function saveSymbolDraft(input: SaveSymbolDraftInput) {
       model: metadata.model,
       category: metadata.category,
       categoryId: requestedCategory.id,
-      status: "needs_review"
+      status: "draft"
     }
   });
 
@@ -195,8 +146,9 @@ export async function saveSymbolDraft(input: SaveSymbolDraftInput) {
     data: {
       symbolId: symbol.id,
       versionNumber,
-      status: "needs_review",
+      status: "draft",
       svg: validation.sanitizedSvg,
+      deviceType: parsed.deviceType ?? null,
       metadataJson,
       sourceInputSummary: parsed.sourceInputSummary,
       aiResponseId: parsed.aiResponseId
@@ -221,11 +173,17 @@ export async function saveSymbolDraft(input: SaveSymbolDraftInput) {
     validation.sanitizedSvg,
     metadata
   );
-  await replaceValidationIssues({
-    symbolId: symbol.id,
-    versionId: version.id,
-    issues: completeValidation.issues
-  });
+  // Legacy storage token "approved" means available to existing drawing consumers;
+  // there is no approval command or decision in the manual-authoring workflow.
+  if (completeValidation.blockingIssueCount === 0) {
+    await assertTerminalStripDefaultUnique({ symbolId: symbol.id, metadata });
+    await prisma.$transaction([
+      prisma.symbolVersion.update({
+        where: { id: version.id }, data: { status: "approved" }
+      }),
+      prisma.symbol.update({ where: { id: symbol.id }, data: { status: "approved" } })
+    ]);
+  }
 
   return getSymbolDetail(symbol.id);
 }
@@ -276,49 +234,6 @@ async function assertTerminalStripDefaultUnique(params: {
       }
     }
   }
-}
-
-export async function validateSymbolVersion(versionId: string) {
-  const version = await prisma.symbolVersion.findUnique({
-    where: { id: versionId },
-    include: { symbol: true }
-  });
-
-  if (!version) {
-    throw new Error("Symbol version was not found.");
-  }
-
-  const metadataInput: unknown = JSON.parse(version.metadataJson);
-  const validation = await validateSymbolWithRegisteredComponents(
-    version.symbolId,
-    version.svg,
-    metadataInput
-  );
-
-  if (
-    isSymbolVersionEditable(symbolStatusSchema.parse(version.status)) &&
-    validation.metadata
-  ) {
-    await prisma.symbolVersion.update({
-      where: { id: version.id },
-      data: {
-        svg: validation.sanitizedSvg,
-        metadataJson: stringifyMetadata(validation.metadata)
-      }
-    });
-  }
-
-  await replaceValidationIssues({
-    symbolId: version.symbolId,
-    versionId: version.id,
-    issues: validation.issues
-  });
-
-  return {
-    symbolId: version.symbolId,
-    blockingIssueCount: validation.blockingIssueCount,
-    issues: validation.issues
-  };
 }
 
 export async function saveSymbolMetadataChanges(
@@ -373,25 +288,20 @@ export async function saveSymbolMetadataChanges(
   }
   const validatedMetadata = validation.metadata;
 
-  if (version.status === "approved" && version.symbol.status === "approved") {
-    await assertTerminalStripDefaultUnique({
-      symbolId: version.symbolId,
-      metadata: validatedMetadata
-    });
-  }
+  await assertTerminalStripDefaultUnique({
+    symbolId: version.symbolId,
+    metadata: validatedMetadata
+  });
 
-  if (version.status === "approved" && validation.blockingIssueCount > 0) {
+  if (validation.blockingIssueCount > 0) {
     throw new Error(
       validation.issues.find((issue) => issue.severity === "blocking")
         ?.message ??
-        "Approved symbol metadata cannot be saved with blocking validation issues."
+        "Symbol data contains invalid SVG or terminal references."
     );
   }
 
-  const nextStatus =
-    version.status === "approved" && version.symbol.status === "approved"
-      ? "approved"
-      : "needs_review";
+  const nextStatus = "approved"; // Existing storage compatibility; saving makes the symbol available.
   const isNetworkSymbol = validatedMetadata.category === "network_device";
 
   await prisma.$transaction(async (transaction) => {
@@ -416,132 +326,9 @@ export async function saveSymbolMetadataChanges(
           : {})
       }
     });
-    await transaction.symbolValidationIssue.deleteMany({
-      where: {
-        symbolId: version.symbolId,
-        versionId: version.id
-      }
-    });
-    if (validation.issues.length > 0) {
-      await transaction.symbolValidationIssue.createMany({
-        data: validation.issues.map((issue) => ({
-          symbolId: version.symbolId,
-          versionId: version.id,
-          severity: issue.severity,
-          code: issue.code,
-          message: issue.message,
-          path: issue.path
-        }))
-      });
-    }
   });
 
   return getSymbolDetail(version.symbolId);
-}
-
-export async function createEngineerNote(input: CreateEngineerNoteInput) {
-  const parsed = createEngineerNoteInputSchema.parse(input);
-
-  await prisma.symbolEngineerNote.create({
-    data: {
-      symbolId: parsed.symbolId,
-      versionId: parsed.versionId,
-      notes: parsed.notes,
-      imageFileName: parsed.image?.fileName,
-      imageMimeType: parsed.image?.mimeType,
-      imageSizeBytes: parsed.image?.sizeBytes,
-      imageDataUrl: parsed.image?.dataUrl
-    }
-  });
-
-  return getSymbolDetail(parsed.symbolId);
-}
-
-export async function uploadSymbolDocument(input: UploadSymbolDocumentInput) {
-  const parsed = uploadSymbolDocumentInputSchema.parse(input);
-
-  const document = await prisma.symbolDocument.create({
-    data: {
-      symbolId: parsed.symbolId,
-      versionId: parsed.versionId,
-      title: parsed.title,
-      fileName: parsed.fileName,
-      mimeType: parsed.mimeType,
-      sizeBytes: parsed.sizeBytes,
-      dataUrl: parsed.dataUrl
-    }
-  });
-
-  return {
-    id: document.id,
-    symbolId: document.symbolId
-  };
-}
-
-export async function approveSymbolVersion(versionId: string) {
-  const version = await prisma.symbolVersion.findUnique({
-    where: { id: versionId },
-    include: { symbol: true }
-  });
-
-  if (!version) {
-    throw new Error("Symbol version was not found.");
-  }
-
-  assertStoredVersionEditable(version);
-
-  const metadataInput: unknown = JSON.parse(version.metadataJson);
-  const validation = await validateSymbolWithRegisteredComponents(
-    version.symbolId,
-    version.svg,
-    metadataInput
-  );
-
-  await replaceValidationIssues({
-    symbolId: version.symbolId,
-    versionId: version.id,
-    issues: validation.issues
-  });
-
-  if (validation.blockingIssueCount > 0 || !validation.metadata) {
-    throw new Error("Blocking validation issues must be resolved before approval.");
-  }
-
-  await assertTerminalStripDefaultUnique({
-    symbolId: version.symbolId,
-    metadata: validation.metadata
-  });
-
-  await prisma.$transaction([
-    prisma.symbolVersion.updateMany({
-      where: {
-        symbolId: version.symbolId,
-        status: "approved"
-      },
-      data: { status: "needs_review" }
-    }),
-    prisma.symbolVersion.update({
-      where: { id: version.id },
-      data: {
-        status: "approved",
-        svg: validation.sanitizedSvg,
-        metadataJson: stringifyMetadata(validation.metadata)
-      }
-    }),
-    prisma.symbol.update({
-      where: { id: version.symbolId },
-      data: { status: "approved" }
-    })
-  ]);
-
-  return getSymbolDetail(version.symbolId);
-}
-
-export async function archiveSymbol(symbolId: string) {
-  await prisma.symbol.update({
-    where: { id: symbolId },
-    data: { status: "archived" }
-  });
 }
 
 function formatDrawingReferences(titles: string[]): string {
@@ -635,7 +422,7 @@ export async function deleteSymbol(symbolId: string) {
 
   if (referencedByParents.length > 0) {
     throw new Error(
-      `Cannot delete "${symbol.displayName}" because it is an approved component alternative for ${referencedByParents.length} parent symbol${referencedByParents.length === 1 ? "" : "s"}: ${formatDrawingReferences(referencedByParents)}. Remove those component assignments first or archive this symbol instead.`
+      `Cannot delete "${symbol.displayName}" because it is a component alternative for ${referencedByParents.length} parent symbol${referencedByParents.length === 1 ? "" : "s"}: ${formatDrawingReferences(referencedByParents)}. Remove those component assignments first.`
     );
   }
 
@@ -648,7 +435,7 @@ export async function exportSymbolPackage(symbolId: string) {
   const exportable = await getSymbolVersionForExport(symbolId);
 
   if (!exportable) {
-    throw new Error("No approved symbol version is available to export.");
+    throw new Error("No saved symbol version is available to export.");
   }
 
   return createSymbolPackage(exportable);

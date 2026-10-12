@@ -61,9 +61,10 @@ import {
 } from "./drawing-wire-tray-layouts";
 import { renderDinRailSvg } from "./drawing-din-rail-layouts";
 import {
-  getLayoutLabelPoint,
-  isDinRailSymbol,
-  resolveLayoutLabel
+  renderLayoutLabelText,
+  renderLayoutLabelLeader,
+  resolveLayoutLabelGeometry,
+  isDinRailSymbol
 } from "./drawing-layout-labels";
 import {
   isGeneratedLayoutDimensionSymbolReference,
@@ -360,8 +361,11 @@ function renderTitleField(params: {
   width: number;
   height: number;
   sheetTitle: string;
+  project?: string;
+  client?: string;
 }): string {
-  const topHeight = 6.4;
+  const organizationHeight = 8;
+  const organizationColumnWidth = params.width / 2;
   const maxCharacters = Math.max(24, Math.floor(params.width / 4.2));
   const titleLines = wrapText(params.sheetTitle, maxCharacters)
     .map((line) => line.trim())
@@ -370,7 +374,7 @@ function renderTitleField(params: {
   const titleFontSize = titleLines.length > 1 ? 4.25 : 4.85;
   const titleLineGap = titleFontSize + 1.75;
   const firstTitleBaseline =
-    params.y + topHeight + 5.2 + titleFontSize * 0.72;
+    params.y + organizationHeight + 5.2 + titleFontSize * 0.72;
   const titleText = titleLines.length
     ? `<text x="${params.x + params.width / 2}" y="${firstTitleBaseline}" font-family="Arial, Helvetica, sans-serif" font-size="${titleFontSize}" font-weight="500" text-anchor="middle" fill="#111827">
         ${titleLines
@@ -387,11 +391,39 @@ function renderTitleField(params: {
       <rect x="${params.x}" y="${params.y}" width="${params.width}" height="${params.height}" fill="none" stroke="#111827" stroke-width="0.42"/>
       ${line({
         x1: params.x,
-        y1: params.y + topHeight,
+        y1: params.y + organizationHeight,
         x2: params.x + params.width,
-        y2: params.y + topHeight
+        y2: params.y + organizationHeight
       })}
-      ${cadLabel(params.x + 2, params.y + 3.2, "TITLE")}
+      ${line({
+        x1: params.x + organizationColumnWidth,
+        y1: params.y,
+        x2: params.x + organizationColumnWidth,
+        y2: params.y + organizationHeight
+      })}
+      ${cadLabel(params.x + 2, params.y + 2.8, "PROJECT / PROCESS")}
+      ${cadText({
+        x: params.x + 2,
+        y: params.y + 6.4,
+        value: params.project,
+        maxLength: 42,
+        size: 2.05,
+        weight: 500
+      })}
+      ${cadLabel(
+        params.x + organizationColumnWidth + 2,
+        params.y + 2.8,
+        "CLIENT"
+      )}
+      ${cadText({
+        x: params.x + organizationColumnWidth + 2,
+        y: params.y + 6.4,
+        value: params.client,
+        maxLength: 28,
+        size: 2.05,
+        weight: 500
+      })}
+      ${cadLabel(params.x + 2, params.y + organizationHeight + 3.2, "TITLE")}
       ${titleText}
     </g>
   `;
@@ -526,7 +558,9 @@ function renderTitleBlock(
         y: blockY,
         width: titleWidth,
         height: blockHeight,
-        sheetTitle: resolvedTitle
+        sheetTitle: resolvedTitle,
+        project: titleBlock.project,
+        client: titleBlock.client
       })}
       ${renderMetadataGrid({
         x: metadataX,
@@ -570,15 +604,6 @@ function stripSvgText(svg: string): string {
     .replace(/<tspan\b[\s\S]*?<\/tspan>/gi, "");
 }
 
-function layoutLabelRotation(placement: DrawingModel["placements"][number]): number {
-  const normalizedRotation = ((placement.rotation % 360) + 360) % 360;
-
-  return Math.abs(normalizedRotation - 90) < 1 ||
-    Math.abs(normalizedRotation - 270) < 1
-    ? 90
-    : 0;
-}
-
 function layoutHelperTagLabel({
   placement,
   symbol
@@ -590,26 +615,7 @@ function layoutHelperTagLabel({
     return "";
   }
 
-  const label = resolveLayoutLabel({ placement, symbol });
-
-  if (!label.visible) {
-    return "";
-  }
-
-  const labelPoint = getLayoutLabelPoint({
-    placement,
-    position: label.position
-  });
-  const text = escapeXml(label.text);
-  const transform = label.alignWithRotation
-    ? ` transform="rotate(${layoutLabelRotation(placement)} ${labelPoint.x} ${labelPoint.y})"`
-    : "";
-
-  return `
-    <g data-layout-helper-label-id="${escapeXml(placement.id)}"${transform}>
-      <text data-placement-tag="${escapeXml(placement.id)}" x="${labelPoint.x}" y="${labelPoint.y}" text-anchor="${labelPoint.textAnchor}" font-family="Inter, Poppins, Arial, Helvetica, sans-serif" font-size="2.25" font-weight="600" letter-spacing="0.06" fill="#1f2937">${text}</text>
-    </g>
-  `;
+  return renderLayoutLabelText(placement.id, resolveLayoutLabelGeometry({ placement, symbol }));
 }
 
 const inheritedSvgAttributes = new Set([
@@ -804,6 +810,32 @@ function renderCenteredText(params: {
       )
       .join("")}
   </text>`;
+}
+
+function renderPackageTitleSheet(model: DrawingModel, drawingTitle?: string): string {
+  // Break long identifiers as well as prose, without truncating saved values.
+  const lines = (value: string | undefined, length: number) => wrapText(
+    (value?.trim() || "Unspecified").replace(/\s+/g, " ").replace(new RegExp(`(\\S{${length}})(?=\\S)`, "g"), "$1 "), length
+  );
+  const block = model.sheet.titleBlock;
+  const field = (label: string, value: string | undefined, x: number, y: number, width: number, length: number) => `
+    <g data-title-sheet-field="${escapeXml(label)}">
+      <text x="${x}" y="${y}" font-family="Arial, Helvetica, sans-serif" font-size="2.8" font-weight="700" fill="#475569">${escapeXml(label.toUpperCase())}</text>
+      <text x="${x}" y="${y + 7}" font-family="Arial, Helvetica, sans-serif" font-size="4" fill="#111827">${lines(value, length).map((text, index) => `<tspan x="${x}" dy="${index ? 5 : 0}"${text.length > width / 4 ? ` textLength="${Math.min(width, text.length * 2.3)}" lengthAdjust="spacingAndGlyphs"` : ""}>${escapeXml(text)}</tspan>`).join("")}</text>
+    </g>`;
+  return `<g data-package-title-sheet="true">
+    <text x="35" y="34" font-family="Arial, Helvetica, sans-serif" font-size="3" font-weight="700" letter-spacing="1" fill="#475569">DRAWING PACKAGE</text>
+    <line x1="35" y1="40" x2="385" y2="40" stroke="#0f766e" stroke-width="0.8"/>
+    <text x="35" y="57" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="700" fill="#0f172a">${lines(drawingTitle, 55).map((text, index) => `<tspan x="35" dy="${index ? 10 : 0}"${text.length > 40 ? ' textLength="340" lengthAdjust="spacingAndGlyphs"' : ""}>${escapeXml(text)}</tspan>`).join("")}</text>
+    ${field("Project", block.project, 35, 119, 167, 65)}
+    ${field("Client", block.client, 218, 119, 167, 65)}
+    <line x1="35" y1="149" x2="385" y2="149" stroke="#cbd5e1" stroke-width="0.35"/>
+    ${field("Drawing number", block.drawingNumber, 35, 160, 167, 60)}
+    ${field("Revision", block.revision, 218, 160, 167, 60)}
+    ${field("Prepared by", block.preparedBy, 35, 190, 167, 60)}
+    ${field("Checked by", block.checkedBy, 218, 190, 167, 60)}
+    ${field("Date", block.date, 35, 220, 167, 60)}
+  </g>`;
 }
 
 function renderSectionTitlePage(params: {
@@ -1099,6 +1131,8 @@ function renderPlacementWireContextStubs(input: {
 }
 
 export function renderDrawingToSvg(params: {
+  /** Transient placement artwork, with context retained for physical scaling. */
+  renderOnly?: { placementIds: ReadonlySet<string>; annotationIds: ReadonlySet<string> };
   model: DrawingModel;
   approvedSymbols: ApprovedDrawingSymbol[];
   assets?: DrawingAssetRecord[];
@@ -1145,6 +1179,10 @@ export function renderDrawingToSvg(params: {
     connectionVisibility = "all",
     measurementUnit = "mm"
   } = params;
+  const includePlacement = (placement: DrawingModel["placements"][number]) =>
+    !params.renderOnly || params.renderOnly.placementIds.has(placement.id);
+  const includeAnnotation = (annotation: DrawingAnnotation) =>
+    !params.renderOnly || params.renderOnly.annotationIds.has(annotation.id);
   const renderSymbols = buildRenderableDrawingSymbols({
     placements: model.placements,
     approvedSymbols,
@@ -1214,7 +1252,7 @@ export function renderDrawingToSvg(params: {
         <path d="M 0 0 L 8 4 L 0 8 z" fill="#64748b"/>
       </marker>
     </defs>
-    ${renderSheetFrame(model, !isSectionTitlePage)}
+    ${renderSheetFrame(model, !isSectionTitlePage && sheetKind !== "title_sheet")}
   `;
 
   const connections = showConnections
@@ -1265,12 +1303,15 @@ export function renderDrawingToSvg(params: {
   });
 
   const panelEnclosures = panelPlacements
+    .filter(includePlacement)
     .map((placement) => renderPanelEnclosure(placement, model.sheet))
     .join("");
   const panelConnectionFrames = panelConnectionViews
+    .filter(includePlacement)
     .map(renderPanelConnectionView)
     .join("");
   const backplanes = backplanePlacements
+    .filter(includePlacement)
     .map((placement) =>
       renderBackplanePlacement(
         placement,
@@ -1281,6 +1322,7 @@ export function renderDrawingToSvg(params: {
     .join("");
 
   const placements = normalPlacements
+        .filter(includePlacement)
         .map((placement) => {
       const symbol = getRenderableSymbolForPlacement(
         placement,
@@ -1369,7 +1411,17 @@ export function renderDrawingToSvg(params: {
       `;
         })
         .join("");
+  const layoutLabelLeaders = normalPlacements.filter(includePlacement)
+    .filter(placement => isLayoutHelperPlacement(placement) && !isGeneratedLayoutDimensionSymbolReference(placement))
+    .map(placement => {
+      const symbol = getRenderableSymbolForPlacement(placement, renderSymbols, assets);
+      if (!symbol) return "";
+      return renderLayoutLabelLeader(placement.id, resolveLayoutLabelGeometry({
+        placement: renderPlacementForSheet(placement, symbol), symbol
+      }));
+    }).join("");
   const placementLabels = normalPlacements
+        .filter(includePlacement)
         .map((placement) => {
       if (isGeneratedPanelPatternLegendPlacement(placement)) {
         return "";
@@ -1421,8 +1473,9 @@ export function renderDrawingToSvg(params: {
         })
         .join("");
 
-  const annotations = model.annotations.map(renderAnnotation).join("");
+  const annotations = model.annotations.filter(includeAnnotation).map(renderAnnotation).join("");
   const connectedWireSchedules = model.annotations
+    .filter(includeAnnotation)
     .filter(isConnectedWireScheduleAnnotation)
     .map((annotation) => {
       const projection = connectedWireScheduleProjections.get(annotation.id);
@@ -1461,17 +1514,19 @@ export function renderDrawingToSvg(params: {
   );
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${model.sheet.width}mm" height="${model.sheet.height}mm" viewBox="0 0 ${model.sheet.width} ${model.sheet.height}">
-    ${grid}
+    ${params.renderOnly ? "" : grid}
     ${panelEnclosures}
     ${panelConnectionFrames}
     ${backplanes}
+    <g data-layout-label-leaders="true">${layoutLabelLeaders}</g>
     ${placements}
     ${placementWireContextStubs}
     ${connections}
     ${placementLabels}
     ${sectionTitlePageContent}
+    ${sheetKind === "title_sheet" ? renderPackageTitleSheet(model, drawingTitle) : ""}
     ${annotations}
     ${connectedWireSchedules}
-    ${titleBlock}
+    ${params.renderOnly ? "" : titleBlock}
   </svg>`;
 }

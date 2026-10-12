@@ -16,13 +16,14 @@ import {
   ChevronsUp,
   FileText,
   FilePlus2,
+  FolderPlus,
   FolderInput,
   Layers,
   MoreVertical,
-  Search,
   Trash2,
   X
 } from "lucide-react";
+import { SearchInput } from "@/shared/ui/search-input";
 import type { DrawingSectionMoveDirection } from "../../logic/commands/drawing-section-commands";
 import {
   filterSheetLoaderGroups,
@@ -49,6 +50,8 @@ export function SheetLoaderDialog({
   activeSheetId,
   onCancel,
   onAddSheet,
+  onAddSection,
+  readOnly = false,
   onLoadSheet,
   onMoveSection,
   onMoveSheet,
@@ -60,6 +63,8 @@ export function SheetLoaderDialog({
   activeSheetId: string;
   onCancel: () => void;
   onAddSheet: () => void;
+  onAddSection: () => void;
+  readOnly?: boolean;
   onLoadSheet: (sheetId: string) => void;
   onMoveSection: (
     sectionId: string,
@@ -77,7 +82,7 @@ export function SheetLoaderDialog({
   const descriptionId = "sheet-loader-dialog-description";
   const [query, setQuery] = useState("");
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
-    () => new Set(groups.map((group) => group.id))
+    () => new Set(groups.filter((group) => group.kind === "section").map((group) => group.id))
   );
   const [moveCandidate, setMoveCandidate] = useState<SheetLoaderRow | null>(
     null
@@ -93,8 +98,8 @@ export function SheetLoaderDialog({
           group.rows.map((row, index) => [
             row.sheetId,
             {
-              canMoveUp: index > 0,
-              canMoveDown: index < group.rows.length - 1
+              canMoveUp: row.typeLabel !== "Title Sheet" && index > 0 && group.rows[index - 1].typeLabel !== "Title Sheet",
+              canMoveDown: row.typeLabel !== "Title Sheet" && index < group.rows.length - 1
             }
           ] as const)
         )
@@ -151,7 +156,17 @@ export function SheetLoaderDialog({
           <button
             type="button"
             className="icon-button h-9"
+            onClick={onAddSection}
+            disabled={readOnly}
+          >
+            <FolderPlus aria-hidden="true" size={18} />
+            Add Section
+          </button>
+          <button
+            type="button"
+            className="icon-button h-9"
             onClick={onAddSheet}
+            disabled={readOnly}
           >
             <FilePlus2 aria-hidden="true" size={18} />
             Add Sheet
@@ -167,15 +182,13 @@ export function SheetLoaderDialog({
         </div>
 
         <div className="min-h-0 overflow-auto px-5 py-4">
-          <label className="mb-3 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
-            <Search aria-hidden="true" size={14} className="shrink-0" />
+          <label className="mb-3 block">
             <span className="sr-only">Search sheets</span>
-            <input
+            <SearchInput
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search by section, sheet number, name, type, or description"
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400"
             />
           </label>
           <table className="w-full border-collapse text-left text-xs">
@@ -215,11 +228,12 @@ export function SheetLoaderDialog({
                     titlePageIsActive={titlePageIsActive}
                     groupIsActive={groupIsActive}
                     activeSheetId={activeSheetId}
-                    canMoveSectionUp={sectionIndex > 0}
+                    canMoveSectionUp={!readOnly && sectionIndex > 0}
                     canMoveSectionDown={
-                      sectionIndex >= 0 && sectionIndex < sectionGroups.length - 1
+                      !readOnly && sectionIndex >= 0 && sectionIndex < sectionGroups.length - 1
                     }
-                    canMoveSheet={sectionGroups.length > 0}
+                    canMoveSheet={!readOnly && sectionGroups.some(section => section.id !== group.id)}
+                    readOnly={readOnly}
                     onToggle={() => toggleGroup(group.id)}
                     onLoadSheet={onLoadSheet}
                     onMoveSection={onMoveSection}
@@ -227,7 +241,7 @@ export function SheetLoaderDialog({
                     onMoveSheet={onMoveSheet}
                     onMoveSheetToEnd={onMoveSheetToEnd}
                     onRequestMoveSheet={setMoveCandidate}
-                    canDeleteSheet={sheetCount > 1}
+                    canDeleteSheet={!readOnly && sheetCount > 1}
                     onRequestDeleteSheet={onRequestDeleteSheet}
                   />
                 );
@@ -271,6 +285,7 @@ function GroupRows({
   canMoveSectionUp,
   canMoveSectionDown,
   canMoveSheet,
+  readOnly,
   onToggle,
   onLoadSheet,
   onMoveSection,
@@ -289,6 +304,7 @@ function GroupRows({
   canMoveSectionUp: boolean;
   canMoveSectionDown: boolean;
   canMoveSheet: boolean;
+  readOnly: boolean;
   onToggle: () => void;
   onLoadSheet: (sheetId: string) => void;
   onMoveSection: (
@@ -329,7 +345,7 @@ function GroupRows({
                 <span className="text-xs font-bold text-slate-900">
                   {group.kind === "section"
                     ? `Section ${group.sectionNumber}`
-                    : "Front Matter"}
+                    : group.title}
                 </span>
                 {group.kind === "section" ? (
                   <span className="truncate text-xs font-semibold text-slate-600">
@@ -348,6 +364,12 @@ function GroupRows({
                   ? ` / ${group.titlePage.description}`
                   : ""}
               </p>
+              {group.kind === "front_matter" ? (
+                <p className="mt-1 text-[11px] text-slate-500">
+                  The package title applies to all sections.
+                  {group.rows.some(row => row.needsSection) ? " Working sheets marked Needs section stay in place until you move them to a named section." : ""}
+                </p>
+              ) : null}
             </div>
             {group.kind === "section" ? (
               <div className="flex shrink-0 flex-nowrap items-center gap-1 whitespace-nowrap">
@@ -435,9 +457,9 @@ function GroupRows({
                 row={row}
                 active={row.sheetId === activeSheetId}
                 indented={group.kind === "section"}
-                canMoveToSection={canMoveSheet}
-                canMoveUp={movement.canMoveUp}
-                canMoveDown={movement.canMoveDown}
+                canMoveToSection={canMoveSheet && row.typeLabel !== "Title Sheet"}
+                canMoveUp={!readOnly && movement.canMoveUp}
+                canMoveDown={!readOnly && movement.canMoveDown}
                 onLoadSheet={onLoadSheet}
                 onMoveSheet={onMoveSheet}
                 onMoveSheetToEnd={onMoveSheetToEnd}
@@ -508,6 +530,9 @@ function SheetRow({
       </td>
       <td className="py-3 pr-3 text-slate-600">{row.typeLabel}</td>
       <td className="max-w-80 py-3 pr-3 text-slate-500">
+        {row.needsSection ? (
+          <span className="mb-1 inline-block rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">Needs section</span>
+        ) : null}
         <span className="line-clamp-2">{row.description || "No description"}</span>
       </td>
       <td className="py-3 text-right">
@@ -518,7 +543,7 @@ function SheetRow({
             canMoveDown={canMoveDown}
             canMoveToSection={canMoveToSection}
             canDelete={canDelete}
-            showMovement
+            showMovement={row.typeLabel !== "Title Sheet"}
             onMove={(direction) => onMoveSheet(row.sheetId, direction)}
             onMoveToEnd={() => onMoveSheetToEnd(row.sheetId)}
             onRequestMoveToSection={() => onRequestMoveToSection(row)}

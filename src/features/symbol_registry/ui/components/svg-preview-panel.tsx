@@ -170,13 +170,8 @@ function HotspotTooltip({
       style={getTooltipPosition(anchor, metadata)}
       role="status"
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-sm font-semibold text-slate-950">
-          Terminal {terminal.key}
-        </div>
-        <div className="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-700">
-          {terminal.requiredForWiring ? "Required" : "Reference"}
-        </div>
+      <div className="mb-2 text-sm font-semibold text-slate-950">
+        Terminal {terminal.key}
       </div>
       <dl className="space-y-1.5">
         <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-2">

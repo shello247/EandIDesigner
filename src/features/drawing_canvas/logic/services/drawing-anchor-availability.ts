@@ -1,6 +1,8 @@
 import type { DrawingEndpoint } from "../../data/schema";
 import {
+  resolveConnectionEndpointAvailability,
   getTerminalSideOccupancy,
+  type PackageTerminalOccupancyIndex,
   type PanelTerminalCatalog,
   type PanelTerminalOccupant,
   type PanelTerminalSideRef
@@ -61,6 +63,35 @@ function occupantProjection(
     cableTag: occupant.cableTag,
     conductorKey: occupant.conductorKey,
     sourceSheet: occupant.sourceSheet?.name
+  };
+}
+
+export function resolvePackageDrawingAnchorAvailability({
+  index,
+  sheetId,
+  endpoint,
+  excludeSourceKey
+}: {
+  index: PackageTerminalOccupancyIndex;
+  sheetId: string;
+  endpoint: DrawingEndpoint;
+  excludeSourceKey?: string;
+}): DrawingAnchorAvailability {
+  const result = resolveConnectionEndpointAvailability({
+    index,
+    sheetId,
+    placementId: endpoint.placementId,
+    anchorKey: endpoint.anchorKey,
+    excludeSourceKey
+  });
+  if (result.status === "graphical") {
+    return { status: "available", enabled: true, occupants: [] };
+  }
+  return {
+    status: result.status,
+    enabled: result.enabled,
+    reason: result.reason,
+    occupants: result.occupants.map(occupantProjection)
   };
 }
 

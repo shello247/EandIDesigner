@@ -9,8 +9,8 @@ const STATUS_STYLES: Record<SymbolStatus, string> = {
 
 const STATUS_LABELS: Record<SymbolStatus, string> = {
   draft: "Draft",
-  needs_review: "Needs review",
-  approved: "Approved",
+  needs_review: "Draft",
+  approved: "Available",
   archived: "Archived"
 };
 

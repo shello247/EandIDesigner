@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { sidebarPrefetchPolicy } from "../../src/app/app-sidebar";
+import {
+  panelAnalysisSidebarHref,
+  sidebarPrefetchPolicy
+} from "../../src/app/app-sidebar";
 
 describe("drawing-scoped sidebar prefetch", () => {
   it.each([
@@ -17,5 +20,22 @@ describe("drawing-scoped sidebar prefetch", () => {
     "/bom/items"
   ])("retains the default navigation policy outside an editor at %s", (pathname) => {
     expect(sidebarPrefetchPolicy(pathname)).toBeUndefined();
+  });
+});
+
+describe("Panel Analysis sidebar destination", () => {
+  it("links an exact drawing editor route to that drawing's analysis", () => {
+    expect(panelAnalysisSidebarHref("/drawings/drawing_1")).toBe(
+      "/panel-analysis/drawing_1"
+    );
+  });
+
+  it.each([
+    "/drawings",
+    "/drawings/new",
+    "/projects/project_1",
+    "/panel-analysis/drawing_1"
+  ])("links non-editor route %s to the bounded selector", (pathname) => {
+    expect(panelAnalysisSidebarHref(pathname)).toBe("/panel-analysis");
   });
 });

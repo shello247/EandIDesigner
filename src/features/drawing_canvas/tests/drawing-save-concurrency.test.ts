@@ -5,7 +5,8 @@ const prismaMocks = vi.hoisted(() => ({
   updateManyAndReturn: vi.fn(),
   findUnique: vi.fn(),
   update: vi.fn(),
-  getDrawingDetail: vi.fn()
+  getDrawingDetail: vi.fn(),
+  resolveAssignment: vi.fn()
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -18,6 +19,10 @@ vi.mock("../data/queries", () => ({
   getDrawingDetail: prismaMocks.getDrawingDetail
 }));
 
+vi.mock("@/features/drawing_projects/api/server", () => ({
+  resolveDrawingProjectAssignment: prismaMocks.resolveAssignment
+}));
+
 import {
   DrawingRevisionConflictError,
   saveDrawing,
@@ -27,6 +32,7 @@ import {
 describe("drawing optimistic concurrency", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    prismaMocks.resolveAssignment.mockResolvedValue(null);
   });
 
   it("updates only the expected revision", async () => {
@@ -81,6 +87,41 @@ describe("drawing optimistic concurrency", () => {
     );
     expect(result.updatedAt).toBe(persistedUpdatedAt.toISOString());
     expect(prismaMocks.getDrawingDetail).not.toHaveBeenCalled();
+  });
+
+  it("persists drawing description and a validated current Project association", async () => {
+    const persistedUpdatedAt = new Date("2026-07-11T12:00:02.500Z");
+    prismaMocks.findUnique.mockResolvedValue({ projectId: "project_1" });
+    prismaMocks.resolveAssignment.mockResolvedValue({
+      id: "project_1",
+      name: "Tank Automation",
+      status: "archived"
+    });
+    prismaMocks.updateManyAndReturn.mockResolvedValue([
+      { id: "drawing_1", updatedAt: persistedUpdatedAt }
+    ]);
+
+    await saveDrawing({
+      drawingId: "drawing_1",
+      title: "Project drawing",
+      description: "PLC panel scope",
+      projectId: "project_1",
+      model: createDefaultDrawingModel(),
+      expectedUpdatedAt: "2026-07-11T12:00:00.000Z"
+    });
+
+    expect(prismaMocks.resolveAssignment).toHaveBeenCalledWith({
+      projectId: "project_1",
+      currentProjectId: "project_1"
+    });
+    expect(prismaMocks.updateManyAndReturn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          description: "PLC panel scope",
+          projectId: "project_1"
+        })
+      })
+    );
   });
 
   it("returns the current server revision without discarding local work", async () => {

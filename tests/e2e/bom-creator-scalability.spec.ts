@@ -2,14 +2,15 @@ import { expect, test, type Page } from "@playwright/test";
 import { prisma } from "../../src/lib/prisma";
 import { listBomItemRows } from "../../src/features/bom_creator/data/list-queries";
 import { listBomItems } from "../../src/features/bom_creator/data/queries";
+import { createItemEngineeringRevision } from "../../src/features/item_engineering/api/server";
 
 test.describe.configure({ mode: "serial" });
 
 const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const displayPrefix = `Scalability ${runId}`;
 const itemIdPrefix = `bom_scale_${runId}`;
-const categoryA = `scale_category_a_${runId}`;
-const categoryB = `scale_category_b_${runId}`;
+const categoryA = "breaker";
+const categoryB = "relay";
 const manufacturerA = `Scale Manufacturer A ${runId}`;
 const manufacturerB = `Scale Manufacturer B ${runId}`;
 const symbolId = `bom_scale_symbol_${runId}`;
@@ -84,7 +85,8 @@ async function scriptsContain(
 
 async function cleanupScalabilityRecords() {
   await prisma.symbol.deleteMany({ where: { id: symbolId } });
-  await prisma.bomItem.deleteMany({
+  await prisma.bomItem.updateMany({
+    data: { status: "archived" },
     where: { displayName: { startsWith: displayPrefix } }
   });
 }
@@ -92,6 +94,12 @@ async function cleanupScalabilityRecords() {
 test.beforeAll(async () => {
   await cleanupScalabilityRecords();
   await prisma.bomItem.createMany({ data: activeRows });
+  for (const row of activeRows) {
+    // Retain one genuinely unused/unclassified fixture for permanent-deletion coverage.
+    if (row.id === unusedDeleteItem.id) continue;
+    await createItemEngineeringRevision({ itemId: row.id, expectedLatestRevisionId: null,
+      profile: { version: 1, deviceType: row.category, groups: [], terminalConductorRanges: [] }, noteIds: [], documentIds: [] });
+  }
   await prisma.bomItem.create({
     data: {
       id: `${itemIdPrefix}_archived`,
@@ -109,6 +117,7 @@ test.beforeAll(async () => {
       symbolKey: `bom_scale_symbol_${runId}`,
       displayName: `BOM Scalability Symbol ${runId}`,
       category: "instrument",
+      managedCategory: { connect: { normalizedName: "other" } },
       status: "approved",
       bomTemplate: {
         create: {
@@ -226,7 +235,7 @@ test("keeps filters and pagination canonical through browser history", async ({
   await expect(page.getByText("Page 3 of 3")).toBeVisible();
 
   await page.goto(itemsUrl());
-  await page.getByLabel("Category").selectOption(categoryA);
+  await page.getByLabel("Device Type", { exact: true }).selectOption(categoryA);
   await page.getByLabel("Manufacturer").selectOption(manufacturerA);
   await page.getByLabel("Rows").selectOption("25");
   await page.getByRole("button", { name: "Apply" }).click();
@@ -299,11 +308,12 @@ test("records bounded production route and edit-open measurements", async ({
       .locator('tbody button[aria-label^="Edit "]')
       .first()
       .click();
-    await expect(page.getByRole("dialog", { name: /^Edit / })).toBeVisible();
+    await page.getByRole("button", { name: "Edit details", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Edit details", exact: true })).toBeVisible();
     editOpenTimesMs.push(
       Number((performance.now() - editStarted).toFixed(2))
     );
-    await page.getByRole("button", { name: "Close item wizard" }).click();
+    await page.getByRole("dialog", { name: "Edit details", exact: true }).getByRole("button", { name: "Cancel", exact: true }).click();
   }
 
   console.log(
@@ -359,7 +369,7 @@ test("loads modal code and data on demand while preserving filtered CRUD state",
   ).toBe(true);
 
   await page.locator("#bom-display-name").fill(createdName);
-  await page.locator("#bom-category").selectOption("accessory");
+  await page.getByRole("dialog", { name: "New item" }).getByLabel("Device Type", { exact: true }).selectOption("other");
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
@@ -376,14 +386,12 @@ test("loads modal code and data on demand while preserving filtered CRUD state",
   await page
     .getByRole("button", { name: `Edit ${editedItem.displayName}` })
     .click();
-  await expect(
-    page.getByRole("dialog", { name: `Edit ${editedItem.displayName}` })
-  ).toBeVisible();
-  await page.locator("#bom-display-name").fill(editedName);
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Save item" }).click();
+  await page.getByRole("button", { name: "Edit details", exact: true }).click();
+  const details = page.getByRole("dialog", { name: "Edit details", exact: true });
+  await details.getByRole("textbox", { name: "Item name", exact: true }).fill(editedName);
+  await details.getByRole("button", { name: "Save details", exact: true }).click();
+  await expect(details).toHaveCount(0);
+  await page.goto(itemsUrl({ pageSize: 25 }));
   await expect(page.getByRole("link", { name: editedName })).toBeVisible();
 
   await page
@@ -436,11 +444,11 @@ test("loads modal code and data on demand while preserving filtered CRUD state",
   if (createdItem) {
     const createdRow = page.getByRole("row").filter({ hasText: createdName });
     await createdRow.getByRole("button", { name: `Delete ${createdName}` }).click();
-    await page.getByRole("button", { name: "Delete item" }).click();
-    await expect(page.getByText("BOM item deleted.")).toBeVisible();
+    await page.getByRole("button", { name: "Archive item" }).click();
+    await expect(page.getByText("BOM item archived.")).toBeVisible();
     await expect
       .poll(() => prisma.bomItem.findUnique({ where: { id: createdItem.id } }))
-      .toBeNull();
+      .toMatchObject({ status: "archived" });
   }
 
   await expect(page).toHaveURL((url) => {

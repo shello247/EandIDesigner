@@ -1,6 +1,8 @@
 import type { SymbolMetadata } from "../../data/schema";
+import type { DeviceType } from "@/shared/device-classification/device-types";
 
 export type SymbolPackage = {
+  deviceType?: DeviceType | null;
   fileName: string;
   svg: string;
   metadata: SymbolMetadata;
@@ -8,6 +10,7 @@ export type SymbolPackage = {
 };
 
 export function createSymbolPackage(params: {
+  deviceType?: DeviceType | null;
   symbolKey: string;
   svg: string;
   metadata: SymbolMetadata;
@@ -17,6 +20,7 @@ export function createSymbolPackage(params: {
 
   return {
     fileName: `${fileSafeKey}.symbol.json`,
+    deviceType: params.deviceType ?? null,
     svg: params.svg,
     metadata: params.metadata,
     metadataJson

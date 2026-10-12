@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
+import { deviceTypeSchema } from "@/shared/device-classification/device-types";
 import {
   drawingSymbolCatalogSummarySchema,
   drawingSymbolVersionIdsSchema,
@@ -10,13 +11,10 @@ import {
   symbolTechnicalKindSchema,
   symbolStatusSchema,
   type SymbolRegistryListInput,
-  type DrawingSymbolCatalogSummary,
-  type ValidationIssue
+  type DrawingSymbolCatalogSummary
 } from "./schema";
 import type {
   SymbolDetail,
-  SymbolDocumentSummary,
-  SymbolEngineerNoteSummary,
   SymbolIdentity,
   SymbolListItem,
   SymbolListPage,
@@ -50,12 +48,9 @@ const symbolListSelect = Prisma.validator<Prisma.SymbolSelect>()({
     take: 1,
     select: {
       id: true,
+      deviceType: true,
       versionNumber: true
     }
-  },
-  validationIssues: {
-    where: { severity: "blocking" },
-    select: { id: true, versionId: true }
   },
   managedCategory: {
     select: { id: true, name: true }
@@ -89,11 +84,7 @@ function toSymbolListItem(row: SymbolListDatabaseRow): SymbolListItem {
     technicalKind: symbolTechnicalKindSchema.parse(row.category),
     status: symbolStatusSchema.parse(row.status),
     latestVersionNumber: latestVersion?.versionNumber,
-    blockingIssueCount: latestVersion
-      ? row.validationIssues.filter(
-          (issue) => issue.versionId === latestVersion.id
-        ).length
-      : 0,
+    deviceType: deviceTypeSchema.nullable().parse(latestVersion?.deviceType ?? null),
     linkedItemCount: row.bomTemplate?._count.lines ?? 0,
     updatedAt: row.updatedAt.toISOString()
   };
@@ -139,21 +130,8 @@ export const listSymbolIdentitiesByIds = cache(
   }
 );
 
-function toValidationIssue(issue: {
-  severity: string;
-  code: string;
-  message: string;
-  path: string | null;
-}): ValidationIssue {
-  return {
-    severity: issue.severity as ValidationIssue["severity"],
-    code: issue.code,
-    message: issue.message,
-    path: issue.path ?? undefined
-  };
-}
-
 function toVersionSummary(version: {
+  deviceType?: string | null;
   id: string;
   versionNumber: number;
   status: string;
@@ -165,6 +143,7 @@ function toVersionSummary(version: {
 }): SymbolVersionSummary {
   return {
     id: version.id,
+    deviceType: deviceTypeSchema.nullable().parse(version.deviceType ?? null),
     versionNumber: version.versionNumber,
     status: symbolStatusSchema.parse(version.status),
     svg: version.svg,
@@ -172,56 +151,6 @@ function toVersionSummary(version: {
     sourceInputSummary: version.sourceInputSummary,
     aiResponseId: version.aiResponseId,
     createdAt: version.createdAt.toISOString()
-  };
-}
-
-function toEngineerNoteSummary(note: {
-  id: string;
-  symbolId: string;
-  versionId: string | null;
-  notes: string;
-  imageFileName: string | null;
-  imageMimeType: string | null;
-  imageSizeBytes: number | null;
-  imageDataUrl: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}): SymbolEngineerNoteSummary {
-  return {
-    id: note.id,
-    symbolId: note.symbolId,
-    versionId: note.versionId,
-    notes: note.notes,
-    imageFileName: note.imageFileName,
-    imageMimeType: note.imageMimeType,
-    imageSizeBytes: note.imageSizeBytes,
-    imageDataUrl: note.imageDataUrl,
-    createdAt: note.createdAt.toISOString(),
-    updatedAt: note.updatedAt.toISOString()
-  };
-}
-
-function toDocumentSummary(document: {
-  id: string;
-  symbolId: string;
-  versionId: string | null;
-  title: string;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  createdAt: Date;
-  updatedAt: Date;
-}): SymbolDocumentSummary {
-  return {
-    id: document.id,
-    symbolId: document.symbolId,
-    versionId: document.versionId,
-    title: document.title,
-    fileName: document.fileName,
-    mimeType: document.mimeType,
-    sizeBytes: document.sizeBytes,
-    createdAt: document.createdAt.toISOString(),
-    updatedAt: document.updatedAt.toISOString()
   };
 }
 
@@ -234,6 +163,14 @@ export const listSymbolRegistryPage = cache(
   async (input: SymbolRegistryListInput): Promise<SymbolListPage> => {
     const parsed = symbolRegistryListInputSchema.parse(input);
     const where = symbolListWhere(parsed.categoryId);
+    if (parsed.deviceType) {
+      // Filter the exact current version, not any matching historical version.
+      const ids = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT s."id" FROM "Symbol" s LEFT JOIN "SymbolVersion" v ON v."symbolId" = s."id"
+          AND v."versionNumber" = (SELECT MAX(h."versionNumber") FROM "SymbolVersion" h WHERE h."symbolId" = s."id")
+        WHERE ${parsed.deviceType === "needs_classification" ? Prisma.sql`v."deviceType" IS NULL` : Prisma.sql`v."deviceType" = ${parsed.deviceType}`}`);
+      where.id = { in: ids.map(row => row.id) };
+    }
     const [totalCount, requestedRows] = await Promise.all([
       prisma.symbol.count({ where }),
       findSymbolListRows(where, parsed.page)
@@ -255,6 +192,7 @@ export const listSymbolRegistryPage = cache(
       totalCount,
       totalPages,
       categoryId: parsed.categoryId
+      , deviceType: parsed.deviceType
     };
   }
 );
@@ -266,26 +204,6 @@ export const getSymbolDetail = cache(
       include: {
         versions: {
           orderBy: { versionNumber: "desc" }
-        },
-        validationIssues: {
-          orderBy: [{ severity: "asc" }, { createdAt: "desc" }]
-        },
-        engineerNotes: {
-          orderBy: { createdAt: "desc" }
-        },
-        documents: {
-          orderBy: { createdAt: "desc" },
-          select: {
-            id: true,
-            symbolId: true,
-            versionId: true,
-            title: true,
-            fileName: true,
-            mimeType: true,
-            sizeBytes: true,
-            createdAt: true,
-            updatedAt: true
-          }
         },
         managedCategory: {
           select: { id: true, name: true }
@@ -318,12 +236,7 @@ export const getSymbolDetail = cache(
         versionNumber: version.versionNumber,
         status: symbolStatusSchema.parse(version.status),
         createdAt: version.createdAt.toISOString()
-      })),
-      validationIssues: row.validationIssues
-        .filter((issue) => issue.versionId === latestVersion?.id)
-        .map(toValidationIssue),
-      engineerNotes: row.engineerNotes.map(toEngineerNoteSummary),
-      documents: row.documents.map(toDocumentSummary)
+      }))
     };
   }
 );
@@ -347,6 +260,7 @@ export async function getSymbolVersionForExport(symbolId: string) {
   const version = symbol.versions[0];
   return {
     symbolKey: symbol.symbolKey,
+    deviceType: deviceTypeSchema.nullable().parse(version.deviceType ?? null),
     svg: version.svg,
     metadata: parseMetadataJson(version.metadataJson)
   };
@@ -391,6 +305,7 @@ export async function listDrawingSymbolVersions(
         technicalKind: symbolTechnicalKindSchema.parse(symbol.category),
         managedCategory: requireManagedCategory(symbol.managedCategory),
         versionId: version.id,
+        deviceType: deviceTypeSchema.nullable().parse(version.deviceType ?? null),
         versionNumber: version.versionNumber,
         svg: version.svg,
         metadata: parseMetadataJson(version.metadataJson),
@@ -439,6 +354,7 @@ export async function listDrawingSymbolVersions(
         version.symbol.managedCategory
       ),
       versionId: version.id,
+      deviceType: deviceTypeSchema.nullable().parse(version.deviceType ?? null),
       versionNumber: version.versionNumber,
       svg: version.svg,
       metadata: parseMetadataJson(version.metadataJson),
@@ -450,6 +366,7 @@ export async function listDrawingSymbolVersions(
 const DRAWING_VERSION_QUERY_CHUNK_SIZE = 400;
 
 type DrawingSymbolVersionRow = {
+  deviceType?: string | null;
   id: string;
   symbolId: string;
   versionNumber: number;
@@ -468,6 +385,7 @@ type DrawingSymbolVersionRow = {
 
 function toExactDrawingSymbolVersion(version: DrawingSymbolVersionRow) {
   return {
+    deviceType: deviceTypeSchema.nullable().parse(version.deviceType ?? null),
     symbolId: version.symbolId,
     symbolKey: version.symbol.symbolKey,
     displayName: version.symbol.displayName,
@@ -513,6 +431,7 @@ export async function listDrawingSymbolVersionsByIds(
         id: true,
         symbolId: true,
         versionNumber: true,
+        deviceType: true,
         svg: true,
         metadataJson: true,
         symbol: {
@@ -566,6 +485,7 @@ export const listDrawingSymbolCatalogSummaries = cache(
           select: {
             id: true,
             versionNumber: true,
+            deviceType: true,
             metadataJson: true
           }
         }
@@ -584,6 +504,7 @@ export const listDrawingSymbolCatalogSummaries = cache(
       const metadata = parseMetadataJson(version.metadataJson);
       return [
         drawingSymbolCatalogSummarySchema.parse({
+          deviceType: deviceTypeSchema.nullable().parse(version.deviceType ?? null),
           symbolId: symbol.id,
           symbolKey: symbol.symbolKey,
           displayName: symbol.displayName,
@@ -631,15 +552,4 @@ export async function getSymbolVersionForTerminalVerification(versionId: string)
     metadata: parseMetadataJson(version.metadataJson),
     sourceInputSummary: version.sourceInputSummary
   };
-}
-
-export async function getSymbolDocumentForDownload(documentId: string) {
-  return prisma.symbolDocument.findUnique({
-    where: { id: documentId },
-    select: {
-      fileName: true,
-      mimeType: true,
-      dataUrl: true
-    }
-  });
 }

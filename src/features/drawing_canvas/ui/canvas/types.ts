@@ -147,7 +147,6 @@ export type DrawingAnchorInspection = {
   terminalKey?: string;
   terminalLabel?: string;
   terminalFunction?: string;
-  requiredForWiring?: boolean;
   memberToken?: string;
   memberPurpose?: string;
   availability: DrawingAnchorAvailability;
@@ -177,6 +176,11 @@ export type ConnectionSegment = {
 };
 
 export type PlacementTitleLabel = {
+  panelLabel?: {
+    placement: import("../../data/schema").DrawingPlacement;
+    displayed: import("../../data/schema").DrawingPlacement;
+    symbol: import("../../types").ApprovedDrawingSymbol | undefined;
+  };
   placementId: string;
   label: string;
   point: { x: number; y: number };

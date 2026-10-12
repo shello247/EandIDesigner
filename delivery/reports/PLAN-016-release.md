@@ -1,0 +1,61 @@
+# PLAN-016 — Consolidated application release receipt
+
+Date: 12 October 2026, America/Port_of_Spain.
+
+## Scope and preservation
+
+The Package Information implementation from PLAN-014 was missing from the running reconciled checkout. Integrated only its section/destination/loader/focus changes, preserving the current classification, product selection, component persistence, security patches, settings, toolbar and label code.
+
+A verified pre-change local snapshot preserved 1,462 source/document files. The original item-engineering donor and other dirty worktrees were not changed. No live drawing, catalogue record or database schema was edited by this release. Only the verified port-3000 runtime was stopped after saved-draft permission.
+
+## Changed areas
+
+- drawing_canvas: drawing-sheet-destination, sheet-loader-rows, Add Sheet/Sheet Loader/Move Sheet dialogs, bounded shell integration and explicit surface focus.
+- Unit tests: destination validation, legacy group presentation and non-mutation.
+- E2E: section creation/destinations, current Device Type selectors and deliberately unoccupied routing fixtures; retained downstream identity, save, wiring and undo assertions.
+- Guarded release configuration: previous drawing production regression set plus classification, toolbar, compact settings, panel labels, Item/BOM and Package Information; Chromium and Firefox, port 3121, one worker, zero automatic retries.
+- Qualification config excludes verified source-backup directories from application type/lint scans, not application code.
+- Feature 4 catalogue, module documentation, release runbook and public Delivery OS pointers.
+
+## Verification checkpoint
+
+- Focused units: 57 passed.
+- Complete units: 1,303 tests in 201 files passed (196.62 seconds).
+- Runner/isolation contracts: 16 passed.
+- Full lint and TypeScript: passed.
+- Production dependency audit: zero findings/no exceptions. Only the previously authorized Next ESLint tooling chain remains accepted through 22 October 2026 UTC.
+- Guarded webpack build: passed, sourceDrift false, build ID ZKyZ9RrMsMNo_lnocfjRt.
+- Build source fingerprint: 70bebca27511cab6ee5699ff888a17aa5d752f7b2fcd85156e078f09df3b4fa2.
+- Initial combined browser run: 135/142 passed in 771.174 seconds, with seven failures retained. After test-only corrections, all 10 targeted Chromium/Firefox cases passed in 71.812 seconds with no retries or source drift. This covers the seven failures plus three repeated route checks; it is not described as a single clean 142-case local run.
+- Firefox trace established integer CSS-pixel input at 30% fit zoom (requested x=651.8, delivered x=651). The route test now observes actual delivered pointer coordinates and retains 0.05 sheet-unit tolerance, plus a one-CSS-pixel input-delivery bound. Application routing was not changed to satisfy the test.
+- Final targeted source fingerprint: 893ec6a5ca49b23314dfcdd56ea8e186cf0e9fc861f1b8827b3a73281012a43c. Only tests changed after the qualified build.
+- Visually inspected synthetic desktop Package Information and narrow Add Section screenshots. Shared typography, expanded title row and accessible fixed actions are retained.
+
+The first expanded browser gate exposed stale tests: routing attempted an already-occupied terminal pair, and two strip tests expected the retired plural category label. Correct synthetic setup/current accessible labels, never remove the application's occupancy checks or identity assertions. All failures/traces remain retained.
+
+Earlier source has trailing blank-line-at-EOF warnings when compared with old public main. These are disclosed, not functional failures, and unrelated files are not reformatted.
+
+## Publication controls
+
+The GitHub repository is public. A clean release branch is based on origin/main; it does not publish the reconciled checkout's unpublished customer-report history. Explicitly selected source/config/tests/generic documentation are copied and compared. Databases, environment files, manuals, engineering images, canonical inventories and local artifacts are excluded. Pattern-based source scans found no credential signatures; this is not a universal security audit.
+
+Publication must use a same-name upstream branch, reviewed pull request and squash merge. Canonical main is updated only by fast-forward pull. Dirty original worktrees remain recoverable. Actual PR/main identity and local live review are recorded below when confirmed.
+
+## Commands and limitations
+
+## Live checkpoint — 12 October 2026, 16:49 AST
+
+Restarted with `npm run dev:webpack` from the reconciled worktree, resolving canonical main SQLite. Port 3000 listener PID 21904 was verified against that checkout; test port 3121 was stopped. PID is evidence for this checkpoint, not a reusable stop command.
+
+Read-only browser review confirmed expanded Package Information, Add Section, the existing Title Sheet and Needs section warnings for legacy working sheets. No placement, rearrangement or Save action was performed. Projects and the drawing route returned HTTP 200. Canonical database SHA-256 remained 5A0E478664D6B70E0AB5E2C663A33BBF9EA8B4AE8A5D101021E517E4596DEBAA.
+
+Publication and GitHub CI remain pending at this checkpoint; use the PR's actual check result before merging.
+
+## Verification commands and limitations
+
+Use [release runbook](../../docs/application/releases/2026-10-12.md) for exact guarded commands. Do not bootstrap the canonical catalogue. No shared runtime build while engineers have unsaved work.
+
+Software release is not manufacturer record revalidation. Existing evidence/classification gaps and wider engineering programmes remain separate and unfinished. Historical drawings are not automatically moved into sections or reclassified.
+
+Skills: Feature Cadence/new-feature organized the release checkpoints. SCS Industrial Web UI preserved shared compact controls and visual review. Vercel React guidance preserved existing component boundaries and event-driven state.
+

@@ -4,10 +4,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { AlertCircle, Plus } from "lucide-react";
-import {
-  getBomItemDetailAction,
-  getBomItemFormOptionsAction
-} from "../../api/actions";
+import { getBomItemFormOptionsAction } from "../../api/actions";
 import type {
   BomItemDetail,
   BomItemAppliedFilters,
@@ -57,13 +54,11 @@ const BomItemDeleteDialog = dynamic(
   }
 );
 
-type WizardState =
-  | {
+type WizardState = {
       mode: "create";
       item?: undefined;
       formOptions: BomItemFormOptions;
-    }
-  | { mode: "edit"; item: BomItemDetail; formOptions: BomItemFormOptions };
+    };
 
 function toListRow(item: BomItemDetail): BomItemListRow {
   return {
@@ -159,36 +154,7 @@ export function BomItemsLibraryShell({
   };
 
   const openEdit = (item: BomItemListRow) => {
-    setMessage(null);
-    setBusyItemId(item.id);
-    startModalTransition(async () => {
-      const [detailResult, optionsResult] = await Promise.all([
-        getBomItemDetailAction(item.id),
-        getBomItemFormOptionsAction(),
-        loadWizardModule()
-      ]);
-
-      if (!detailResult.ok || !detailResult.data || !optionsResult.ok) {
-        setMessage(
-          !detailResult.ok
-            ? detailResult.error
-            : !detailResult.data
-              ? "BOM item could not be loaded."
-              : optionsResult.ok
-                ? "BOM item options could not be loaded."
-                : optionsResult.error
-        );
-        setBusyItemId(null);
-        return;
-      }
-
-      setWizard({
-        mode: "edit",
-        item: detailResult.data,
-        formOptions: optionsResult.data
-      });
-      setBusyItemId(null);
-    });
+    router.push(`/bom/items/${encodeURIComponent(item.id)}`);
   };
 
   const handleSaved = () => {
@@ -270,7 +236,7 @@ export function BomItemsLibraryShell({
 
       {wizard ? (
         <BomItemWizardDialog
-          key={wizard.mode === "edit" ? wizard.item.id : "create"}
+          key="create"
           formOptions={wizard.formOptions}
           mode={wizard.mode}
           item={wizard.item}

@@ -110,19 +110,6 @@ export function mapExternalTerminationToTerminal(
     );
   }
 
-  if (parsed.target.side === "internal") {
-    return commandError(
-      "invalid_field_terminal_side",
-      "Field terminations cannot be mapped to an internal terminal side.",
-      {
-        panelAssetId: parsed.panelAssetId,
-        assetId: parsed.target.assetId,
-        terminal: parsed.target,
-        source: termination.source
-      }
-    );
-  }
-
   const terminalCatalog = buildPanelTerminalCatalog({
     graph,
     panelAssetId: parsed.panelAssetId

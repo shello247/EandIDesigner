@@ -5,6 +5,8 @@ import { DrawingSheetToolbar } from "../ui/components/drawing-sheet-toolbar";
 
 const noop = () => {};
 const baseProps: ComponentProps<typeof DrawingSheetToolbar> = {
+  insertionControl: createElement("button", null, "Add"),
+  previewToolbarRef: null,
   zoom: 1,
   disabled: false,
   readOnly: false,
@@ -27,6 +29,14 @@ const baseProps: ComponentProps<typeof DrawingSheetToolbar> = {
 };
 
 describe("DrawingSheetToolbar", () => {
+  it("keeps only sheet navigation and the control host in schematic preview", () => {
+    const markup = renderToStaticMarkup(createElement(DrawingSheetToolbar, { ...baseProps, preview: true }));
+    expect(markup).toContain('aria-label="Open sheet loader"');
+    for (const label of ["Edit active sheet", "Browse connections", "Show drawing guides", "Fit drawing", "Wire", "Pattern", ">Add<"]) {
+      expect(markup).not.toContain(label);
+    }
+  });
+
   it.each([
     { name: "Detailed Panel", connectLabel: "Wire" as const, showPatternAction: true, readOnly: false },
     { name: "ordinary drawing", connectLabel: "Connect" as const, showPatternAction: false, readOnly: false },

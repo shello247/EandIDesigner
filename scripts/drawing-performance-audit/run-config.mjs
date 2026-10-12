@@ -2,6 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const configurations = {
+  'reconcile-live-engineering-20260930': { run: 'runtime-reconciliation', database: 'test-runtime-reconciliation.db' },
+  'engineering-attributes': { run: 'engineering-attributes', database: 'test-engineering-attributes.db' },
+  'standards-assurance-integration': { run: 'standards-assurance', database: 'test-standards-assurance.db' },
+  'standards-assurance': { run: 'standards-assurance', database: 'test-standards-assurance.db' },
+  'item-engineering': { run: 'item-engineering', database: 'test-item-engineering-baseline.db' },
   'drawing-performance-audit-20260826': { run: '20260826-baseline', database: 'test-drawing-performance-20260826.db' },
   'drawing-performance-pass-1': { run: 'pass-1', database: 'test-drawing-performance-pass-1.db' },
   'drawing-performance-recovery-check': { run: 'recovery-check', database: 'test-drawing-performance-recovery-check.db' }

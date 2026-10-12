@@ -48,7 +48,6 @@ const metadata: SymbolMetadata = {
       label: "T1",
       function: "Signal",
       anchorKey: "T1",
-      requiredForWiring: true
     }
   ]
 };
@@ -176,6 +175,8 @@ describe("drawing canvas domain", () => {
     const model = validModel();
     model.sheet.titleBlock = {
       ...model.sheet.titleBlock,
+      project: "Tank Automation Upgrade",
+      client: "Example Water Authority",
       date: "2026-06-30",
       preparedBy: "Sheldon Bowman",
       checkedBy: "Suresh Singh"
@@ -219,6 +220,10 @@ describe("drawing canvas domain", () => {
     expect(svg).toContain("DRAWING NO.");
     expect(svg).toContain("SHEET NO.");
     expect(svg).toContain("1 OF 2");
+    expect(svg).toContain("PROJECT / PROCESS");
+    expect(svg).toContain("CLIENT");
+    expect(svg).toContain("Tank Automation Upgrade");
+    expect(svg).toContain("Example Water Authority");
     expect(svg.indexOf('data-placement-id="p1"')).toBeLessThan(
       svg.indexOf('data-connection-id="c1"')
     );

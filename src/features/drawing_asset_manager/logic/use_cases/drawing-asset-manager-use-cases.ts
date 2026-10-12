@@ -1,12 +1,13 @@
+import { DEVICE_TYPE_LABELS, legacyTechnicalTypeProposal } from "@/shared/device-classification/device-types";
 import {
   createDrawingAssetId,
   getPanelEnclosureTitle,
   getSymbolForPackagePlacement,
   assertUniqueAssetTag,
-  isBreakerLikeSymbol,
   isGeneratedPanelEnclosurePlacement,
   isGeneratedTerminalBlockReference,
   normalizeAssetTag,
+  normalizeComponentDrawingAssets,
   placementAssetId,
   isNonAssetDrawingPlacement,
   renameDrawingAssetTag,
@@ -51,26 +52,11 @@ export type AssetDeletionBlocker = {
   sheetRefs: ManagedAssetSheetReference[];
 };
 
-const ASSET_TYPE_LABELS: Record<DrawingAssetType, string> = {
-  instrument: "Instrument",
-  controller: "Controller",
-  panel: "Panel",
-  junction_box: "Junction Box",
-  terminal_block: "Terminal Block",
-  breaker: "Breaker",
-  fuse: "Fuse",
-  relay: "Relay",
-  power_supply: "Power Supply",
-  isolator: "Isolator",
-  converter: "Converter",
-  io_module: "I/O Module",
-  network_device: "Network Device",
-  earth_bar: "Earth Bar",
-  cable: "Cable",
-  other: "Asset"
-};
+const ASSET_TYPE_LABELS = DEVICE_TYPE_LABELS;
 
 const ASSET_TYPE_PREFIXES: Record<DrawingAssetType, string> = {
+  ups: "UPS", chassis_rack: "EQ", cable_gland: "GL", din_rail: "DR",
+  wire_duct: "WD", label_marker: "LB",
   instrument: "LIT",
   controller: "TSM",
   panel: "PDP",
@@ -90,6 +76,8 @@ const ASSET_TYPE_PREFIXES: Record<DrawingAssetType, string> = {
 };
 
 const ASSET_TYPE_STARTS: Record<DrawingAssetType, number> = {
+  ups: 101, chassis_rack: 101, cable_gland: 101, din_rail: 101,
+  wire_duct: 101, label_marker: 101,
   instrument: 101,
   controller: 101,
   panel: 101,
@@ -112,21 +100,14 @@ export function assetTypeLabel(type: DrawingAssetType): string {
   return ASSET_TYPE_LABELS[type];
 }
 
-function symbolDescriptor(symbol: ApprovedDrawingSymbol | undefined): string {
-  if (!symbol) {
-    return "";
-  }
-
-  return `${symbol.symbolKey} ${symbol.model ?? ""} ${symbol.displayName}`.toUpperCase();
-}
-
+/** Legacy derived-record reader only. New creation requires an explicit type.
+ * The source-aware UI still reports unresolved legacy classifications for review. */
 export function classifyManagedAssetFromPlacement(
   placement: DrawingPlacement,
   symbols: ApprovedDrawingSymbol[]
 ): DrawingAssetType {
   const symbol = getSymbolForPackagePlacement(placement, symbols);
-  const descriptor = symbolDescriptor(symbol);
-  const tag = placement.tag.trim().toUpperCase();
+  if (symbol?.deviceType) return symbol.deviceType;
 
   if (isGeneratedPanelEnclosurePlacement(placement)) {
     return placement.enclosure.kind === "junction_box" ? "junction_box" : "panel";
@@ -148,27 +129,10 @@ export function classifyManagedAssetFromPlacement(
     return symbol.metadata.panelWiring.assetType;
   }
 
-  if (isBreakerLikeSymbol(symbol) || tag.startsWith("MCB")) {
-    return "breaker";
-  }
-
-  if (symbol?.category === "monitor" || tag.startsWith("TSM")) {
-    return "controller";
-  }
-
-  if (symbol?.category === "instrument") {
-    return "instrument";
-  }
-
-  if (symbol?.category === "terminal_block" || placement.role === "terminal_block") {
+  if (placement.role === "terminal_block") {
     return "terminal_block";
   }
-
-  if (descriptor.includes("JUNCTION BOX")) {
-    return "junction_box";
-  }
-
-  return "other";
+  return legacyTechnicalTypeProposal(symbol?.category ?? "") ?? "other";
 }
 
 function titleFromPlacement(
@@ -245,7 +209,9 @@ export function buildManagedAssetCatalog(
   model: DrawingModel,
   symbols: ApprovedDrawingSymbol[]
 ): ManagedAssetCatalogItem[] {
-  model = normalizeNetworkDeviceDrawingAssets(model, symbols);
+  model = normalizeComponentDrawingAssets(
+    normalizeNetworkDeviceDrawingAssets(model, symbols), symbols
+  );
   const catalog = new Map<string, ManagedAssetCatalogItem>();
   const nonAssetLayoutHelperIds = new Set(
     model.sheets.flatMap((sheet) =>
@@ -394,7 +360,9 @@ export function reconcileDrawingAssets(
   model: DrawingModel,
   symbols: ApprovedDrawingSymbol[]
 ): DrawingModel {
-  const normalizedModel = normalizeNetworkDeviceDrawingAssets(model, symbols);
+  const normalizedModel = normalizeComponentDrawingAssets(
+    normalizeNetworkDeviceDrawingAssets(model, symbols), symbols
+  );
   const catalog = buildManagedAssetCatalog(normalizedModel, symbols);
 
   return {
@@ -411,7 +379,9 @@ export function reconcileDrawingAssets(
       terminalBlock: asset.terminalBlock,
       terminalStrip: asset.terminalStrip,
       componentSelections: asset.componentSelections,
-      engineeringAttributes: asset.engineeringAttributes
+      engineeringAttributes: asset.engineeringAttributes,
+      productSelection: asset.productSelection,
+      engineeringSettings: asset.engineeringSettings
     }))
   };
 }
@@ -428,6 +398,10 @@ export function createManagedAsset(
       candidate.versionId === parsed.versionId
   );
   const tag = parsed.tag?.trim() || allocateNextManagedAssetTag(model, parsed.type);
+  if (parsed.symbolId || parsed.versionId) {
+    if (!symbol || !symbol.deviceType) throw new Error("The exact Symbol requires an explicit Device Type before creating a linked asset.");
+    if (symbol.deviceType !== parsed.type) throw new Error("The selected Symbol and new asset Device Types disagree.");
+  }
   assertUniqueAssetTag(model, tag);
   const nextAsset: DrawingAssetRecord = {
     id: createDrawingAssetId(),
@@ -482,6 +456,9 @@ export function updateManagedAsset(
 
   if (!current) {
     return model;
+  }
+  if (parsed.type && parsed.type !== current.type && (current.versionId || current.productSelection?.status === "selected")) {
+    throw new Error("Linked asset types are controlled by their exact product/Symbol source. Use Review classification.");
   }
 
   const nextTag = parsed.tag?.trim();

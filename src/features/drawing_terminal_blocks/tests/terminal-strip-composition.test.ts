@@ -29,7 +29,6 @@ const symbols: TerminalStripMemberSymbol[] = [
           label: "1",
           anchorKey: "a",
           panelSide: "single",
-          requiredForWiring: true
         }
       ]
     }
@@ -56,7 +55,6 @@ const symbols: TerminalStripMemberSymbol[] = [
           label: "Line",
           anchorKey: "line",
           panelSide: "external",
-          requiredForWiring: true
         }
       ]
     }
@@ -128,14 +126,12 @@ describe("terminal strip composition geometry", () => {
               label: "1",
               anchorKey: "a",
               panelSide: "external",
-              requiredForWiring: true
             },
             {
               key: "2",
               label: "2",
               anchorKey: "b",
               panelSide: "internal",
-              requiredForWiring: true
             }
           ],
           electricalTopology: {

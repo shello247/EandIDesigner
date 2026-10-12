@@ -2,22 +2,15 @@
 
 import { AlertTriangle, ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { useState } from "react";
+import { DEVICE_TYPE_LABELS } from "@/shared/device-classification/device-types";
 import type {
   PanelComponentPaletteGroup,
   PanelComponentPaletteRow
 } from "../../api/public";
 
 const GROUP_LABELS: Record<PanelComponentPaletteGroup, string> = {
-  circuit_protection: "Circuit Protection",
-  relays: "Relays",
-  power: "Power",
-  control_io: "Control and I/O",
-  networking: "Networking",
-  isolation_conversion: "Isolation and Conversion",
-  terminal_blocks: "Terminal Blocks",
-  earth_ground: "Earth / Ground",
-  instruments: "Instrumentation",
-  other: "Other"
+  ...DEVICE_TYPE_LABELS,
+  needs_classification: "Needs classification"
 };
 
 export function PanelComponentLibrary({

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, Boxes, ClipboardList } from "lucide-react";
 import type { GeneratedBomLine } from "../../data/schema";
+import { categoryLabel } from "./bom-item-options";
 import {
   buildGeneratedBomViewUrl,
   type GeneratedBomViewKind,
@@ -148,7 +149,7 @@ export function GeneratedBomTable({ bom }: { bom: GeneratedBomViewModel }) {
               <table className="data-table" data-testid="consolidated-bom-table">
                 <thead>
                   <tr>
-                    <th>Item</th><th>Category</th><th>Qty</th><th>Unit</th>
+                    <th>Item</th><th>Device Type</th><th>Qty</th><th>Unit</th>
                     <th>Manufacturer</th><th>Part</th><th>Source Assets</th>
                   </tr>
                 </thead>
@@ -156,7 +157,7 @@ export function GeneratedBomTable({ bom }: { bom: GeneratedBomViewModel }) {
                   {bom.consolidatedLines.map((line) => (
                     <tr key={line.id}>
                       <td><div className="font-bold text-slate-950">{line.displayName}</div><div className="mt-1 text-xs text-slate-500">{line.itemKey}</div></td>
-                      <td className="capitalize">{line.category.replace(/_/g, " ")}</td>
+                      <td>{categoryLabel(line.category)}</td>
                       <td className="font-semibold">{formatQuantity(line)}</td>
                       <td>{line.unit}</td><td>{line.manufacturer ?? "-"}</td><td>{line.partNumber ?? "-"}</td>
                       <td>

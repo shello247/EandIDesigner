@@ -1,0 +1,56 @@
+import { confirmCanvasPlacement } from "./drawing-placement-helpers";
+import { expect, test } from "./drawing-test";
+import { prisma } from "../../src/lib/prisma";
+import { createDefaultDrawingModel, parseDrawingModelJson, stringifyDrawingModel } from "../../src/features/drawing_canvas/data/schema";
+import { assertAuditDatabase } from "../../scripts/drawing-performance-audit/run-config.mjs";
+
+assertAuditDatabase();
+
+test("places registered PLC-01 before its backplane and saves the same identity", async ({ page }, testInfo) => {
+  test.setTimeout(90000);
+  const errors: string[] = [];
+  page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+  const model = createDefaultDrawingModel();
+  model.assets = [{ id: "existing-plc-01", tag: "PLC-01", title: "Panel Overview Drawing PLC 01", type: "panel" }];
+  model.sheets[0].name = "Panel Layout Drawing PLC 01";
+  const record = await prisma.drawing.create({ data: { drawingKey: `existing_panel_${Date.now()}`, title: "Existing panel workflow", status: "draft", modelJson: stringifyDrawingModel(model) } });
+  await page.goto(`/drawings/${record.id}`);
+  const openPanel = async () => {
+    await page.getByRole("button", { name: "Add to drawing", exact: true }).click();
+    await page.getByRole("menuitem", { name: /Panel \/ enclosure/ }).click();
+  };
+  await openPanel();
+  const dialog = page.getByRole("dialog", { name: "Add Panel", exact: true });
+  await expect(dialog.getByRole("button", { name: /Place existing panel/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByLabel("Panel tag", { exact: true })).toHaveValue("PLC-01");
+  await dialog.getByRole("button", { name: /Add schematic reference/ }).click();
+  await expect(dialog.getByRole("button", { name: "Continue to placement", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: /Place existing panel/ }).click();
+  await page.screenshot({ path: testInfo.outputPath("place-existing-panel.png"), fullPage: true });
+  await dialog.getByRole("button", { name: "Continue to placement", exact: true }).click();
+    await confirmCanvasPlacement(page);
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('[data-panel-enclosure="true"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "Expand Symbol Library" }).click();
+  await page.getByRole("button", { name: /^Panel Layout/ }).click();
+  await page.getByRole("button", { name: "Backplane", exact: true }).click();
+  await confirmCanvasPlacement(page);
+  await expect(page.getByTestId("placement-session")).toHaveCount(0);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Drawing saved", exact: true })).toBeDisabled();
+  await page.reload();
+  await expect(page.locator('[data-panel-enclosure="true"]')).toHaveCount(1);
+  const saved = parseDrawingModelJson((await prisma.drawing.findUniqueOrThrow({ where: { id: record.id } })).modelJson);
+  expect(saved.assets?.filter(asset => asset.tag === "PLC-01")).toHaveLength(1);
+  expect(saved.sheets[0].placements.find(placement => placement.role === "enclosure")?.assetId).toBe("existing-plc-01");
+  expect(saved.sheets[0].placements.find(placement => placement.layoutKind === "backplane")?.containerAssetId).toBe("existing-plc-01");
+  await page.screenshot({ path: testInfo.outputPath("panel-and-backplane.png"), fullPage: true });
+  await openPanel();
+  await expect(dialog.getByRole("button", { name: "Continue to placement", exact: true })).toBeDisabled();
+  await expect(dialog).toContainText("already physically placed");
+  await page.setViewportSize({ width: 360, height: 760 });
+  await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeInViewport();
+  await dialog.getByRole("button", { name: /Add schematic reference/ }).click();
+  await expect(dialog.getByRole("button", { name: "Continue to placement", exact: true })).toBeEnabled();
+  expect(errors).toEqual([]);
+});

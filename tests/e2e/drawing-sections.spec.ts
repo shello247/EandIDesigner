@@ -16,9 +16,9 @@ test("deletes the first front-matter sheet from the Sheet Loader", async ({
 
     const loader = page.getByRole("dialog", { name: "Sheet Loader" });
     const collapsedGroups = loader.getByRole("button", { name: /^Expand / });
-    await expect(collapsedGroups).toHaveCount(3);
+    await expect(collapsedGroups).toHaveCount(2);
     await expect(collapsedGroups.first()).toHaveAttribute("aria-expanded", "false");
-    await loader.getByRole("button", { name: "Expand Front Matter" }).click();
+    await expect(loader.getByRole("button", { name: "Collapse Package Information" })).toHaveAttribute("aria-expanded", "true");
     const coverRow = loader.getByRole("row").filter({ hasText: "Package Cover" });
     await coverRow
       .getByRole("button", { name: "Actions for Package Cover" })
@@ -32,7 +32,7 @@ test("deletes the first front-matter sheet from the Sheet Loader", async ({
       .click();
 
     await expect(loader.getByText("Package Cover", { exact: true })).toHaveCount(0);
-    await expect(loader.getByText("Front Matter", { exact: true })).toHaveCount(0);
+    await expect(loader.getByText("Package Information", { exact: true })).toHaveCount(0);
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByTestId("drawing-toast")).toContainText("Drawing saved.");
@@ -59,7 +59,7 @@ test("organizes drawing package sections without duplicating numbers or deleting
     await page.getByRole("button", { name: "Open sheet loader" }).click();
 
     const loader = page.getByRole("dialog", { name: "Sheet Loader" });
-    await expect(loader.getByText("Front Matter", { exact: true })).toBeVisible();
+    await expect(loader.getByText("Package Information", { exact: true })).toBeVisible();
     await expect(loader.getByText("Section 1", { exact: true })).toBeVisible();
     await expect(loader.getByText("Section 2", { exact: true })).toBeVisible();
 

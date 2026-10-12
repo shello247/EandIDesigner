@@ -414,7 +414,7 @@ Requirements:
 - Build QC from structured graph data, never by parsing rendered SVG.
 - Detect duplicate asset tags, duplicate wire IDs, missing assets, missing terminals,
   incompatible terminal sides, over-occupied terminals, orphaned references,
-  unresolved external terminations, unconnected required terminals, invalid jumpers,
+  unresolved external terminations, contradictory terminal occupancy, invalid jumpers,
   broken route endpoints, panel-context mismatches, and inconsistent linked assets.
 - Classify findings as blocking error, warning, or information.
 - Findings must identify affected asset/terminal/wire, sheet number/name, source

@@ -17,9 +17,13 @@ import {
 import { moveLayoutHelperByDisplayDelta } from "./drawing-backplane-scale";
 import { containedPlacementIdsForPanels } from "./drawing-asset-containment";
 import {
+  getBackplaneDisplayBounds,
   getParentPanelForBackplane,
-  resolveBackplaneLayoutScale
+  resolveBackplaneLayoutScale,
+  resolveLayoutHelperDisplayPlacement
 } from "./drawing-backplane-scale";
+import { getSymbolForPlacement } from "./drawing-connections";
+import { getRotatedPlacementBounds } from "./drawing-geometry";
 import {
   isLayoutDimensionPlacement,
   moveLayoutDimensionByDisplayDelta
@@ -120,19 +124,48 @@ function moveAnnotation(
 function constrainDeltaToPlacementOrigins(
   placements: DrawingPlacement[],
   delta: Point,
-  sheet: DrawingSheetCanvasModel["sheet"]
+  model: DrawingSheetCanvasModel,
+  symbols: ApprovedDrawingSymbol[]
 ): Point {
   if (placements.length === 0) {
     return delta;
   }
 
-  const minX = Math.max(...placements.map((placement) => -placement.x));
+  const sheet = model.sheet;
+  // Parented layout records retain a legacy origin as well as physical local
+  // coordinates. Constrain their rendered, rotated bounds in sheet units;
+  // the legacy origin can be negative or beyond the paper after resizing.
+  const bounds = placements.map((placement) => {
+    if (isBackplanePlacement(placement)) {
+      return getBackplaneDisplayBounds(
+        sheet,
+        placement,
+        getParentPanelForBackplane(model.placements, placement)
+      );
+    }
+    const parent = isLayoutHelperPlacement(placement)
+      ? model.placements.find((candidate) =>
+          candidate.id === placement.layoutParentId && isBackplanePlacement(candidate)
+        )
+      : undefined;
+    const symbol = parent ? getSymbolForPlacement(placement, symbols) : undefined;
+    if (parent && symbol && !isLayoutDimensionPlacement(placement)) {
+      return getRotatedPlacementBounds(resolveLayoutHelperDisplayPlacement({
+        sheet,
+        placement,
+        backplane: parent,
+        parentPanel: getParentPanelForBackplane(model.placements, parent)
+      }), symbol.metadata);
+    }
+    return { x: placement.x, y: placement.y, width: 0, height: 0 };
+  });
+  const minX = Math.max(...bounds.map((bounds) => -bounds.x));
   const maxX = Math.min(
-    ...placements.map((placement) => sheet.width - placement.x)
+    ...bounds.map((bounds) => sheet.width - bounds.x - bounds.width)
   );
-  const minY = Math.max(...placements.map((placement) => -placement.y));
+  const minY = Math.max(...bounds.map((bounds) => -bounds.y));
   const maxY = Math.min(
-    ...placements.map((placement) => sheet.height - placement.y)
+    ...bounds.map((bounds) => sheet.height - bounds.y - bounds.height)
   );
 
   return {
@@ -187,7 +220,8 @@ function isConnectionFullySelected(
 export function moveCanvasSelection({
   model,
   selection,
-  delta
+  delta,
+  symbols
 }: {
   model: DrawingSheetCanvasModel;
   selection: DrawingCanvasSelection;
@@ -218,7 +252,8 @@ export function moveCanvasSelection({
   const constrainedDelta = constrainDeltaToPlacementOrigins(
     selectedPlacements,
     delta,
-    model.sheet
+    model,
+    symbols
   );
 
   return {

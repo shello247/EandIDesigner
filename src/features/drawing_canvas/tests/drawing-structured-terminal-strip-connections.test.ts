@@ -68,14 +68,12 @@ function terminalStripMemberSymbol(input: {
               label: "1",
               anchorKey: "1",
               panelSide: "single",
-              requiredForWiring: true
             },
             {
               key: "2",
               label: "2",
               anchorKey: "2",
               panelSide: "single",
-              requiredForWiring: true
             }
           ]
         : []
@@ -117,13 +115,11 @@ const cableSymbol: ApprovedDrawingSymbol = {
         key: "CORE01_B",
         label: "Core 1 B",
         anchorKey: "CORE01_B",
-        requiredForWiring: true
       },
       {
         key: "CORE02_B",
         label: "Core 2 B",
         anchorKey: "CORE02_B",
-        requiredForWiring: true
       }
     ]
   }

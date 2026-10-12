@@ -6,6 +6,12 @@ playwright-report/
 test-results/
 artifacts/panel-performance/
 artifacts/networking-retirement/
+artifacts/symbol-required-for-wiring-retirement/
+artifacts/north-terminal-side-repair/
+artifacts/drawing-project-storage/
+artifacts/item-engineering-storage/
+artifacts/symbol-guidance-retirement/
+artifacts/symbol-guidance-retirement-tests/
 *.db
 *.db-journal
 *.db-shm
@@ -17,3 +23,20 @@ artifacts/networking-retirement/
 .env.*.local
 prisma/migrations/
 next-env.d.ts
+
+artifacts/standards-assurance/
+artifacts/schematic-preview/
+
+# Isolated attribute workflow receipts
+/artifacts/engineering-attributes/
+
+/artifacts/runtime-reconciliation/
+
+# Local classification backups, synthetic restore tests and audit evidence.
+/artifacts/device-classification-tests/
+/artifacts/device-classification-storage/
+/artifacts/device-classification-audit/
+/artifacts/device-classification-release/
+!prisma/migrations/
+prisma/migrations/*
+!prisma/migrations/20261008180000_symbol_version_device_type/

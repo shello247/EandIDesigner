@@ -9,8 +9,7 @@ async function createBomItem(
   page: Page,
   input: {
     displayName: string;
-    category?: string;
-    newCategoryName?: string;
+    deviceType: string;
     unit?: string;
     attachImage?: boolean;
     newManufacturerName?: string;
@@ -24,15 +23,8 @@ async function createBomItem(
   await expect(page.getByText("Assigned on save")).toBeVisible();
   await page.locator("#bom-display-name").fill(input.displayName);
 
-  if (input.newCategoryName) {
-    await page.getByRole("button", { name: "Add category" }).click();
-    const categoryDialog = page.getByRole("dialog", { name: "Add category" });
-    await categoryDialog.locator("#bom-small-option-name").fill(input.newCategoryName);
-    await categoryDialog.getByRole("button", { name: "Add", exact: true }).click();
-    await expect(categoryDialog).toHaveCount(0);
-  } else {
-    await page.locator("#bom-category").selectOption(input.category ?? "accessory");
-  }
+  await expect(page.getByRole("button", { name: "Add category" })).toHaveCount(0);
+  await page.getByRole("dialog", { name: "New item" }).getByLabel("Device Type", { exact: true }).selectOption(input.deviceType);
 
   await page.locator("#bom-unit").selectOption(input.unit ?? "each");
 
@@ -122,7 +114,7 @@ test("creates symbol mini BOM items and generates a drawing BOM", async ({
     await page.goto("/bom/items");
     const cableItem = await createBomItem(page, {
       displayName: itemLabels.cable,
-      newCategoryName: `E2E Custom Category ${runId}`,
+      deviceType: "cable",
       unit: "m",
       attachImage: true,
       newManufacturerName: `E2E Manufacturer ${runId}`,
@@ -133,39 +125,37 @@ test("creates symbol mini BOM items and generates a drawing BOM", async ({
 
     await page.goto(`/bom/items/${cableItem.id}`);
     await expect(page.getByRole("heading", { name: itemLabels.cable })).toBeVisible();
-    await expect(page.getByText(`E2E Manufacturer ${runId}`)).toBeVisible();
+    await expect(page.getByText(`E2E Manufacturer ${runId}`, { exact: true })).toBeVisible();
+    await page.getByRole("tab", { name: "Cost & Supplier", exact: true }).click();
     await expect(page.getByText("E2E Supplier")).toBeVisible();
     await expect(page.getByText("USD 12.50")).toBeVisible();
     await page.goto("/bom/items");
 
     await createBomItem(page, {
       displayName: itemLabels.gland,
-      category: "cable_gland"
+      deviceType: "other"
     });
     await createBomItem(page, {
       displayName: itemLabels.wireEnd,
-      category: "wire_end"
+      deviceType: "other"
     });
     await createBomItem(page, {
       displayName: itemLabels.sealant,
-      category: "sealant"
+      deviceType: "other"
     });
     await createBomItem(page, {
       displayName: itemLabels.spare,
-      category: "accessory"
+      deviceType: "other"
     });
 
     const spareRow = page.getByRole("row").filter({ hasText: itemLabels.spare });
     await spareRow.getByRole("button", { name: `Edit ${itemLabels.spare}` }).click();
-    await expect(
-      page.getByRole("dialog", { name: `Edit ${itemLabels.spare}` })
-    ).toBeVisible();
-    await page.locator("#bom-display-name").fill(`${itemLabels.spare} Edited`);
-    await page.getByRole("button", { name: "Next", exact: true }).click();
-    await page.getByRole("button", { name: "Next", exact: true }).click();
-    await page.getByRole("button", { name: "Next", exact: true }).click();
-    await page.getByRole("button", { name: "Save item" }).click();
-    await expect(page.getByText("BOM item saved.")).toBeVisible();
+    await page.getByRole("button", { name: "Edit details", exact: true }).click();
+    const details = page.getByRole("dialog", { name: "Edit details", exact: true });
+    await details.getByRole("textbox", { name: "Item name", exact: true }).fill(`${itemLabels.spare} Edited`);
+    await details.getByRole("button", { name: "Save details", exact: true }).click();
+    await expect(details).toHaveCount(0);
+    await page.goto("/bom/items");
 
     const editedSpareLabel = `${itemLabels.spare} Edited`;
     await expect(page.getByRole("link", { name: editedSpareLabel })).toBeVisible();
@@ -178,7 +168,7 @@ test("creates symbol mini BOM items and generates a drawing BOM", async ({
     await expect(
       page.getByRole("dialog", { name: `Delete ${editedSpareLabel}` })
     ).toBeVisible();
-    await page.getByRole("button", { name: "Delete item" }).click();
+    await page.getByRole("button", { name: "Archive item" }).click();
     await expect(page.getByRole("link", { name: editedSpareLabel })).toHaveCount(0);
 
     await page.goto(`/symbols/${symbol.id}`);
@@ -233,15 +223,13 @@ test("creates symbol mini BOM items and generates a drawing BOM", async ({
     await prisma.symbolBomTemplate.deleteMany({
       where: { symbolId: symbol.id }
     });
-    await prisma.bomItem.deleteMany({
+    await prisma.bomItem.updateMany({
+      data: { status: "archived" },
       where: {
         displayName: {
           in: [...Object.values(itemLabels), `${itemLabels.spare} Edited`]
         }
       }
-    });
-    await prisma.bomItemCategory.deleteMany({
-      where: { name: `e2e_custom_category_${runId}` }
     });
     await prisma.bomItemManufacturer.deleteMany({
       where: { name: `E2E Manufacturer ${runId}` }

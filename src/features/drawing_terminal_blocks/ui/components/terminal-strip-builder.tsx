@@ -133,7 +133,7 @@ export function TerminalStripBuilder({
   );
   const [backplaneId, setBackplaneId] = useState(
     backplanes.find((backplane) => backplane.id === preferredBackplaneId)?.id ??
-      (backplanes.length === 1 || requireBackplane
+      (backplanes.length === 1
         ? backplanes[0]?.id ?? ""
         : "")
   );
@@ -423,7 +423,7 @@ export function TerminalStripBuilder({
             {mode !== "edit" ? backplaneOptions.length > 1 ? <div>
               <label className="field-label" htmlFor="terminal-strip-backplane">Mounted on</label>
               <select id="terminal-strip-backplane" className="field-input" value={backplaneId} onChange={(event) => setBackplaneId(event.currentTarget.value)}>
-                {!requireBackplane ? <option value="">Not mounted in a panel</option> : null}
+                <option value="">{requireBackplane ? "Choose a backplane" : "Not mounted in a panel"}</option>
                 {backplaneOptions.map((backplane) => <option key={backplane.id} value={backplane.id}>{backplane.label}</option>)}
               </select>
             </div> : <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
@@ -623,7 +623,7 @@ export function TerminalStripBuilder({
           <div className="flex shrink-0 gap-2">
             <button type="button" className="icon-button" onClick={onCancel}>Cancel</button>
             <button type="button" className="icon-button icon-button-primary" onClick={submit} disabled={!editingAsset && !strip}>
-              <Blocks size={14} /> {editingAsset ? "Apply changes" : "Create terminal strip"}
+              <Blocks size={14} /> {editingAsset ? "Apply changes" : "Continue to placement"}
             </button>
           </div>
         </div>

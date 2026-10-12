@@ -1,7 +1,7 @@
+import {applySelectedProductBom,consolidateBomAssemblies as aggregateLines,type SelectedProductBomOverride} from "../services/selected-product-bom";
 import type { ApprovedDrawingSymbol } from "@/features/drawing_canvas/api/asset-contracts";
 import {
   type BomAssemblyProjection,
-  type ConsolidatedBomLine,
   type GeneratedBomAssembly,
   type GeneratedBomLine,
   type GeneratedBomWarning,
@@ -13,6 +13,7 @@ import { calculateProjectedBomQuantity } from "../services/bom-quantity-rules";
 export type GenerateBomFromProjectionInput = {
   drawingId: string;
   drawingTitle: string;
+  selectedProducts?: SelectedProductBomOverride[];
   assemblies: BomAssemblyProjection[];
   symbols: ApprovedDrawingSymbol[];
   templates: SymbolBomTemplateDetail[];
@@ -27,45 +28,14 @@ function uniqueWarnings(warnings: GeneratedBomWarning[]): GeneratedBomWarning[] 
   return [...unique.values()];
 }
 
-function aggregateLines(assemblies: GeneratedBomAssembly[]): ConsolidatedBomLine[] {
-  const groups = new Map<string, ConsolidatedBomLine>();
-  for (const assembly of assemblies) {
-    for (const line of assembly.lines) {
-      const current = groups.get(line.itemId);
-      if (!current) {
-        groups.set(line.itemId, {
-          ...line,
-          id: `consolidated-${line.itemId}`,
-          sourceAssetId: undefined,
-          quantity: line.quantityStatus === "calculated" ? line.quantity ?? 0 : undefined,
-          sourceAssetTags: [assembly.assetTag]
-        });
-        continue;
-      }
-      if (!current.sourceAssetTags.includes(assembly.assetTag)) {
-        current.sourceAssetTags.push(assembly.assetTag);
-      }
-      if (current.quantityStatus === "calculated" && line.quantityStatus === "calculated") {
-        current.quantity = (current.quantity ?? 0) + (line.quantity ?? 0);
-      } else {
-        current.quantity = undefined;
-        current.quantityStatus = line.quantityStatus === "manual_required"
-          ? "manual_required"
-          : "unavailable";
-      }
-    }
-  }
-  return [...groups.values()].sort((first, second) =>
-    first.displayName.localeCompare(second.displayName, undefined, { numeric: true })
-  );
-}
 
 export function generateBomFromProjection({
   drawingId,
   drawingTitle,
   assemblies: projections,
   symbols,
-  templates
+  templates,
+  selectedProducts = []
 }: GenerateBomFromProjectionInput): GeneratedDrawingBom {
   const templateBySymbolId = new Map(templates.map((template) => [template.symbolId, template]));
   const symbolById = new Map(symbols.map((symbol) => [symbol.symbolId, symbol]));
@@ -155,11 +125,12 @@ export function generateBomFromProjection({
     };
   });
 
+  applySelectedProductBom(assemblies,selectedProducts);
   return {
     drawingId,
     drawingTitle,
     assemblies,
     consolidatedLines: aggregateLines(assemblies),
-    warnings: uniqueWarnings(warnings)
+    warnings: uniqueWarnings(assemblies.flatMap(assembly=>assembly.warnings))
   };
 }

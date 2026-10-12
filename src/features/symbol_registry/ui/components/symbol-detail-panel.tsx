@@ -4,27 +4,24 @@ import Link from "next/link";
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import type { SymbolDetail } from "../../types";
-import { SymbolStatusBadge } from "./symbol-status-badge";
 import { SymbolMetadataEditor } from "./symbol-metadata-editor";
 import type { ComponentAlternativeCandidate } from "@/features/symbol_components/api/public";
-import type { SymbolCategoryRecord } from "@/features/symbol_categories/api/public";
 import styles from "./symbol-detail-workspace.module.css";
 
 export function SymbolDetailPanel({
   symbol,
-  componentAlternatives,
-  categories
+  componentAlternatives
 }: {
   symbol: SymbolDetail;
   componentAlternatives: ComponentAlternativeCandidate[];
-  categories: SymbolCategoryRecord[];
 }) {
   const latest = symbol.latestVersion;
   const [displayName, setDisplayName] = useState(symbol.displayName);
   const [description, setDescription] = useState(latest?.metadata.description);
+  const [artworkMessage, setArtworkMessage] = useState<string | null>(null);
 
   return (
-    <div className={`flex flex-col gap-5 ${styles.workspace}`}>
+    <div className={`flex flex-col gap-3 ${styles.workspace}`}>
       <div
         className={`flex flex-wrap items-start justify-between gap-4 ${styles.workspaceHeader}`}
       >
@@ -40,13 +37,7 @@ export function SymbolDetailPanel({
             <h1 className="text-xl font-semibold tracking-normal">
               {displayName}
             </h1>
-            <SymbolStatusBadge status={symbol.status} />
           </div>
-          <p className="mt-1 text-sm text-slate-600">
-            {symbol.symbolKey}
-            {symbol.manufacturer ? ` / ${symbol.manufacturer}` : ""}
-            {symbol.model ? ` / ${symbol.model}` : ""}
-          </p>
           {description ? (
             <p className="mt-1 max-w-3xl text-sm text-slate-500">
               {description}
@@ -57,10 +48,11 @@ export function SymbolDetailPanel({
 
       {latest ? (
         <SymbolMetadataEditor
+          key={latest.id}
           symbol={symbol}
           latest={latest}
           componentAlternatives={componentAlternatives}
-          categories={categories}
+          onArtworkSaved={version => setArtworkMessage(`Artwork saved as version ${version}. Existing drawing versions are unchanged.`)}
           onSavedRegistryDetails={(details) => {
             setDisplayName(details.displayName);
             setDescription(details.description);
@@ -71,6 +63,7 @@ export function SymbolDetailPanel({
           This symbol does not have any versions.
         </div>
       )}
+      {artworkMessage ? <p role="status" className="text-xs text-teal-800">{artworkMessage}</p> : null}
     </div>
   );
 }

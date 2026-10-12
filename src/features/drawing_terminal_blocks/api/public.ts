@@ -50,3 +50,4 @@ export {
   type TerminalStripMemberSymbol
 } from "../logic/services/terminal-strip-validation";
 export { renderStructuredTerminalStripSvg } from "../logic/services/terminal-strip-renderer";
+export { isTerminalBlockModuleSymbol, LEGACY_TERMINAL_BLOCK_MODULE_SYMBOL_KEY } from "../logic/services/terminal-block-groups";

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useTransition } from "react";
-import { Search, SlidersHorizontal, X } from "lucide-react";
+import { SlidersHorizontal, X } from "lucide-react";
+import { SearchInput } from "@/shared/ui/search-input";
 import type {
   BomItemAppliedFilters,
   BomItemFilterOptions,
@@ -83,25 +84,17 @@ export function BomItemsFilters({
         <label className="field-label" htmlFor="bom-item-search">
           Search
         </label>
-        <div className="relative">
-          <Search
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            size={15}
-          />
-          <input
-            id="bom-item-search"
-            name="q"
-            className="field-input pl-9"
-            defaultValue={filters.query ?? ""}
-            maxLength={120}
-            placeholder="Item key, name, part, manufacturer, supplier"
-          />
-        </div>
+        <SearchInput
+          id="bom-item-search"
+          name="q"
+          defaultValue={filters.query ?? ""}
+          maxLength={120}
+          placeholder="Item key, name, part, manufacturer, supplier"
+        />
       </div>
       <div>
         <label className="field-label" htmlFor="bom-item-category-filter">
-          Category
+          Device Type
         </label>
         <select
           id="bom-item-category-filter"
@@ -109,7 +102,7 @@ export function BomItemsFilters({
           className="field-input"
           defaultValue={filters.category ?? ""}
         >
-          <option value="">All categories</option>
+          <option value="">All device types</option>
           {categories.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}

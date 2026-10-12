@@ -7,6 +7,9 @@ const eslintConfig = [
   {
     ignores: [
       ".next/**",
+      "artifacts/standards-assurance/**",
+      "artifacts/runtime-reconciliation/**",
+      "artifacts/device-classification-release/**",
       "coverage/**",
       "node_modules/**",
       "playwright-report/**",

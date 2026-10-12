@@ -107,6 +107,7 @@ test("archives referenced items and retains archived-item generation warnings", 
       symbolKey,
       displayName: `BOM Reliability Symbol ${runId}`,
       category: "instrument",
+      managedCategory: { connect: { normalizedName: "other" } },
       status: "approved"
     }
   });
@@ -200,6 +201,7 @@ test("uses the same image path and capacity accounting for upload and paste", as
   await page.goto("/bom/items");
   await page.getByRole("button", { name: "New item" }).click();
   await page.locator("#bom-display-name").fill(`${itemPrefix} image-preview`);
+  await page.getByRole("dialog", { name: "New item" }).getByLabel("Device Type", { exact: true }).selectOption("other");
   await page.getByRole("button", { name: "Next", exact: true }).click();
 
   await page.locator('input[type="file"]').setInputFiles({
@@ -209,7 +211,7 @@ test("uses the same image path and capacity accounting for upload and paste", as
   });
   await expect(page.getByText(`upload-${runId}.png`)).toBeVisible();
 
-  await page.getByTestId("bom-item-image-dropzone").evaluate(
+  const dispatchedFileCount = await page.getByTestId("bom-item-image-dropzone").evaluate(
     (dropZone, input) => {
       const bytes = Uint8Array.from(atob(input.base64), (character) =>
         character.charCodeAt(0)
@@ -217,19 +219,20 @@ test("uses the same image path and capacity accounting for upload and paste", as
       const file = new File([bytes], input.fileName, { type: "image/png" });
       const clipboardData = new DataTransfer();
       clipboardData.items.add(file);
-      dropZone.dispatchEvent(
-        new ClipboardEvent("paste", {
-          bubbles: true,
-          cancelable: true,
-          clipboardData
-        })
-      );
+      const event = new ClipboardEvent("paste", { bubbles: true, cancelable: true });
+      // Firefox ignores clipboardData supplied to the synthetic constructor.
+      // Supply the fixture payload explicitly; this tests the real React paste
+      // handler and accounting, not operating-system clipboard permissions.
+      Object.defineProperty(event, "clipboardData", { value: clipboardData });
+      dropZone.dispatchEvent(event);
+      return event.clipboardData?.files.length;
     },
     {
       base64: Buffer.alloc(1024).toString("base64"),
       fileName: `pasted-${runId}.png`
     }
   );
+  expect(dispatchedFileCount).toBe(1);
 
   await expect(page.getByText(`pasted-${runId}.png`)).toBeVisible();
   await expect(page.getByTestId("bom-item-image-dropzone")).toContainText(

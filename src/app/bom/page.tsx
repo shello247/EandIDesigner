@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import {loadSelectedProductBom} from "@/features/bom_creator/api/product-server";
 import {
   buildGeneratedBomViewUrl,
   generateDrawingBom,
@@ -68,12 +69,13 @@ export default async function BomCreatorPage({
       listSymbolsForDrawing(collectDrawingSymbolVersionIds(drawing.model)),
       listBomGenerationTemplatesForSymbols(symbolIds)
     ]);
+    const selectedProducts=await loadSelectedProductBom(drawing.model,symbols);
     const bom = generateDrawingBom({
       drawingId: drawing.id,
       drawingTitle: drawing.title,
       model: drawing.model,
       symbols,
-      templates
+      templates,selectedProducts
     });
     const viewInput = parseGeneratedBomViewSearchParams(params);
     viewModel = selectGeneratedBomView(bom, viewInput);

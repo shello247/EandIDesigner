@@ -8,7 +8,10 @@ test("authors and preserves a guided orthogonal connection route", async ({
 }) => {
   test.setTimeout(90000);
 
-  const drawingId = await createE2eNmt81ToNrf81Drawing();
+  // Route between deliberately free terminals; never bypass occupancy guards.
+  const drawingId = await createE2eNmt81ToNrf81Drawing({
+    omitConnectionIds: ["conn_nmt81_2_to_cable_2", "conn_cable_2_to_nrf81_e2"]
+  });
   await page.goto(`/drawings/${drawingId}`);
   await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible({
     timeout: 15000
@@ -16,8 +19,10 @@ test("authors and preserves a guided orthogonal connection route", async ({
   await page.getByRole("button", { name: "Fit drawing" }).click();
 
   const connectionLines = page.getByTestId("canvas-connection-line");
-  await expect(connectionLines).toHaveCount(4);
+  await expect(connectionLines).toHaveCount(2);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(page.locator('[data-anchor-hotspot="nmt81:1"]')).toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator('[data-anchor-hotspot="nmt81:2"]')).toHaveAttribute("aria-disabled", "false");
   await page.locator('[data-anchor-hotspot="nmt81:2"]').click();
   await expect(page.getByTestId("drawing-toast")).toHaveCount(0);
 
@@ -60,7 +65,7 @@ test("authors and preserves a guided orthogonal connection route", async ({
   await expect(page.getByTestId("drawing-toast")).toContainText(
     "Connection added."
   );
-  await expect(connectionLines).toHaveCount(5);
+  await expect(connectionLines).toHaveCount(3);
   const committedPath = await connectionLines.last().getAttribute("d");
   expect(committedPath).toBe(previewPath);
   await expect(page.getByTestId("canvas-guided-connection-preview")).toHaveCount(
@@ -68,9 +73,9 @@ test("authors and preserves a guided orthogonal connection route", async ({
   );
 
   await page.keyboard.press("Control+z");
-  await expect(connectionLines).toHaveCount(4);
+  await expect(connectionLines).toHaveCount(2);
   await page.keyboard.press("Control+y");
-  await expect(connectionLines).toHaveCount(5);
+  await expect(connectionLines).toHaveCount(3);
 
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByTestId("drawing-toast")).toContainText("Drawing saved.");
@@ -78,7 +83,7 @@ test("authors and preserves a guided orthogonal connection route", async ({
   await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible({
     timeout: 15000
   });
-  await expect(page.getByTestId("canvas-connection-line")).toHaveCount(5);
+  await expect(page.getByTestId("canvas-connection-line")).toHaveCount(3);
   await expect(page.getByTestId("canvas-connection-line").last()).toHaveAttribute(
     "d",
     committedPath ?? ""

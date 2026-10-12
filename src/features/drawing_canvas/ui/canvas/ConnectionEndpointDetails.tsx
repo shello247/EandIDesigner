@@ -29,7 +29,6 @@ export function buildDrawingAnchorInspection({
     terminalKey: hotspot.terminal?.key,
     terminalLabel: hotspot.terminal?.label,
     terminalFunction: hotspot.terminal?.function,
-    requiredForWiring: hotspot.terminal?.requiredForWiring,
     memberToken: hotspot.memberToken,
     memberPurpose: hotspot.memberPurpose,
     availability
@@ -79,7 +78,7 @@ export function ConnectionEndpointDetails({
           {getDrawingAnchorAvailabilityLabel(inspection.availability)}
         </div>
       ) : null}
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="mb-2">
         <div className="min-w-0">
           <div className="truncate text-xs font-semibold text-slate-950">
             {inspection.placementTag}
@@ -87,9 +86,6 @@ export function ConnectionEndpointDetails({
           <div className="truncate text-[10px] font-medium text-slate-500">
             {inspection.symbolName}
           </div>
-        </div>
-        <div className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700">
-          {inspection.requiredForWiring ? "Required" : "Reference"}
         </div>
       </div>
       <dl className="space-y-1.5">

@@ -65,6 +65,9 @@ describe("SVG symbol import", () => {
       "GND"
     ]);
     expect(result.terminals).toHaveLength(3);
+    result.terminals.forEach((terminal) =>
+      expect(terminal).not.toHaveProperty("requiredForWiring")
+    );
     expect(result.svg).toContain('id="terminal:1"');
   });
 

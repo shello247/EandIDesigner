@@ -47,11 +47,12 @@ const inputSchema = z.object({
   engineeringAttributes: engineeringAttributeContainerSchema.optional(),
   strip: structuredTerminalStripSchema,
   rotation: z.number().finite().optional(),
+  positionMode: z.enum(["automatic", "interactive"]).default("automatic"),
   x: z.number().finite().optional(),
   y: z.number().finite().optional()
 });
 
-export type CreateStructuredTerminalStripInput = z.infer<typeof inputSchema> & {
+export type CreateStructuredTerminalStripInput = z.input<typeof inputSchema> & {
   assetId?: string;
   placementId?: string;
 };
@@ -86,6 +87,7 @@ function placementForStructuredStrip(params: {
   placementId: string;
   backplaneId?: string;
   rotation?: number;
+  positionMode?: "automatic" | "interactive";
   x?: number;
   y?: number;
 }): DrawingPlacement {
@@ -116,7 +118,12 @@ function placementForStructuredStrip(params: {
     if (!backplane.containerAssetId) {
       throw new Error("Choose a backplane assigned to a panel or enclosure.");
     }
-    const position = findTerminalBlockGroupPosition({
+    // Interactive candidates are detached drafts. The shared exact-position
+    // validator must accept their final geometry before they enter history.
+    const usable = getBackplanePhysicalUsableBounds(backplane);
+    const position = params.positionMode === "interactive"
+      ? { xMm: usable.x, yMm: usable.y }
+      : findTerminalBlockGroupPosition({
       model: params.model,
       sheet: params.sheet,
       backplane,
@@ -231,6 +238,7 @@ export function createAndPlaceStructuredTerminalStrip(params: {
     placementId,
     backplaneId: input.backplaneId,
     rotation: input.rotation,
+    positionMode: input.positionMode,
     x: input.x,
     y: input.y
   });
@@ -257,6 +265,7 @@ export function placeStructuredTerminalStripReference(params: {
   sheetId: string;
   assetId: string;
   backplaneId?: string;
+  positionMode?: "automatic" | "interactive";
   x?: number;
   y?: number;
 }): StructuredTerminalStripCommandResult {
@@ -279,6 +288,7 @@ export function placeStructuredTerminalStripReference(params: {
     symbols: params.symbols,
     placementId: createId("terminal_strip_reference"),
     backplaneId: params.backplaneId,
+    positionMode: params.positionMode,
     x: params.x,
     y: params.y
   });

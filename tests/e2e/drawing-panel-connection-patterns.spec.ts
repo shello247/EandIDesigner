@@ -1,4 +1,5 @@
 import { expect, test } from "./drawing-test";
+import { confirmCanvasPlacement } from "./drawing-placement-helpers";
 import {
   createE2ePanelComponentPackage,
   deleteE2eDrawing,
@@ -17,8 +18,7 @@ test("authors, removes, restores, and reloads a structured panel jumper", async 
   try {
     await page.goto(`/drawings/${fixture.drawingId}`);
     await page.getByRole("button", { name: "Open sheet loader" }).click();
-    await page.getByRole("dialog", { name: "Sheet Loader" })
-      .getByRole("button", { name: "Expand Front Matter" }).click();
+    await expect(page.getByRole("dialog", { name: "Sheet Loader" }).getByRole("button", { name: "Collapse Package Information" })).toHaveAttribute("aria-expanded", "true");
     await page
       .getByRole("dialog", { name: "Sheet Loader" })
       .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
@@ -30,11 +30,13 @@ test("authors, removes, restores, and reloads a structured panel jumper", async 
       .getByRole("row", { name: /TB-101/ })
       .getByRole("button", { name: "Add", exact: true })
       .click();
+    await confirmCanvasPlacement(page, { x: 80, y: 75 });
+    await openPanelEngineeringWorkbench(page);
     await queue
       .getByRole("row", { name: /MCB-101/ })
       .getByRole("button", { name: "Add", exact: true })
       .click();
-    await queue.getByRole("button", { name: "Close", exact: true }).click();
+    await confirmCanvasPlacement(page, { x: 170, y: 75 });
 
     await page.getByRole("button", { name: "Pattern", exact: true }).click();
     const authoring = page.getByLabel("Connection pattern authoring");
@@ -79,8 +81,7 @@ test("authors, removes, restores, and reloads a structured panel jumper", async 
     );
     await page.reload();
     await page.getByRole("button", { name: "Open sheet loader" }).click();
-    await page.getByRole("dialog", { name: "Sheet Loader" })
-      .getByRole("button", { name: "Expand Front Matter" }).click();
+    await expect(page.getByRole("dialog", { name: "Sheet Loader" }).getByRole("button", { name: "Collapse Package Information" })).toHaveAttribute("aria-expanded", "true");
     await page
       .getByRole("dialog", { name: "Sheet Loader" })
       .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })

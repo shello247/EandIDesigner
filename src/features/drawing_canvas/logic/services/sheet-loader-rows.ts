@@ -9,18 +9,19 @@ export type SheetLoaderRow = {
   sheetId: string;
   sheetNumber: number;
   name: string;
-  typeLabel: "Drawing" | "Section Title" | "Detailed Panel";
+  typeLabel: "Drawing" | "Title Sheet" | "Section Title" | "Detailed Panel";
   description: string;
   placementCount: number;
   assetCount: number;
   connectionCount: number;
+  needsSection?: boolean;
 };
 
 export type SheetLoaderGroup =
   | {
       id: "front_matter";
       kind: "front_matter";
-      title: "Front Matter";
+      title: "Package Information";
       startSheetNumber: number;
       endSheetNumber: number;
       rows: SheetLoaderRow[];
@@ -77,12 +78,12 @@ export function buildSheetLoaderGroups(
   if (sectionIndex.frontMatterSheetIds.length > 0) {
     const frontMatterRows = sectionIndex.frontMatterSheetIds.flatMap((sheetId) => {
       const row = rowsById.get(sheetId);
-      return row ? [row] : [];
+      return row ? [{ ...row, needsSection: row.typeLabel !== "Title Sheet" }] : [];
     });
     groups.push({
       id: "front_matter",
       kind: "front_matter",
-      title: "Front Matter",
+      title: "Package Information",
       startSheetNumber: frontMatterRows[0]?.sheetNumber ?? 1,
       endSheetNumber:
         frontMatterRows.at(-1)?.sheetNumber ?? frontMatterRows[0]?.sheetNumber ?? 1,
@@ -118,7 +119,8 @@ function rowMatchesQuery(row: SheetLoaderRow, normalizedQuery: string): boolean 
     String(row.sheetNumber),
     row.name,
     row.typeLabel,
-    row.description
+    row.description,
+    row.needsSection ? "needs section" : ""
   ]
     .join(" ")
     .toLowerCase()
@@ -135,7 +137,7 @@ export function filterSheetLoaderGroups(
   return groups.flatMap((group) => {
     const groupMatches =
       group.kind === "front_matter"
-        ? "front matter".includes(normalizedQuery)
+        ? "package information".includes(normalizedQuery)
         : `section ${group.sectionNumber} ${group.title}`
             .toLowerCase()
             .includes(normalizedQuery) ||

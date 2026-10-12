@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildPackageConnectivityGraph } from "@/features/drawing_panel_wiring/api/public";
+import {
+  buildPackageConnectivityGraph,
+  runPackagePanelDrawingQualityChecks
+} from "@/features/drawing_panel_wiring/api/public";
 import {
   GENERIC_PANEL_ASSET_ID,
   GENERIC_TERMINAL_ASSET_IDS
@@ -9,6 +12,7 @@ import { buildPanelWireSchedule } from "../logic/services/panel-wire-schedule";
 import { buildPanelAssetSchedule } from "../logic/services/panel-asset-schedule";
 import { buildPanelBomProjection } from "../logic/services/panel-bom-projection";
 import { buildPanelReportIndex } from "../logic/services/panel-report-index";
+import { buildPanelDeliverableBundle } from "../logic/services/panel-deliverable-bundle";
 import { createPanelReportSource } from "./fixtures";
 
 describe("panel schedules", () => {
@@ -98,6 +102,35 @@ describe("panel schedules", () => {
       })
     ).toEqual(
       buildPanelAssetSchedule({ graph, panelAssetId: GENERIC_PANEL_ASSET_ID })
+    );
+
+    const quality = runPackagePanelDrawingQualityChecks(graph);
+    const qualityIndex = buildPanelReportIndex({
+      graph,
+      qualityFindings: quality.reports.flatMap((report) => report.findings)
+    });
+    const bundleInput: Parameters<typeof buildPanelDeliverableBundle>[0] = {
+      drawingId: "drawing_reports",
+      drawingKey: "DRW-REPORTS",
+      drawingTitle: "Panel Reports Test",
+      drawingStatus: "needs_review" as const,
+      issueMode: "draft" as const,
+      reports: [
+        "terminal_schedule",
+        "internal_wire_schedule",
+        "panel_asset_schedule",
+        "bom"
+      ],
+      scope: {
+        kind: "active_panel" as const,
+        panelAssetId: GENERIC_PANEL_ASSET_ID
+      },
+      graph,
+      quality
+    };
+
+    expect(buildPanelDeliverableBundle({ ...bundleInput, index: qualityIndex })).toEqual(
+      buildPanelDeliverableBundle(bundleInput)
     );
   });
 });

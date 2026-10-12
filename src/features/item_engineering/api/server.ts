@@ -1,0 +1,14 @@
+export { ensureItemEngineeringStorage, itemEngineeringStorageStatements } from "../data/storage";
+export type { ItemStorageClient } from "../data/storage";
+export { createItemEngineeringRevision, createItemEngineeringRevisionInTransaction, synchronizeItemEngineeringIdentity } from "../data/mutations";
+export { getItemEngineeringRevision, getLatestItemEngineeringRevision, getItemEngineeringRevisions } from "../data/queries";
+export { ItemEngineeringError, hashItemDocumentContent } from "../logic/services/item-engineering-revision";
+export { synchronizeItemGuidance } from "../data/mutations";
+export { getItemEngineeringRevisionToken } from "../data/mutations";
+export { updateItemEngineeringClassificationInTransaction } from "../data/attributes";
+export { itemEngineeringActionResult } from "../logic/services/item-engineering-action-result";
+export { saveItemEngineerNote, archiveItemEngineerNote, listItemEngineerNotePage, getItemEngineerNote, reorderItemEngineerNote } from "../data/guidance";
+export { getProductConfigurations, getLatestProductConfiguration, loadProductConfigurationWorkspace, saveProductConfiguration } from "../data/product-configurations";
+export {resolveProductSelections} from "../data/selected-products";
+export type {SelectedProductResolution,ProductSelectionRequest} from "../data/selected-products";
+export {listItemEngineeringHistory} from "../data/queries";

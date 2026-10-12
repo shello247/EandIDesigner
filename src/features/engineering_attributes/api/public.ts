@@ -45,3 +45,15 @@ export {
   setEngineeringAttributeValue
 } from "../logic/use_cases/engineering-attribute-values";
 export type { EngineeringAttributeMutationResult } from "../logic/use_cases/engineering-attribute-values";
+export { ATTRIBUTE_UNITS, attributeTypeDefinitionSchema, attributeTypeSnapshotSchema, AttributeTypeError } from "../data/type-schema";
+export type { AttributeTypeDefinition, AttributeTypeSnapshot, AttributeTypeOption } from "../data/type-schema";
+export { ATTRIBUTE_TYPE_SEEDS } from "../data/type-seeds";
+
+export { normalizeEngineeringValue, convertEngineeringUnit, awgToSquareMillimetres } from "../logic/services/normalize-engineering-value";
+export type { NormalizedEngineeringValue, NormalizableEngineeringValue } from "../logic/services/normalize-engineering-value";
+export { ENGINEERING_UNITS, ENGINEERING_BASE_UNITS } from "../data/unit-catalog";
+
+export { attributeApplicability, rankAttributeTypes } from "../logic/services/attribute-applicability";
+
+export { ATTRIBUTE_TEMPLATES } from "../data/attribute-templates";
+export type { AttributeTemplate } from "../data/attribute-templates";

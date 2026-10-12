@@ -1,3 +1,4 @@
+import { isDeviceTypeApplicable } from "@/shared/device-classification/device-types";
 import {
   ENGINEERING_ATTRIBUTE_DEFINITIONS,
   ENGINEERING_ATTRIBUTE_DEFINITION_BY_KEY
@@ -37,7 +38,7 @@ export function listApplicableEngineeringAttributeDefinitions(assetType: string)
     (definition) =>
       definition.status === "active" &&
       (!definition.applicableAssetTypes ||
-        definition.applicableAssetTypes.includes(assetType))
+        isDeviceTypeApplicable(assetType, definition.applicableAssetTypes))
   );
 }
 
@@ -49,7 +50,10 @@ export function listApplicableEngineeringAttributeDefinitionsForSubject(
       (definition) => definition.status === "active"
     );
   }
-  return listApplicableEngineeringAttributeDefinitions(subject.typeToken);
+  return listApplicableEngineeringAttributeDefinitions(subject.typeToken).filter(
+    (definition) =>
+      subject.kind !== "item" || definition.key !== "engineering_purpose"
+  );
 }
 
 function factForValue(

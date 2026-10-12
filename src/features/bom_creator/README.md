@@ -11,8 +11,17 @@ drawing BOM generation.
 - Symbol BOM templates link a symbol to reusable item rows with quantity rules.
 - `/bom` generates a live BOM from a drawing package and current templates.
 - `/bom/items` manages active library items with a create/edit wizard.
-- `/bom/items/[id]` shows item details, source provenance, image gallery, PDF
-  documents, supplier/cost data, and symbol mini BOM usage.
+- `/bom/items/[id]` is a six-tab workspace: Overview, Engineering Attributes,
+  Engineer Notes, Documents, Cost & Supplier, Symbols & Usage. Existing Mini BOM
+  references are not compatibility qualifications or drawing-product selections.
+- Identity, commercial and image changes use field-scoped, timestamp-guarded
+  updates. Purchasing/image changes never create electrical revisions.
+- The creation wizard remains available; its purchasing controls are extracted
+  and reused by the workspace. The obsolete long detail panel has been replaced.
+- Item engineering panels and shared draft/revision coordination are consumed
+  through item_engineering public interfaces. PDF storage/downloads remain here.
+- First render includes Overview and a lightweight revision token only; profile,
+  note summaries, document summaries and Mini BOM usage load on tab activation.
 - Symbol detail pages compose a BOM tab from this feature.
 
 V1 does not save generated BOM revisions and does not calculate cable length.
@@ -91,6 +100,10 @@ store instance-level length data.
 - Generation builds asset, placement, sheet, symbol, template, source-tag, and
   connection indexes once. Connection-based rules use a precomputed unique
   connection count instead of scanning every drawing connection per line.
+- Backplane-mounted devices remain physical BOM assets even when their placement
+  carries `layoutKind: layout_helper`. The shared non-asset predicate excludes
+  actual layout helpers and reference graphics; repeated views still count once
+  per physical asset.
 - Generated domain output remains live and complete on the server. URL-controlled
   `consolidated`, `assembly`, and `review` views send only the selected page to
   the browser. Defaults are 50 purchasing lines, 25 assemblies, and 50 warnings.

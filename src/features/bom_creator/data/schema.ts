@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { itemEngineeringDeviceTypeSchema } from "@/features/item_engineering/api/public";
 import {
   MAX_BOM_ITEM_IMAGE_BYTES,
   MAX_BOM_ITEM_IMAGES,
@@ -42,6 +43,7 @@ export const bomQuantityStatusSchema = z.enum([
 ]);
 
 export const generatedBomWarningCodeSchema = z.enum([
+  "product_selection",
   "missing_template",
   "missing_item",
   "archived_item",
@@ -252,6 +254,7 @@ export const bomItemWritableFieldsSchema = z
 
 export const bomItemInputSchema = bomItemWritableFieldsSchema
   .extend({
+    deviceType: itemEngineeringDeviceTypeSchema.optional(),
     productUrl: optionalProductUrlSchema,
     productUrlExtractedAt: optionalIsoDateTimeSchema,
     images: bomItemNewImagesInputSchema.default([])
@@ -334,6 +337,7 @@ export const bomItemExtractionResultSchema = z
 export const bomItemDocumentUploadInputSchema = z
   .object({
     itemId: z.string().trim().min(1),
+    expectedEngineeringRevisionId: z.string().trim().min(1).nullable().optional(),
     title: z.string().trim().min(1).max(240),
     fileName: z.string().trim().min(1).max(240),
     mimeType: z.literal("application/pdf"),
@@ -351,6 +355,7 @@ export const bomItemDocumentUploadInputSchema = z
 export const bomItemDocumentDeleteInputSchema = z
   .object({
     itemId: z.string().trim().min(1),
+    expectedEngineeringRevisionId: z.string().trim().min(1).nullable().optional(),
     documentId: z.string().trim().min(1)
   })
   .strict();
@@ -505,6 +510,7 @@ export const bomItemUpdateInputSchema = bomItemWritableFieldsSchema
   .partial()
   .extend({
     id: z.string().trim().min(1),
+    expectedEngineeringRevisionId: z.string().trim().min(1).nullable().optional(),
     status: bomItemStatusSchema.optional(),
     productUrl: optionalProductUrlSchema,
     productUrlExtractedAt: optionalIsoDateTimeSchema,
@@ -560,6 +566,7 @@ export const bomItemUsageSchema = z.object({
 });
 
 export const bomItemDetailSchema = bomItemSummarySchema.extend({
+  latestEngineeringRevisionId: z.string().min(1).nullable(),
   productUrl: optionalProductUrlSchema,
   productUrlExtractedAt: optionalIsoDateTimeSchema,
   images: z.array(bomItemImageSummarySchema),
@@ -645,6 +652,8 @@ export const generatedBomWarningSchema = z.object({
 });
 
 export const generatedBomLineSchema = z.object({
+  itemEngineeringRevisionId:z.string().min(1).optional(),
+  physicalProductKey:z.string().min(1).optional(),
   id: z.string().trim().min(1),
   itemId: z.string().trim().min(1),
   itemKey: z.string().trim().min(1),

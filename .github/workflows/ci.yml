@@ -39,8 +39,8 @@ jobs:
       - name: Audit dependencies
         run: npm run audit:dependencies
 
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Install Chromium and Firefox
+        run: npx playwright install --with-deps chromium firefox
 
       - name: Lint
         run: npm run lint
@@ -58,7 +58,7 @@ jobs:
         run: node scripts/drawing-performance-audit/run-command.mjs bootstrap node node_modules/tsx/dist/cli.mjs scripts/bootstrap-sqlite.ts
 
       - name: Build
-        run: node scripts/drawing-performance-audit/run-command.mjs build npm run build
+        run: node scripts/drawing-performance-audit/run-command.mjs build node node_modules/next/dist/bin/next build --webpack
 
       - name: Drawing workflows on production build (one worker, no retries)
         run: npm run test:drawing

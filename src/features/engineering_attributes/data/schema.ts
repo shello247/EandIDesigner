@@ -22,10 +22,15 @@ export const engineeringDimensionSchema = z.enum([
   "frequency",
   "active_power",
   "apparent_power",
-  "cross_section"
+  "cross_section",
+  "length", "temperature", "temperature_difference", "time", "resistance", "torque", "mass", "ratio"
 ]);
 
 export const engineeringAttributeSubjectSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("item"),
+    typeToken: z.string().trim().min(1).max(80)
+  }),
   z.object({
     kind: z.literal("managed_asset"),
     typeToken: z.string().trim().min(1).max(80)

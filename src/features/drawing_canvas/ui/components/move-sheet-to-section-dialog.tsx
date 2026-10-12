@@ -24,9 +24,6 @@ export function MoveSheetToSectionDialog({
   );
   const options = useMemo(
     () => [
-      ...(currentGroup?.kind === "front_matter"
-        ? []
-        : [{ id: "front_matter", label: "Front Matter" }]),
       ...groups.flatMap((group) =>
         group.kind === "section" && group.id !== currentGroup?.id
           ? [
@@ -38,11 +35,11 @@ export function MoveSheetToSectionDialog({
           : []
       )
     ],
-    [currentGroup?.id, currentGroup?.kind, groups]
+    [currentGroup?.id, groups]
   );
   const [targetSectionId, setTargetSectionId] = useState<
     string | "front_matter"
-  >(options[0]?.id ?? "front_matter");
+  >(options[0]?.id ?? "");
   const cancelRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -107,7 +104,7 @@ export function MoveSheetToSectionDialog({
           <button
             type="button"
             className="icon-button icon-button-primary"
-            disabled={options.length === 0}
+            disabled={!options.some(option => option.id === targetSectionId)}
             onClick={() => onMove(targetSectionId)}
           >
             <FolderInput aria-hidden="true" size={14} />

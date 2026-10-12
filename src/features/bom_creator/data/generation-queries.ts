@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
+import { itemDeviceTypeRevisionSelect, projectItemDeviceTypes } from "./item-device-types";
 import {
   bomGenerationItemSchema,
   bomGenerationTemplateSchema,
@@ -51,6 +52,7 @@ export const listBomGenerationTemplatesForSymbols = cache(
               itemKey: true,
               displayName: true,
               category: true,
+              engineeringRevisions: itemDeviceTypeRevisionSelect,
               unit: true,
               manufacturer: true,
               partNumber: true,
@@ -58,7 +60,7 @@ export const listBomGenerationTemplatesForSymbols = cache(
             }
           });
     const itemById = new Map(
-      itemRows.map((item) => [
+      (await projectItemDeviceTypes(itemRows)).map((item) => [
         item.id,
         bomGenerationItemSchema.parse({
           ...item,

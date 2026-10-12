@@ -149,7 +149,6 @@ function approvedDeviceSymbol(): ApprovedDrawingSymbol {
           key: "1",
           label: "1",
           anchorKey: "A1",
-          requiredForWiring: true
         }
       ]
     }
@@ -338,13 +337,11 @@ describe("drawing panel wiring compatibility", () => {
             key: "1",
             label: "1",
             anchorKey: "A1",
-            requiredForWiring: true
           },
           {
             key: "1",
             label: "1",
             anchorKey: "A2",
-            requiredForWiring: true
           }
         ]
       }
@@ -425,14 +422,12 @@ describe("drawing panel wiring compatibility", () => {
             label: "1",
             anchorKey: "FIELD",
             panelSide: "external",
-            requiredForWiring: true
           },
           {
             key: "1",
             label: "1",
             anchorKey: "PANEL",
             panelSide: "internal",
-            requiredForWiring: true
           }
         ]
       }

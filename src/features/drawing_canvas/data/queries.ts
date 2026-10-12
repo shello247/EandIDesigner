@@ -4,6 +4,7 @@ import {
   drawingStatusSchema,
   parseDrawingModelJson
 } from "./schema";
+import { drawingProjectStatusSchema } from "@/features/drawing_projects/api/public";
 import type {
   DrawingBomOption,
   DrawingBomSource,
@@ -66,9 +67,19 @@ export const listDrawingPage = cache(async (requestedPage: number): Promise<Draw
     select: {
       id: true,
       title: true,
+      description: true,
       status: true,
       modelJson: true,
-      updatedAt: true
+      updatedAt: true,
+      project: {
+        select: {
+          id: true,
+          name: true,
+          projectNumber: true,
+          client: true,
+          status: true
+        }
+      }
     }
   });
 
@@ -78,6 +89,16 @@ export const listDrawingPage = cache(async (requestedPage: number): Promise<Draw
     return {
       id: row.id,
       title: row.title,
+      description: row.description ?? undefined,
+      project: row.project
+        ? {
+            id: row.project.id,
+            name: row.project.name,
+            projectNumber: row.project.projectNumber ?? undefined,
+            client: row.project.client ?? undefined,
+            status: drawingProjectStatusSchema.parse(row.project.status)
+          }
+        : null,
       status: drawingStatusSchema.parse(row.status),
       sheetCount: model.sheets.length,
       updatedAt: row.updatedAt.toISOString()
@@ -96,7 +117,26 @@ export const listDrawingPage = cache(async (requestedPage: number): Promise<Draw
 export const getDrawingDetail = cache(
   async (id: string): Promise<DrawingDetail | null> => {
     const row = await prisma.drawing.findUnique({
-      where: { id }
+      where: { id },
+      select: {
+        id: true,
+        drawingKey: true,
+        title: true,
+        description: true,
+        status: true,
+        modelJson: true,
+        createdAt: true,
+        updatedAt: true,
+        project: {
+          select: {
+            id: true,
+            name: true,
+            projectNumber: true,
+            client: true,
+            status: true
+          }
+        }
+      }
     });
 
     if (!row) {
@@ -107,6 +147,16 @@ export const getDrawingDetail = cache(
       id: row.id,
       drawingKey: row.drawingKey,
       title: row.title,
+      description: row.description ?? undefined,
+      project: row.project
+        ? {
+            id: row.project.id,
+            name: row.project.name,
+            projectNumber: row.project.projectNumber ?? undefined,
+            client: row.project.client ?? undefined,
+            status: drawingProjectStatusSchema.parse(row.project.status)
+          }
+        : null,
       status: drawingStatusSchema.parse(row.status),
       model: parseDrawingModelJson(row.modelJson),
       createdAt: row.createdAt.toISOString(),

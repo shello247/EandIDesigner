@@ -1,3 +1,4 @@
+import { isDeviceTypeApplicable } from "@/shared/device-classification/device-types";
 import {
   engineeringAttributeContainerSchema,
   engineeringAttributeValueSchema,
@@ -115,15 +116,16 @@ export function validateEngineeringAttributeValue(input: {
     ];
   }
   const managedAssetType =
-    input.subject?.kind === "managed_asset"
+    input.subject?.kind === "managed_asset" || input.subject?.kind === "item"
       ? input.subject.typeToken
       : input.subject
         ? undefined
         : input.assetType;
   if (
-    managedAssetType &&
-    definition.applicableAssetTypes &&
-    !definition.applicableAssetTypes.includes(managedAssetType)
+    (input.subject?.kind === "item" && definition.key === "engineering_purpose") ||
+    (managedAssetType &&
+      definition.applicableAssetTypes &&
+      !isDeviceTypeApplicable(managedAssetType, definition.applicableAssetTypes))
   ) {
     return [
       {

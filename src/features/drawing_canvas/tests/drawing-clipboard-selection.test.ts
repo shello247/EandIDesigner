@@ -413,6 +413,9 @@ describe("drawing canvas selection and clipboard", () => {
 
   it("creates a new physical asset when equipment is pasted on the same panel", () => {
     const model = modelWithPanelDistributionBlocks();
+    const original = model.sheets[0].placements.find(p => p.id === "pdb101")!;
+    original.layoutLabel = { size: "large", rotation: 90, leader: true, visible: true };
+    original.labelPosition = { x: 55, y: 45 };
     const clipboard = copySelectionToClipboard({
       model,
       sheetId: "sheet_panel",
@@ -438,6 +441,13 @@ describe("drawing canvas selection and clipboard", () => {
       containerAssetId: "asset_panel_1"
     });
     expect(pasted?.assetId).not.toBe("asset_pdb101");
+    expect(pasted?.layoutLabel).toEqual(original.layoutLabel);
+    expect(pasted?.labelPosition).toEqual(original.labelPosition);
+    // An occurrence appearance edit cannot leak into its source or its asset.
+    const editedCopy = { ...pasted!, layoutLabel: { ...pasted!.layoutLabel, size: "compact" as const } };
+    expect(editedCopy.layoutLabel.size).toBe("compact");
+    expect(original.layoutLabel.size).toBe("large");
+    expect(pastedAsset).not.toHaveProperty("layoutLabel");
     expect(pastedAsset).toMatchObject({
       tag: "PDB-102",
       title: "110 VAC L1 Power distribution block",

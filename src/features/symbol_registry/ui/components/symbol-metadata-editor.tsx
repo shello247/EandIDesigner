@@ -9,8 +9,6 @@ import {
 } from "react";
 import { AlertTriangle, Save, X } from "lucide-react";
 import type { ComponentAlternativeCandidate } from "@/features/symbol_components/api/public";
-import type { SymbolCategoryRecord } from "@/features/symbol_categories/api/public";
-import type { SymbolCategoryManagerUpdate } from "@/features/symbol_categories/ui/components/symbol-category-manager";
 import { saveSymbolMetadataChangesAction } from "../../api/actions";
 import type { SymbolMetadata } from "../../data/schema";
 import {
@@ -19,9 +17,13 @@ import {
   type NetworkProfileReviewDraft
 } from "../../logic/services/network-profile-review-draft";
 import type { SymbolDetail, SymbolVersionSummary } from "../../types";
-import { ApprovalBar } from "./approval-bar";
+import { SymbolSaveBar } from "./symbol-save-bar";
 import styles from "./symbol-detail-workspace.module.css";
 import { SymbolWorkspaceTabs } from "./symbol-workspace-tabs";
+import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
+
+const ReplaceArtworkDialog = dynamic(() => import("./replace-artwork-dialog").then(module => module.ReplaceArtworkDialog));
 
 function sameValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
@@ -35,26 +37,23 @@ export function SymbolMetadataEditor({
   symbol,
   latest,
   componentAlternatives,
-  categories,
-  onSavedRegistryDetails
+  onSavedRegistryDetails,
+  onArtworkSaved
 }: {
   symbol: SymbolDetail;
   latest: SymbolVersionSummary;
   componentAlternatives: ComponentAlternativeCandidate[];
-  categories: SymbolCategoryRecord[];
   onSavedRegistryDetails?: (details: {
     displayName: string;
     description?: string;
   }) => void;
+  onArtworkSaved?: (versionNumber: number) => void;
 }) {
+  const router = useRouter();
+  const [replacingArtwork, setReplacingArtwork] = useState(false);
   const [isSaving, startSaving] = useTransition();
   const [baselineMetadata, setBaselineMetadata] = useState(latest.metadata);
   const [draftMetadata, setDraftMetadata] = useState(latest.metadata);
-  const [baselineCategoryId, setBaselineCategoryId] = useState(
-    symbol.category.id
-  );
-  const [categoryId, setCategoryId] = useState(symbol.category.id);
-  const [availableCategories, setAvailableCategories] = useState(categories);
   const [baselineManufacturer, setBaselineManufacturer] = useState(
     symbol.manufacturer ?? ""
   );
@@ -69,31 +68,23 @@ export function SymbolMetadataEditor({
     () => createNetworkProfileReviewDraft(latest.metadata.networkProfile)
   );
   const [message, setMessage] = useState<string | null>(null);
-  const [validationIssues, setValidationIssues] = useState(
-    symbol.validationIssues
-  );
+
   const [confirmingDimensions, setConfirmingDimensions] = useState(false);
-  const blockingIssueCount = validationIssues.filter(
-    (issue) => issue.severity === "blocking"
-  ).length;
   const archived = symbol.status === "archived";
   const networkSymbol = symbol.technicalKind === "network_device";
   const metadataDirty = useMemo(
     () =>
       !sameValue(draftMetadata, baselineMetadata) ||
-      categoryId !== baselineCategoryId ||
       (networkSymbol &&
         (manufacturer !== baselineManufacturer ||
           model !== baselineModel ||
           !sameValue(networkDraft, baselineNetworkDraft))),
     [
       baselineManufacturer,
-      baselineCategoryId,
       baselineMetadata,
       baselineModel,
       baselineNetworkDraft,
       draftMetadata,
-      categoryId,
       manufacturer,
       model,
       networkDraft,
@@ -146,7 +137,6 @@ export function SymbolMetadataEditor({
       const result = await saveSymbolMetadataChangesAction({
         symbolId: symbol.id,
         versionId: latest.id,
-        categoryId,
         registryDetails: {
           displayName: draftMetadata.displayName,
           description: draftMetadata.description
@@ -188,15 +178,12 @@ export function SymbolMetadataEditor({
 
       setBaselineMetadata(savedMetadata);
       setDraftMetadata(savedMetadata);
-      setBaselineCategoryId(result.data.category.id);
-      setCategoryId(result.data.category.id);
       setBaselineManufacturer(savedManufacturer);
       setManufacturer(savedManufacturer);
       setBaselineModel(savedModel);
       setModel(savedModel);
       setBaselineNetworkDraft(savedNetworkDraft);
       setNetworkDraft(savedNetworkDraft);
-      setValidationIssues(result.data.validationIssues);
       onSavedRegistryDetails?.({
         displayName: savedMetadata.displayName,
         description: savedMetadata.description
@@ -218,68 +205,31 @@ export function SymbolMetadataEditor({
     performSave();
   };
 
-  const handleCategoriesUpdated = useCallback(
-    (update: SymbolCategoryManagerUpdate) => {
-      setAvailableCategories(update.categories);
-
-      if (!update.deletedCategoryId) {
-        return;
-      }
-
-      const deletedCategoryId = update.deletedCategoryId;
-      const replacementCategoryId = update.replacementCategoryId;
-      const deletedBaselineCategory =
-        baselineCategoryId === deletedCategoryId;
-
-      if (deletedBaselineCategory && replacementCategoryId) {
-        setBaselineCategoryId(replacementCategoryId);
-      }
-
-      setCategoryId((current) => {
-        if (current !== deletedCategoryId) {
-          return current;
-        }
-
-        return deletedBaselineCategory && replacementCategoryId
-          ? replacementCategoryId
-          : baselineCategoryId;
-      });
-    },
-    [baselineCategoryId]
-  );
-
   return (
     <div className={`flex min-h-0 flex-col gap-5 ${styles.editor}`}>
-      <div className={styles.approvalBar}>
-        <ApprovalBar
-          symbolId={symbol.id}
-          versionId={latest.id}
-          status={symbol.status}
-          blockingIssueCount={blockingIssueCount}
-          metadataDirty={metadataDirty}
-          metadataSaving={isSaving}
-          metadataMessage={message}
-          onSaveMetadata={requestSave}
-        />
-      </div>
       <SymbolWorkspaceTabs
+        artworkAction={!archived ? <button type="button" className="icon-button" disabled={metadataDirty || isSaving || confirmingDimensions}
+          title={metadataDirty ? "Save your detail changes before replacing artwork." : "Replace colours and line weights without changing connection data"}
+          onClick={() => setReplacingArtwork(true)}>Replace artwork</button> : null}
+        actions={
+          <SymbolSaveBar
+            readOnly={archived}
+            metadataDirty={metadataDirty}
+            metadataSaving={isSaving}
+            metadataMessage={message}
+            onSaveMetadata={requestSave}
+          />
+        }
         symbol={symbol}
         latest={latest}
         metadata={draftMetadata}
-        categories={availableCategories}
-        categoryId={categoryId}
         componentAlternatives={componentAlternatives}
         manufacturer={manufacturer}
         model={model}
         networkDraft={networkDraft}
-        validationIssues={validationIssues}
         readOnly={archived}
+        classificationBlocked={metadataDirty || isSaving}
         onMetadataChange={updateMetadata}
-        onCategoryChange={(value) => {
-          setMessage(null);
-          setCategoryId(value);
-        }}
-        onCategoriesUpdated={handleCategoriesUpdated}
         onManufacturerChange={(value) => {
           setMessage(null);
           setManufacturer(value);
@@ -293,6 +243,11 @@ export function SymbolMetadataEditor({
           setNetworkDraft(draft);
         }}
       />
+
+      {replacingArtwork ? <ReplaceArtworkDialog symbolId={symbol.id} versionId={latest.id} originalSvg={latest.svg}
+        onClose={() => setReplacingArtwork(false)} onSaved={versionNumber => {
+          setReplacingArtwork(false); onArtworkSaved?.(versionNumber); router.refresh();
+        }} /> : null}
 
       {confirmingDimensions ? (
         <div

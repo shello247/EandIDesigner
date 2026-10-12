@@ -1,35 +1,17 @@
+import { DEVICE_TYPE_OPTIONS } from "@/shared/device-classification/device-types";
 import type {
-  SymbolPanelWiringAssetType,
   SymbolTerminal
 } from "@/features/symbol_registry/api/public";
 import type { PanelWiringSourcePackage } from "../../data/schema";
 import type {
   CompatiblePanelComponentAssetOption,
-  PanelComponentPaletteGroup,
   PanelComponentPaletteRow,
   PanelComponentPlacementSummary,
   PanelComponentSymbol,
   PanelComponentTerminalSummary
 } from "../../types";
 
-const GROUP_BY_ASSET_TYPE: Record<
-  SymbolPanelWiringAssetType,
-  PanelComponentPaletteGroup
-> = {
-  breaker: "circuit_protection",
-  fuse: "circuit_protection",
-  relay: "relays",
-  power_supply: "power",
-  controller: "control_io",
-  io_module: "control_io",
-  network_device: "networking",
-  isolator: "isolation_conversion",
-  converter: "isolation_conversion",
-  terminal_block: "terminal_blocks",
-  earth_bar: "earth_ground",
-  instrument: "instruments",
-  other: "other"
-};
+const GROUP_ORDER = [...DEVICE_TYPE_OPTIONS.map(option => option.value), "needs_classification"];
 
 function terminalGroups(terminals: SymbolTerminal[]) {
   const groups = new Map<string, SymbolTerminal[]>();
@@ -146,16 +128,17 @@ export function buildPanelComponentPalette(
       }
       const terminals = resolvePanelComponentTerminals(symbol);
       const validation = validatePanelComponentPlacement(symbol);
+      if (!symbol.deviceType) validation.blockingReasons.push("Choose the exact Symbol Device Type before creating new equipment.");
       return [
         {
           symbolId: symbol.symbolId,
           versionId: symbol.versionId,
           symbolKey: symbol.symbolKey,
           displayName: symbol.displayName,
-          assetType: capability.assetType,
+          assetType: symbol.deviceType ?? capability.assetType,
           tagPrefix: capability.tagPrefix,
           schematicScale: capability.schematicScale,
-          group: GROUP_BY_ASSET_TYPE[capability.assetType],
+          group: symbol.deviceType ?? ("needs_classification" as const),
           status:
             validation.blockingReasons.length > 0
               ? ("blocked" as const)
@@ -168,7 +151,7 @@ export function buildPanelComponentPalette(
     })
     .sort(
       (first, second) =>
-        first.group.localeCompare(second.group) ||
+        GROUP_ORDER.indexOf(first.group) - GROUP_ORDER.indexOf(second.group) ||
         first.displayName.localeCompare(second.displayName, undefined, {
           numeric: true
         })

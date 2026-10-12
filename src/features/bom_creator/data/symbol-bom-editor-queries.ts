@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
+import { itemDeviceTypeRevisionSelect, projectItemDeviceTypes } from "./item-device-types";
 import {
   BOM_ITEM_PICKER_PAGE_SIZE,
   bomItemPickerInputSchema,
@@ -50,6 +51,7 @@ export async function listBomItemPickerRows(
         itemKey: true,
         displayName: true,
         category: true,
+        engineeringRevisions: itemDeviceTypeRevisionSelect,
         unit: true,
         manufacturer: true,
         partNumber: true,
@@ -62,7 +64,7 @@ export async function listBomItemPickerRows(
   ]);
 
   return bomItemPickerResultSchema.parse({
-    items: rows.map((row) => ({
+    items: (await projectItemDeviceTypes(rows)).map((row) => ({
       ...row,
       manufacturer: row.manufacturer ?? undefined,
       partNumber: row.partNumber ?? undefined

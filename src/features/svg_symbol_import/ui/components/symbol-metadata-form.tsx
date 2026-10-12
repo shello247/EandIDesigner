@@ -4,17 +4,16 @@ import {
   symbolTechnicalKindSchema,
   type SymbolLayoutUsage,
   type SymbolPanelMountingType,
-  type SymbolTechnicalKind,
-  type SymbolPanelWiringAssetType
+  type SymbolTechnicalKind
 } from "@/features/symbol_registry/data/schema";
-import type { SymbolCategoryRecord } from "@/features/symbol_categories/api/public";
+import { DEVICE_TYPE_OPTIONS, type DeviceType } from "@/shared/device-classification/device-types";
 
 export type SymbolMetadataFormState = {
   symbolKey: string;
   displayName: string;
   manufacturer: string;
   model: string;
-  categoryId: string;
+  deviceType: DeviceType | "";
   technicalKind: SymbolTechnicalKind;
   layoutUsage: SymbolLayoutUsage;
   physicalWidthMm: string;
@@ -22,7 +21,6 @@ export type SymbolMetadataFormState = {
   mountingType: SymbolPanelMountingType | "";
   resizable: boolean;
   panelWiringEnabled: boolean;
-  panelWiringAssetType: SymbolPanelWiringAssetType;
   panelWiringTagPrefix: string;
   panelWiringSchematicScale: string;
 };
@@ -42,24 +40,6 @@ const technicalKindOptions: Array<{
     label: value === "other" ? "Standard Equipment" : optionLabel(value)
   }));
 
-const panelWiringAssetTypeOptions: Array<{
-  value: SymbolPanelWiringAssetType;
-  label: string;
-}> = [
-  { value: "instrument", label: "Instrument" },
-  { value: "controller", label: "Controller" },
-  { value: "terminal_block", label: "Terminal Block" },
-  { value: "breaker", label: "Breaker" },
-  { value: "fuse", label: "Fuse" },
-  { value: "relay", label: "Relay" },
-  { value: "power_supply", label: "Power Supply" },
-  { value: "isolator", label: "Isolator" },
-  { value: "converter", label: "Converter" },
-  { value: "io_module", label: "I/O Module" },
-  { value: "network_device", label: "Network Device" },
-  { value: "earth_bar", label: "Earth Bar" },
-  { value: "other", label: "Other" }
-];
 
 const layoutUsageOptions: Array<{ value: SymbolLayoutUsage; label: string }> = [
   { value: "wiring", label: "Wiring drawings" },
@@ -80,12 +60,10 @@ const mountingTypeOptions: Array<{
 
 export function SymbolMetadataForm({
   form,
-  categories,
   disabled,
   onChange
 }: {
   form: SymbolMetadataFormState;
-  categories: SymbolCategoryRecord[];
   disabled: boolean;
   onChange: (updates: Partial<SymbolMetadataFormState>) => void;
 }) {
@@ -120,23 +98,20 @@ export function SymbolMetadataForm({
           />
         </div>
         <div>
-          <label className="field-label" htmlFor="category">
-            Category
+          <label className="field-label" htmlFor="device-type">
+            Device Type
           </label>
           <select
-            id="category"
+            id="device-type"
             className="field-input"
-            value={form.categoryId}
+            value={form.deviceType}
             disabled={disabled}
             onChange={(event) =>
-              onChange({ categoryId: event.currentTarget.value })
+              onChange({ deviceType: event.currentTarget.value as DeviceType | "" })
             }
           >
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
+            <option value="">Choose Device Type</option>
+            {DEVICE_TYPE_OPTIONS.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
           </select>
         </div>
         <div>
@@ -310,27 +285,6 @@ export function SymbolMetadataForm({
           />
           Enable Detailed Panel use
         </label>
-        <div>
-          <label className="field-label" htmlFor="panel-wiring-asset-type-import">
-            Asset type
-          </label>
-          <select
-            id="panel-wiring-asset-type-import"
-            className="field-input"
-            value={form.panelWiringAssetType}
-            disabled={disabled || !form.panelWiringEnabled}
-            onChange={(event) =>
-              onChange({
-                panelWiringAssetType:
-                  event.currentTarget.value as SymbolPanelWiringAssetType
-              })
-            }
-          >
-            {panelWiringAssetTypeOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-        </div>
         <div>
           <label className="field-label" htmlFor="panel-wiring-prefix-import">
             Tag prefix

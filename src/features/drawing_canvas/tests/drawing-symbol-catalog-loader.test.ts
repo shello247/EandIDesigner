@@ -151,7 +151,7 @@ describe("drawing symbol catalogue loader", () => {
     expect(loadVersion).toHaveBeenCalledTimes(2);
   });
 
-  it("loads an allowed component closure once and returns it atomically", async () => {
+  it.each([false, true])("loads component choices atomically when the parent is already loaded: %s", async (parentAlreadyLoaded) => {
     const parent = {
       ...symbol("parent_version"),
       symbolId: "parent_symbol",
@@ -193,7 +193,7 @@ describe("drawing symbol catalogue loader", () => {
     await expect(
       loadDrawingSymbolDependencyClosure({
         versionIds: [parent.versionId],
-        existingSymbols: [],
+        existingSymbols: parentAlreadyLoaded ? [parent] : [],
         catalogueSummaries: [
           summary(parent.symbolId, parent.versionId),
           summary(child.symbolId, child.versionId)
@@ -201,7 +201,7 @@ describe("drawing symbol catalogue loader", () => {
         loader
       })
     ).resolves.toEqual({ ok: true, symbols: [parent, child] });
-    expect(loadVersion).toHaveBeenCalledTimes(2);
+    expect(loadVersion).toHaveBeenCalledTimes(parentAlreadyLoaded ? 1 : 2);
   });
 
   it("returns no partial closure when a required exact request fails", async () => {

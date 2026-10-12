@@ -214,16 +214,14 @@ export function terminalBlockSymbolTerminals(
       label: terminal.label,
       function: "Feed-through terminal",
       anchorKey: terminal.topAnchorKey,
-      panelSide: "internal" as const,
-      requiredForWiring: false
+      panelSide: "internal" as const
     },
     {
       key: terminal.key,
       label: terminal.label,
       function: "Feed-through terminal",
       anchorKey: terminal.bottomAnchorKey,
-      panelSide: "external" as const,
-      requiredForWiring: false
+      panelSide: "external" as const
     }
   ]);
 }

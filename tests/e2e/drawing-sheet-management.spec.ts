@@ -56,12 +56,14 @@ test("keeps explicit sheet creation while hiding retired reuse actions", async (
 
     await loader.getByRole("button", { name: "Add Sheet" }).click();
     const addDialog = page.getByRole("dialog", { name: "Add Sheet" });
+    await expect(addDialog.getByRole("button", { name: "Add sheet", exact: true })).toBeDisabled();
+    await addDialog.getByLabel("Section", { exact: true }).selectOption({ label: "Section 1 — Field Drawings" });
     await addDialog.getByLabel("Sheet name").fill("Explicit Wiring Sheet");
     await addDialog
       .getByRole("button", { name: "Add sheet", exact: true })
       .click();
 
-    await expect(page.getByTestId("active-sheet-readout")).toContainText(
+    await expect(page.getByTestId("active-sheet-heading")).toContainText(
       "Explicit Wiring Sheet"
     );
     await page.getByRole("button", { name: "Open sheet loader" }).click();

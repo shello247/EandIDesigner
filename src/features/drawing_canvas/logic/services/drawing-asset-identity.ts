@@ -156,6 +156,12 @@ export function roleFromSymbol(symbol: ApprovedDrawingSymbol): DrawingPlacementR
     return "device";
   }
 
+  // A component-bearing chassis/base is physical equipment even when it has
+  // no field terminals or Detailed Panel wiring definition of its own.
+  if (symbol.metadata.componentPositions?.length) {
+    return "device";
+  }
+
   return roleFromSymbolCategory(symbol.category);
 }
 
@@ -614,6 +620,7 @@ function roleFromAssetType(type: DrawingAssetType): DrawingPlacementRole {
     type === "fuse" ||
     type === "relay" ||
     type === "power_supply" ||
+    type === "ups" || type === "chassis_rack" ||
     type === "isolator" ||
     type === "converter" ||
     type === "io_module" ||

@@ -53,7 +53,8 @@ export function EngineeringAttributesCard({
   title = "Engineering Attributes",
   subtitle,
   defaultExpanded = false,
-  editorDescription
+  editorDescription,
+  editSource = false
 }: {
   assetId: string;
   assetType?: string;
@@ -68,6 +69,7 @@ export function EngineeringAttributesCard({
   subtitle?: string;
   defaultExpanded?: boolean;
   editorDescription?: string;
+  editSource?: boolean;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [editor, setEditor] = useState<AttributeEditorState | null>(null);
@@ -207,6 +209,7 @@ export function EngineeringAttributesCard({
             <EngineeringAttributeField
               key={`${editor.mode}:${editorDefinition.key}:${JSON.stringify(editorValue)}`}
               definition={editorDefinition}
+              editSource={editSource}
               value={editorValue}
               pending={editor.mode === "add"}
               onCommit={commitValue}

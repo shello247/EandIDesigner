@@ -18,6 +18,7 @@ export function SheetSettingsDialog({
   showPanelContext,
   panelOptions,
   panelContextWarning,
+  onConvertToTitleSheet,
   onCancel,
   onApply
 }: {
@@ -29,6 +30,7 @@ export function SheetSettingsDialog({
   showPanelContext: boolean;
   panelOptions: CompatiblePanelOption[];
   panelContextWarning?: string;
+  onConvertToTitleSheet?: () => void;
   onCancel: () => void;
   onApply: (settings: SheetSettingsDraft) => void;
 }) {
@@ -228,6 +230,10 @@ export function SheetSettingsDialog({
               </select>
             </div>
           ) : null}
+
+          {onConvertToTitleSheet ? <button type="button" className="icon-button icon-button-primary" onClick={() => {
+            if (window.confirm("Convert this blank first sheet to a Title Sheet? It will use the shared drawing information. Changes typed in this sheet-settings form will be discarded. Use Save afterwards to persist the conversion.")) onConvertToTitleSheet();
+          }}>Convert to Title Sheet</button> : null}
 
           {showPanelContext ? (
             <section className="border-t border-slate-200 pt-4">

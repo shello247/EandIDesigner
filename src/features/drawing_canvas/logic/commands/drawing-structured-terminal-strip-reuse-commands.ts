@@ -41,6 +41,7 @@ const structuredTerminalStripReuseInputSchema = z.object({
   sourceSheetId: z.string().trim().min(1),
   sourcePlacementId: z.string().trim().min(1),
   targetSheetId: z.string().trim().min(1),
+  positionMode: z.enum(["automatic", "interactive"]).optional(),
   targetBackplaneId: z.string().trim().min(1).optional()
 });
 
@@ -180,7 +181,7 @@ export function listStructuredTerminalStripCopySources(params: {
   >();
 
   model.sheets.forEach((sheet, sheetIndex) => {
-    if (sheet.kind === "section_title") return;
+    if (sheet.kind === "section_title" || sheet.kind === "title_sheet") return;
     sheet.placements.forEach((placement, placementIndex) => {
       if (!placement.assetId) return;
       const occurrences = occurrencesByAssetId.get(placement.assetId) ?? [];
@@ -295,7 +296,7 @@ export function listStructuredTerminalStripReuseDestinations(params: {
     sourceMountPanelAssetId,
     sourceMountAmbiguous,
     sheets: model.sheets.flatMap((sheet, index) => {
-        if (sheet.kind === "section_title") return [];
+        if (sheet.kind === "section_title" || sheet.kind === "title_sheet") return [];
         const alreadyRepresented = sheet.placements.some(
           (placement) => placement.assetId === source.asset.id
         );
@@ -516,7 +517,7 @@ export function reuseStructuredTerminalStrip(params: {
   const input = structuredTerminalStripReuseInputSchema.parse(params.input);
   const source = resolveSource(model, input.sourceSheetId, input.sourcePlacementId);
   const targetSheet = model.sheets.find((sheet) => sheet.id === input.targetSheetId);
-  if (!targetSheet || targetSheet.kind === "section_title") {
+  if (!targetSheet || targetSheet.kind === "section_title" || targetSheet.kind === "title_sheet") {
     throw new Error("Choose a drawing sheet for the terminal strip.");
   }
   const targetBackplane = input.targetBackplaneId
@@ -544,6 +545,7 @@ export function reuseStructuredTerminalStrip(params: {
           assetType: source.asset.type
         }),
         strip: cloneStructuredTerminalStrip(source.asset.terminalStrip),
+        positionMode: input.positionMode,
         rotation: source.placement.rotation
       }
     });
@@ -616,7 +618,8 @@ export function reuseStructuredTerminalStrip(params: {
     symbols: params.symbols,
     sheetId: targetSheet.id,
     assetId: source.asset.id,
-    backplaneId: targetBackplane?.id
+    backplaneId: targetBackplane?.id,
+    positionMode: input.positionMode
   });
   const appearance = withSourceAppearance({
     model: referenced.model,

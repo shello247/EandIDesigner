@@ -14,6 +14,7 @@ import {
   removePanelAssetOccurrence
 } from "../logic/commands/drawing-panel-occurrence-commands";
 import { getPlacementBounds } from "../logic/services/drawing-geometry";
+import { preparePlacementCandidate, resolvePlacementPreview, positionPlacementCandidate, type PlacementSource } from "../logic/services/drawing-placement";
 import { getRenderableSymbolForPlacement } from "../logic/services/drawing-generated-symbols";
 import {
   createTerminalBlockPlacement,
@@ -141,6 +142,28 @@ function createLayoutOnlyFixture(): DrawingModel {
 }
 
 describe("Detailed Panel asset occurrence commands", () => {
+  it("stages interactive occurrences without auto-positioning and validates the chosen location", () => {
+    const model = createFixture();
+    const source: PlacementSource = {
+      id: "queue", sheetId: DETAIL_SHEET_ID, tool: "reference", label: "TB-101",
+      identity: { mode: "reference", assetId: TERMINAL_ASSET_ID }, targetKind: "sheet", canRotate: false,
+      build: ({ model: current }) => placePanelAssetOccurrences({ model: current, sheetId: DETAIL_SHEET_ID,
+        assetIds: [TERMINAL_ASSET_ID], positionMode: "interactive" }).model
+    };
+    const candidate = preparePlacementCandidate(source, model, []);
+    expect(candidate.placements[0]).toMatchObject({ x: 0, y: 0, assetId: TERMINAL_ASSET_ID });
+    expect(resolvePlacementPreview(candidate, { x: 5, y: 5 }).valid).toBe(false);
+    const point = { x: 140, y: 100 };
+    const resolved = resolvePlacementPreview(candidate, point);
+    expect(resolved.valid).toBe(true);
+    const placed = positionPlacementCandidate(candidate, resolved);
+    expect(placed.assets).toEqual(model.assets);
+    const next = preparePlacementCandidate({ ...source,
+      build: ({ model: current }) => placePanelAssetOccurrences({ model: current, sheetId: DETAIL_SHEET_ID,
+        assetIds: [SECOND_TERMINAL_ASSET_ID], positionMode: "interactive" }).model
+    }, placed, []);
+    expect(resolvePlacementPreview(next, point).valid).toBe(false);
+  });
   it("places an existing asset occurrence without changing assets or source connections", () => {
     const model = createFixture();
     const result = placePanelAssetOccurrence({

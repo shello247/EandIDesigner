@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {drawingProductSelectionSchema,engineeringProjectSettingsSchema,type DrawingProductSelection,type EngineeringProjectSettings} from "@/features/item_engineering/api/contracts";
 
 export const SYMBOL_COMPONENT_MAX_DEPTH = 16;
 
@@ -46,13 +47,17 @@ export const drawingComponentSelectionSchema: z.ZodType<{
   componentKey: string;
   symbolId: string;
   versionId: string;
+  productSelection?: DrawingProductSelection;
+  engineeringSettings?: EngineeringProjectSettings;
   children?: DrawingComponentSelection[];
 }> = z.lazy(() =>
   z.object({
     positionKey: symbolComponentKeySchema,
     componentKey: symbolComponentKeySchema,
     symbolId: z.string().trim().min(1).max(120),
-    versionId: z.string().trim().min(1).max(120),
+      versionId: z.string().trim().min(1).max(120),
+      productSelection: drawingProductSelectionSchema.optional(),
+      engineeringSettings: engineeringProjectSettingsSchema.optional(),
     children: z.array(drawingComponentSelectionSchema).max(100).optional()
   })
 );
@@ -73,5 +78,7 @@ export type DrawingComponentSelection = {
   componentKey: string;
   symbolId: string;
   versionId: string;
+  productSelection?: DrawingProductSelection;
+  engineeringSettings?: EngineeringProjectSettings;
   children?: DrawingComponentSelection[];
 };

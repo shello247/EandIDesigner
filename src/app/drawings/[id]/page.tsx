@@ -8,15 +8,18 @@ import { DrawingCanvasShell } from "@/features/drawing_canvas/ui/components/draw
 import { detailedPanelDrawingsEnabled } from "@/features/drawing_panel_wiring/api/release";
 import { collectDrawingSymbolVersionIds } from "@/features/drawing_canvas/logic/services/drawing-symbol-version-references";
 import { listWireCatalogEntries } from "@/features/wire_catalog/api/public";
+import { resolvePanelAnalysisNavigation } from "@/features/drawing_panel_analysis/api/public";
 
 export const dynamic = "force-dynamic";
 
 export default async function DrawingDetailPage({
-  params
+  params,
+  searchParams
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { id } = await params;
+  const [{ id }, focusParams] = await Promise.all([params, searchParams]);
   const drawing = await getDrawingDetail(id);
 
   if (!drawing) {
@@ -35,6 +38,11 @@ export default async function DrawingDetailPage({
       symbolCatalogSummaries={symbolCatalogSummaries}
       wireCatalogEntries={wireCatalogEntries}
       detailedPanelDrawingsEnabled={detailedPanelDrawingsEnabled()}
+      initialNavigationTarget={resolvePanelAnalysisNavigation({
+        drawingId: id,
+        model: drawing.model,
+        searchParams: focusParams
+      })}
     />
   );
 }

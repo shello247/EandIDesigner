@@ -24,9 +24,9 @@ export default async function DrawingsPage({
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <h1 className="text-xl font-semibold tracking-normal">Drawings</h1>
-        <Link href="/drawings/new" className="icon-button icon-button-primary">
+        <Link href="/projects" className="icon-button icon-button-primary">
           <FilePlus2 aria-hidden="true" size={18} />
-          New drawing
+          Open a project to create a drawing
         </Link>
       </div>
 

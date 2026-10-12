@@ -1,4 +1,7 @@
 import { cache } from "react";
+import type { Prisma } from "@prisma/client";
+import { hashItemDocumentContent } from "@/features/item_engineering/api/server";
+import { ITEM_DEVICE_TYPE_OPTIONS } from "@/features/item_engineering/api/public";
 import { prisma } from "@/lib/prisma";
 import {
   bomItemDetailSchema,
@@ -19,9 +22,7 @@ import {
 } from "./schema";
 import { buildBomItemImagePayload } from "../logic/services/bom-item-image-payload";
 import { buildBomItemDocumentPayload } from "../logic/services/bom-item-document-payload";
-import { BOM_ITEM_CATEGORY_OPTIONS } from "../logic/services/bom-item-options";
-
-const defaultBomCategoryOptions = [...BOM_ITEM_CATEGORY_OPTIONS];
+import { itemDeviceTypeRevisionSelect, projectItemDeviceTypes } from "./item-device-types";
 
 type BomItemRow = {
   id: string;
@@ -73,8 +74,11 @@ type BomItemImageRow = {
   sortOrder: number;
 };
 
-const bomItemImageMetadataSelect = {
+export const bomItemImageMetadataSelect = {
   id: true,
+  // Prisma needs the owner and all sort keys for batched nested-take queries.
+  itemId: true,
+  createdAt: true,
   fileName: true,
   mimeType: true,
   sizeBytes: true,
@@ -83,7 +87,7 @@ const bomItemImageMetadataSelect = {
   sortOrder: true
 } as const;
 
-const bomItemDocumentMetadataSelect = {
+export const bomItemDocumentMetadataSelect = {
   id: true,
   itemId: true,
   title: true,
@@ -117,12 +121,6 @@ type SymbolBomTemplateRow = {
     item: BomItemRow;
   }>;
 };
-
-function categoryLabel(value: string): string {
-  return value
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (match) => match.toUpperCase());
-}
 
 function uniqueOptions(
   values: string[],
@@ -177,7 +175,7 @@ function bomItemDocumentUrl(documentId: string): string {
   return `/api/bom/items/documents/${encodeURIComponent(documentId)}`;
 }
 
-function toBomItemDocumentMetadata(
+export function toBomItemDocumentMetadata(
   row: BomItemDocumentRow
 ): BomItemDocumentMetadata {
   return bomItemDocumentMetadataSchema.parse({
@@ -193,7 +191,7 @@ function toBomItemDocumentMetadata(
   });
 }
 
-function toBomItemImageMetadata(row: BomItemImageRow): BomItemImageMetadata {
+export function toBomItemImageMetadata(row: BomItemImageRow): BomItemImageMetadata {
   return bomItemImageMetadataSchema.parse({
     id: row.id,
     imageUrl: bomItemImageUrl(row.id),
@@ -206,7 +204,7 @@ function toBomItemImageMetadata(row: BomItemImageRow): BomItemImageMetadata {
   });
 }
 
-function toBomItemSummary(row: BomItemListRow): BomItemSummary {
+export function toBomItemSummary(row: BomItemListRow): BomItemSummary {
   return bomItemSummarySchema.parse({
     id: row.id,
     itemKey: row.itemKey,
@@ -272,6 +270,7 @@ export const listBomItems = cache(
     const rows = await prisma.bomItem.findMany({
       where: includeArchived ? undefined : { status: "active" },
       include: {
+        engineeringRevisions: itemDeviceTypeRevisionSelect,
         images: {
           select: bomItemImageMetadataSelect,
           orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
@@ -281,10 +280,11 @@ export const listBomItems = cache(
           select: { templateLines: true }
         }
       },
-      orderBy: [{ category: "asc" }, { displayName: "asc" }, { itemKey: "asc" }]
+      orderBy: [{ displayName: "asc" }, { itemKey: "asc" }]
     });
 
-    return rows.map(toBomItemSummary);
+    return (await projectItemDeviceTypes(rows)).map(toBomItemSummary)
+      .sort((first, second) => first.category.localeCompare(second.category) || first.displayName.localeCompare(second.displayName) || first.itemKey.localeCompare(second.itemKey));
   }
 );
 
@@ -293,11 +293,13 @@ export const getBomItemDetail = cache(
     const row = await prisma.bomItem.findUnique({
       where: { id },
       include: {
+        engineeringRevisions: itemDeviceTypeRevisionSelect,
         images: {
           select: bomItemImageMetadataSelect,
           orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }]
         },
         documents: {
+          where: { archivedAt: null },
           select: bomItemDocumentMetadataSelect,
           orderBy: [{ createdAt: "asc" }, { id: "asc" }]
         },
@@ -321,10 +323,12 @@ export const getBomItemDetail = cache(
       return null;
     }
 
-    const summary = toBomItemSummary(row);
+    const [projected] = await projectItemDeviceTypes([row]);
+    const summary = toBomItemSummary(projected);
 
     return bomItemDetailSchema.parse({
       ...summary,
+      latestEngineeringRevisionId: row.engineeringRevisions[0]?.id ?? null,
       productUrl: row.productUrl ?? undefined,
       productUrlExtractedAt: row.productUrlExtractedAt?.toISOString(),
       images: row.images.map(toBomItemImageMetadata),
@@ -359,9 +363,10 @@ export async function getBomItemImageMetadata(
 }
 
 export async function getBomItemDocumentMetadata(
-  documentId: string
+  documentId: string,
+  db: Prisma.TransactionClient = prisma
 ): Promise<BomItemDocumentMetadata | null> {
-  const row = await prisma.bomItemDocument.findUnique({
+  const row = await db.bomItemDocument.findUnique({
     where: { id: documentId },
     select: bomItemDocumentMetadataSelect
   });
@@ -370,12 +375,15 @@ export async function getBomItemDocumentMetadata(
 }
 
 export async function getBomItemDocumentPayload(
-  documentId: string
+  documentId: string,
+  db: Prisma.TransactionClient = prisma
 ): Promise<BomItemDocumentPayload | null> {
-  const row = await prisma.bomItemDocument.findUnique({
+  const row = await db.bomItemDocument.findUnique({
     where: { id: documentId },
     select: {
       id: true,
+      title: true,
+      contentHash: true,
       fileName: true,
       mimeType: true,
       sizeBytes: true,
@@ -383,6 +391,7 @@ export async function getBomItemDocumentPayload(
     }
   });
 
+  if (row?.contentHash && hashItemDocumentContent(row) !== row.contentHash) throw new Error("Item document content hash does not match.");
   return row ? buildBomItemDocumentPayload(row) : null;
 }
 
@@ -405,22 +414,12 @@ export async function getBomItemImagePayload(
 export const listBomItemFormOptions = cache(
   async (): Promise<BomItemFormOptions> => {
     const [
-      categoryRows,
       manufacturerRows,
-      itemCategoryRows,
       itemManufacturerRows
     ] = await Promise.all([
-      prisma.bomItemCategory.findMany({
-        select: { name: true },
-        orderBy: { name: "asc" }
-      }),
       prisma.bomItemManufacturer.findMany({
         select: { name: true },
         orderBy: { name: "asc" }
-      }),
-      prisma.bomItem.findMany({
-        select: { category: true },
-        distinct: ["category"]
       }),
       prisma.bomItem.findMany({
         where: { manufacturer: { not: null } },
@@ -430,15 +429,7 @@ export const listBomItemFormOptions = cache(
     ]);
 
     return bomItemFormOptionsSchema.parse({
-      categories: uniqueOptions(
-        [
-          ...defaultBomCategoryOptions,
-          ...categoryRows.map((row) => row.name),
-          ...itemCategoryRows.map((row) => row.category)
-        ],
-        categoryLabel,
-        defaultBomCategoryOptions
-      ),
+      categories: ITEM_DEVICE_TYPE_OPTIONS,
       manufacturers: uniqueOptions(
         [
           ...manufacturerRows.map((row) => row.name),
@@ -459,12 +450,15 @@ export const getSymbolBomTemplate = cache(
       include: {
         lines: {
           orderBy: { lineNumber: "asc" },
-          include: { item: true }
+          include: { item: { include: { engineeringRevisions: itemDeviceTypeRevisionSelect } } }
         }
       }
     });
 
-    return row ? toSymbolBomTemplateDetail(row) : null;
+    if (!row) return null;
+    const items = await projectItemDeviceTypes(row.lines.map(line => line.item));
+    const byId = new Map(items.map(item => [item.id, item]));
+    return toSymbolBomTemplateDetail({ ...row, lines: row.lines.map(line => ({ ...line, item: byId.get(line.itemId)! })) });
   }
 );
 
@@ -483,11 +477,13 @@ export const listSymbolBomTemplatesForSymbols = cache(
       include: {
         lines: {
           orderBy: { lineNumber: "asc" },
-          include: { item: true }
+          include: { item: { include: { engineeringRevisions: itemDeviceTypeRevisionSelect } } }
         }
       }
     });
 
-    return rows.map(toSymbolBomTemplateDetail);
+    const items = await projectItemDeviceTypes(rows.flatMap(row => row.lines.map(line => line.item)));
+    const byId = new Map(items.map(item => [item.id, item]));
+    return rows.map(row => toSymbolBomTemplateDetail({ ...row, lines: row.lines.map(line => ({ ...line, item: byId.get(line.itemId)! })) }));
   }
 );

@@ -21,8 +21,8 @@ import {
   Upload,
   X
 } from "lucide-react";
+import { ITEM_DEVICE_TYPE_OPTIONS, getItemDeviceTypeLabel, itemEngineeringDeviceTypeSchema } from "@/features/item_engineering/api/public";
 import {
-  createBomItemCategoryAction,
   createBomItemManufacturerAction,
   createBomItemAction,
   extractBomItemFromUrlAction,
@@ -47,19 +47,15 @@ import {
   validateBomItemImageBudget
 } from "../../logic/services/bom-item-image-budget";
 import { mergeBomItemExtractionIntoBlankFields } from "../../logic/services/bom-item-extraction-merge";
-import {
-  bomCurrencyOptions,
-  bomUnitOptions,
-  categoryLabel
-} from "./bom-item-options";
+import { bomUnitOptions } from "./bom-item-options";
 import { BomItemImageView } from "./bom-item-image-view";
+import { BomItemCommercialFields } from "./bom-item-commercial-fields";
 import {
   BomItemDocumentsStep,
   type StagedBomItemDocument
 } from "./bom-item-documents-step";
 
 type WizardStep = "general" | "images" | "documents" | "supplier";
-type OptionDialogKind = "category" | "manufacturer";
 
 type ExistingImageDraft = BomItemImageMetadata & { kind: "existing" };
 type NewImageDraft = BomItemNewImageInput & { clientId: string };
@@ -77,7 +73,7 @@ const steps: Array<{ key: WizardStep; label: string }> = [
 
 const emptyDraft: WizardDraft = {
   displayName: "",
-  category: "accessory",
+  category: "",
   unit: "each",
   description: "",
   manufacturer: "",
@@ -189,9 +185,6 @@ function toImageWriteInput(image: BomItemImageDraft): BomItemImageWriteInput {
   };
 }
 
-function toOptionalNumber(value: string): number | undefined {
-  return value.trim() === "" ? undefined : Number(value);
-}
 
 function withCurrentOption(
   options: BomItemOption[],
@@ -234,28 +227,23 @@ function mergeOption(
   );
 }
 
-function SmallOptionDialog({
-  kind,
+function ManufacturerOptionDialog({
   onClose,
   onSaved
 }: {
-  kind: OptionDialogKind;
   onClose: () => void;
   onSaved: (option: BomItemOption) => void;
 }) {
   const [value, setValue] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const title = kind === "category" ? "Add category" : "Add manufacturer";
-  const label = kind === "category" ? "Category name" : "Manufacturer name";
+  const title = "Add manufacturer";
+  const label = "Manufacturer name";
 
   const save = () => {
     startTransition(async () => {
       setMessage(null);
-      const result =
-        kind === "category"
-          ? await createBomItemCategoryAction({ name: value })
-          : await createBomItemManufacturerAction({ name: value });
+      const result = await createBomItemManufacturerAction({ name: value });
 
       if (!result.ok) {
         setMessage(result.error);
@@ -376,10 +364,7 @@ export function BomItemWizardDialog({
   const [extraction, setExtraction] = useState<BomItemExtractionResult | null>(
     null
   );
-  const [optionDialog, setOptionDialog] = useState<OptionDialogKind | null>(null);
-  const [categoryOptions, setCategoryOptions] = useState<BomItemOption[]>(() =>
-    withCurrentOption(formOptions.categories, item?.category, categoryLabel)
-  );
+  const [optionDialog, setOptionDialog] = useState(false);
   const [manufacturerOptions, setManufacturerOptions] = useState<
     BomItemOption[]
   >(() => withCurrentOption(formOptions.manufacturers, item?.manufacturer));
@@ -388,9 +373,10 @@ export function BomItemWizardDialog({
   const [isExtracting, startExtractionTransition] = useTransition();
   const activeStepIndex = steps.findIndex((candidate) => candidate.key === step);
   const title = mode === "create" ? "New item" : `Edit ${item?.displayName ?? "item"}`;
+  const selectedDeviceType = itemEngineeringDeviceTypeSchema.safeParse(draft.category);
   const canSave =
     draft.displayName.trim().length > 0 &&
-    draft.category.trim().length > 0 &&
+    (Boolean(persistedItem) || selectedDeviceType.success) &&
     draft.unit.trim().length > 0;
 
   const totalImageBytes = useMemo(
@@ -542,11 +528,16 @@ export function BomItemWizardDialog({
         return;
       }
 
-      setDraft((current) => ({
-        ...mergeBomItemExtractionIntoBlankFields(current, result.data.values),
-        productUrl: result.data.productUrl,
-        productUrlExtractedAt: result.data.extractedAt
-      }));
+      setDraft((current) => {
+        const merged = mergeBomItemExtractionIntoBlankFields(current, result.data.values);
+        const extractedType = itemEngineeringDeviceTypeSchema.safeParse(merged.category);
+        return {
+          ...merged,
+          category: persistedItem?.category ?? (extractedType.success ? extractedType.data : ""),
+          productUrl: result.data.productUrl,
+          productUrlExtractedAt: result.data.extractedAt
+        };
+      });
       setExtraction(result.data);
 
       if (result.data.values.manufacturer) {
@@ -562,7 +553,7 @@ export function BomItemWizardDialog({
 
   const save = () => {
     if (!canSave) {
-      setMessage("Display name, category, and unit are required.");
+      setMessage("Display name, Device Type, and unit are required.");
       setStep("general");
       return;
     }
@@ -578,18 +569,21 @@ export function BomItemWizardDialog({
 
     startTransition(async () => {
       setMessage(null);
-      const { images: _images, ...itemFields } = draft;
-      void _images;
+      const { images: _images, category: _category, deviceType: _deviceType, ...itemFields } = draft;
+      void _images; void _category; void _deviceType;
       const imageInputs = normalizedImages.map(toImageWriteInput);
       const existingItemId = persistedItem?.id ?? item?.id;
       const result = existingItemId
           ? await updateBomItemAction({
               ...itemFields,
               id: existingItemId,
+              expectedEngineeringRevisionId: persistedItem?.latestEngineeringRevisionId ?? null,
               images: imageInputs
             })
           : await createBomItemAction({
               ...itemFields,
+              category: selectedDeviceType.success ? selectedDeviceType.data : "",
+              deviceType: selectedDeviceType.success ? selectedDeviceType.data : undefined,
               images: imageInputs.filter(
                 (image): image is BomItemNewImageInput => image.kind === "new"
               )
@@ -617,6 +611,7 @@ export function BomItemWizardDialog({
 
         const formData = new FormData();
         formData.set("itemId", savedItem.id);
+        formData.set("expectedEngineeringRevisionId", savedItem.latestEngineeringRevisionId ?? "");
         formData.set("title", stagedDocument.title);
         formData.set("documentFile", stagedDocument.file);
         const uploadResult = await uploadBomItemDocumentAction(formData);
@@ -647,6 +642,8 @@ export function BomItemWizardDialog({
         }
 
         savedDocuments = [...savedDocuments, uploadResult.data];
+        savedItem = { ...savedItem, documents: savedDocuments, latestEngineeringRevisionId: uploadResult.data.revisionId };
+        setPersistedItem(savedItem);
         setExistingDocuments(savedDocuments);
         setStagedDocuments((current) =>
           current.filter(
@@ -678,27 +675,19 @@ export function BomItemWizardDialog({
   };
 
   const handleOptionSaved = (option: BomItemOption) => {
-    if (optionDialog === "category") {
-      setCategoryOptions((current) => mergeOption(current, option));
-      updateDraft({ category: option.value });
-    }
-
-    if (optionDialog === "manufacturer") {
-      setManufacturerOptions((current) => mergeOption(current, option));
-      updateDraft({ manufacturer: option.value });
-    }
-
-    setOptionDialog(null);
+    setManufacturerOptions((current) => mergeOption(current, option));
+    updateDraft({ manufacturer: option.value });
+    setOptionDialog(false);
   };
 
-  const handleExistingDocumentDeleted = (documentId: string) => {
+  const handleExistingDocumentDeleted = (documentId: string, revisionId: string | null) => {
     const nextDocuments = existingDocuments.filter(
       (document) => document.id !== documentId
     );
     setExistingDocuments(nextDocuments);
 
     if (persistedItem) {
-      const nextItem = { ...persistedItem, documents: nextDocuments };
+      const nextItem = { ...persistedItem, documents: nextDocuments, latestEngineeringRevisionId: revisionId };
       setPersistedItem(nextItem);
       onPersisted?.(nextItem);
     }
@@ -899,34 +888,25 @@ export function BomItemWizardDialog({
                 />
               </div>
               <div>
-                <div className="relative">
-                  <label className="field-label pr-8" htmlFor="bom-category">
-                    Category
-                  </label>
-                  <button
-                    type="button"
-                    className="icon-button absolute right-0 top-0 !h-6 !min-h-6 w-6 p-0"
-                    aria-label="Add category"
-                    title="Add category"
-                    onClick={() => setOptionDialog("category")}
-                  >
-                    <Plus aria-hidden="true" size={12} />
-                  </button>
-                </div>
+                <label className="field-label" htmlFor="bom-device-type">Device Type</label>
                 <select
-                  id="bom-category"
-                  className="field-input capitalize"
-                  value={draft.category}
+                  id="bom-device-type"
+                  className="field-input"
+                  required
+                  disabled={Boolean(persistedItem)}
+                  value={selectedDeviceType.success ? selectedDeviceType.data : ""}
                   onChange={(event) =>
                     updateDraft({ category: event.currentTarget.value })
                   }
                 >
-                  {categoryOptions.map((category) => (
-                    <option key={category.value} value={category.value}>
-                      {category.label}
+                  <option value="" disabled>{persistedItem ? getItemDeviceTypeLabel(null) : "Select Device Type"}</option>
+                  {ITEM_DEVICE_TYPE_OPTIONS.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
                     </option>
                   ))}
                 </select>
+                {persistedItem && <p className="mt-1 text-xs text-slate-500">Change Device Type through <a className="font-semibold text-teal-800 underline" href={`/bom/items/${persistedItem.id}`} onClick={onClose}>Item Overview → Edit details</a>.</p>}
               </div>
               <div>
                 <label className="field-label" htmlFor="bom-unit">
@@ -957,7 +937,7 @@ export function BomItemWizardDialog({
                     className="icon-button absolute right-0 top-0 !h-6 !min-h-6 w-6 p-0"
                     aria-label="Add manufacturer"
                     title="Add manufacturer"
-                    onClick={() => setOptionDialog("manufacturer")}
+                    onClick={() => setOptionDialog(true)}
                   >
                     <Plus aria-hidden="true" size={12} />
                   </button>
@@ -1162,6 +1142,7 @@ export function BomItemWizardDialog({
 
           {step === "documents" ? (
             <BomItemDocumentsStep
+              expectedEngineeringRevisionId={persistedItem?.latestEngineeringRevisionId ?? null}
               disabled={isPending || isExtracting}
               existingDocuments={existingDocuments}
               itemId={persistedItem?.id}
@@ -1171,176 +1152,7 @@ export function BomItemWizardDialog({
             />
           ) : null}
 
-          {step === "supplier" ? (
-            <div className="grid gap-4 lg:grid-cols-4">
-              <div className="lg:col-span-2">
-                <label className="field-label" htmlFor="bom-supplier-name">
-                  Supplier
-                </label>
-                <input
-                  id="bom-supplier-name"
-                  className="field-input"
-                  value={draft.supplierName ?? ""}
-                  onChange={(event) =>
-                    updateDraft({ supplierName: event.currentTarget.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="bom-supplier-sku">
-                  Supplier SKU
-                </label>
-                <input
-                  id="bom-supplier-sku"
-                  className="field-input"
-                  value={draft.supplierSku ?? ""}
-                  onChange={(event) =>
-                    updateDraft({ supplierSku: event.currentTarget.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="bom-unit-cost">
-                  Unit cost
-                </label>
-                <input
-                  id="bom-unit-cost"
-                  className="field-input"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={draft.unitCost ?? ""}
-                  onChange={(event) =>
-                    updateDraft({
-                      unitCost: toOptionalNumber(event.currentTarget.value)
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="bom-currency">
-                  Currency
-                </label>
-                <input
-                  id="bom-currency"
-                  className="field-input"
-                  list="bom-currency-options"
-                  value={draft.currency ?? ""}
-                  onChange={(event) =>
-                    updateDraft({ currency: event.currentTarget.value })
-                  }
-                />
-                <datalist id="bom-currency-options">
-                  {bomCurrencyOptions.map((currency) => (
-                    <option key={currency} value={currency} />
-                  ))}
-                </datalist>
-              </div>
-              <div>
-                <label className="field-label" htmlFor="bom-lead-time">
-                  Lead time days
-                </label>
-                <input
-                  id="bom-lead-time"
-                  className="field-input"
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={draft.leadTimeDays ?? ""}
-                  onChange={(event) =>
-                    updateDraft({
-                      leadTimeDays: toOptionalNumber(event.currentTarget.value)
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="bom-moq">
-                  MOQ
-                </label>
-                <input
-                  id="bom-moq"
-                  className="field-input"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={draft.minimumOrderQuantity ?? ""}
-                  onChange={(event) =>
-                    updateDraft({
-                      minimumOrderQuantity: toOptionalNumber(
-                        event.currentTarget.value
-                      )
-                    })
-                  }
-                />
-              </div>
-              <div className="lg:col-span-2">
-                <label className="field-label" htmlFor="bom-supplier-website">
-                  Website
-                </label>
-                <input
-                  id="bom-supplier-website"
-                  className="field-input"
-                  value={draft.supplierWebsite ?? ""}
-                  onChange={(event) =>
-                    updateDraft({ supplierWebsite: event.currentTarget.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="bom-supplier-contact">
-                  Contact
-                </label>
-                <input
-                  id="bom-supplier-contact"
-                  className="field-input"
-                  value={draft.supplierContactName ?? ""}
-                  onChange={(event) =>
-                    updateDraft({ supplierContactName: event.currentTarget.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="bom-supplier-email">
-                  Email
-                </label>
-                <input
-                  id="bom-supplier-email"
-                  className="field-input"
-                  value={draft.supplierEmail ?? ""}
-                  onChange={(event) =>
-                    updateDraft({ supplierEmail: event.currentTarget.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="bom-supplier-phone">
-                  Phone
-                </label>
-                <input
-                  id="bom-supplier-phone"
-                  className="field-input"
-                  value={draft.supplierPhone ?? ""}
-                  onChange={(event) =>
-                    updateDraft({ supplierPhone: event.currentTarget.value })
-                  }
-                />
-              </div>
-              <div className="lg:col-span-4">
-                <label className="field-label" htmlFor="bom-cost-notes">
-                  Cost notes
-                </label>
-                <textarea
-                  id="bom-cost-notes"
-                  className="field-input min-h-24"
-                  value={draft.costNotes ?? ""}
-                  onChange={(event) =>
-                    updateDraft({ costNotes: event.currentTarget.value })
-                  }
-                />
-              </div>
-            </div>
-          ) : null}
+          {step === "supplier" ? <BomItemCommercialFields draft={draft} onChange={updateDraft} /> : null}
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
@@ -1401,9 +1213,8 @@ export function BomItemWizardDialog({
         </div>
 
         {optionDialog ? (
-          <SmallOptionDialog
-            kind={optionDialog}
-            onClose={() => setOptionDialog(null)}
+          <ManufacturerOptionDialog
+            onClose={() => setOptionDialog(false)}
             onSaved={handleOptionSaved}
           />
         ) : null}

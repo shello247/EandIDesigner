@@ -36,14 +36,45 @@ async function dragRouteHandle(
     throw new Error("The route handle has no visible bounding box.");
   }
   const clientTarget = await drawingToClientPoint(page, target);
+  const overlay = page.locator('svg[aria-label="Interactive drawing overlay"]');
+  await overlay.evaluate((element) => {
+    const svg = element as SVGSVGElement;
+    delete svg.dataset.deliveredPointer;
+    const record = (event: PointerEvent) => {
+      const matrix = svg.getScreenCTM();
+      if (!matrix) throw new Error("The drawing overlay lost its screen transform.");
+      const point = svg.createSVGPoint();
+      point.x = event.clientX;
+      point.y = event.clientY;
+      const sheetPoint = point.matrixTransform(matrix.inverse());
+      svg.dataset.deliveredPointer = JSON.stringify({
+        x: sheetPoint.x, y: sheetPoint.y,
+        clientX: event.clientX, clientY: event.clientY
+      });
+    };
+    svg.addEventListener("pointermove", record, true);
+    svg.addEventListener("pointerup", () => svg.removeEventListener("pointermove", record, true), {
+      once: true, capture: true
+    });
+  });
 
   if (options?.alt) await page.keyboard.down("Alt");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(clientTarget.x, clientTarget.y, { steps: 4 });
+  // Firefox delivers integer CSS-pixel mouse coordinates. At fit zoom, asserting
+  // an unreachable subpixel sheet coordinate mistakes input quantization for drift.
+  const delivered = await overlay.evaluate((element) => {
+    const value = (element as SVGSVGElement).dataset.deliveredPointer;
+    if (!value) throw new Error("The canvas did not receive the drag pointer.");
+    return JSON.parse(value) as { x: number; y: number; clientX: number; clientY: number };
+  });
+  expect(Math.abs(delivered.clientX - clientTarget.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(delivered.clientY - clientTarget.y)).toBeLessThanOrEqual(1);
   if (options?.pauseBeforeRelease) return;
   await page.mouse.up();
   if (options?.alt) await page.keyboard.up("Alt");
+  return delivered;
 }
 
 async function routePointCenter(handle: Locator) {
@@ -81,8 +112,10 @@ test("snaps route points with guides and inserts new points on the clicked segme
     await expect(outerPoint).toBeVisible();
     const originalCount = await page.getByTestId("canvas-route-point").count();
 
-    await dragRouteHandle(page, outerPoint, { x: 38, y: 190 }, { alt: true });
-    expect((await routePointCenter(outerPoint)).x).toBeCloseTo(38, 1);
+    const delivered = await dragRouteHandle(page, outerPoint, { x: 38, y: 190 }, { alt: true });
+    if (!delivered) throw new Error("The completed drag has no delivered pointer.");
+    await expect.poll(async () => (await routePointCenter(outerPoint)).x).toBeCloseTo(delivered.x, 1);
+    await expect.poll(async () => (await routePointCenter(outerPoint)).y).toBeCloseTo(delivered.y, 1);
 
     await dragRouteHandle(
       page,

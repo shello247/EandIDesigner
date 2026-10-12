@@ -162,6 +162,7 @@ export function updateSectionTitlePage(
   sheetId: string,
   updates: Partial<DrawingSectionTitlePage>
 ): DrawingModel {
+  if (model.sheets.find((sheet) => sheet.id === sheetId)?.kind === "title_sheet") return model;
   const normalizedSubtitle =
     updates.subtitle === undefined
       ? undefined
@@ -214,7 +215,7 @@ export function addDrawingSheet(
   });
 
   const insertAt = Math.max(
-    0,
+    model.sheets[0]?.kind === "title_sheet" ? 1 : 0,
     Math.min(options.insertAt ?? model.sheets.length, model.sheets.length)
   );
 
@@ -263,7 +264,7 @@ export function addSectionTitlePage(
   };
 
   const insertAt = Math.max(
-    0,
+    model.sheets[0]?.kind === "title_sheet" ? 1 : 0,
     Math.min(options.insertAt ?? model.sheets.length, model.sheets.length)
   );
 
@@ -303,6 +304,8 @@ export function moveSheet(
   const currentIndex = model.sheets.findIndex((sheet) => sheet.id === sheetId);
   const nextIndex = currentIndex + direction;
 
+  if (model.sheets[currentIndex]?.kind === "title_sheet" || model.sheets[nextIndex]?.kind === "title_sheet") return model;
+
   if (
     currentIndex < 0 ||
     nextIndex < 0 ||
@@ -326,6 +329,7 @@ export function moveSheetToEnd(
   sheetId: string
 ): DrawingModel {
   const currentIndex = model.sheets.findIndex((sheet) => sheet.id === sheetId);
+  if (model.sheets[currentIndex]?.kind === "title_sheet") return model;
 
   if (currentIndex < 0 || currentIndex === model.sheets.length - 1) {
     return model;

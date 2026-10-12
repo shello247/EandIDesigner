@@ -43,14 +43,12 @@ function deviceSymbol(): ApprovedDrawingSymbol {
           label: "Input",
           anchorKey: "IN",
           panelSide: "single",
-          requiredForWiring: true
         },
         {
           key: "OUT",
           label: "Output",
           anchorKey: "OUT",
           panelSide: "single",
-          requiredForWiring: true
         }
       ],
       panelWiring: { assetType: "relay", tagPrefix: "K" }

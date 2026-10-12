@@ -1,4 +1,5 @@
 import { expect, test } from "./drawing-test";
+import { confirmCanvasPlacement } from "./drawing-placement-helpers";
 import {
   createE2ePanelComponentPackage,
   deleteE2eDrawing,
@@ -16,12 +17,7 @@ test("references and reloads panel equipment defined before Detailed Panel wirin
     await page.goto(`/drawings/${fixture.drawingId}`);
     await page.getByRole("button", { name: "Open sheet loader" }).click();
     const sheetLoader = page.getByRole("dialog", { name: "Sheet Loader" });
-    const expandFrontMatter = sheetLoader.getByRole("button", {
-      name: "Expand Front Matter"
-    });
-    if (await expandFrontMatter.count()) {
-      await expandFrontMatter.click();
-    }
+    await expect(sheetLoader.getByRole("button", { name: "Collapse Package Information" })).toHaveAttribute("aria-expanded", "true");
     await sheetLoader
       .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
       .getByRole("button", { name: "Load" })
@@ -32,9 +28,10 @@ test("references and reloads panel equipment defined before Detailed Panel wirin
     await expect(breakerRow).toContainText("Available");
     await breakerRow.getByRole("button", { name: "Add", exact: true }).click();
 
-    await expect(page.getByTestId("drawing-toast")).toContainText(
-      "MCB-101 placed"
-    );
+    await expect(page.getByTestId("placement-tag")).toHaveText("MCB-101");
+    await confirmCanvasPlacement(page);
+    await expect(page.getByTestId("placement-session")).toHaveCount(0);
+    await openPanelEngineeringWorkbench(page);
     await expect(breakerRow).toContainText("Represented");
     await queue.getByRole("button", { name: "Close", exact: true }).click();
     const properties = page.getByLabel("Drawing properties", { exact: true });
@@ -67,12 +64,7 @@ test("references and reloads panel equipment defined before Detailed Panel wirin
     await page.reload();
     await page.getByRole("button", { name: "Open sheet loader" }).click();
     const reloadedSheetLoader = page.getByRole("dialog", { name: "Sheet Loader" });
-    const reloadedExpandFrontMatter = reloadedSheetLoader.getByRole("button", {
-      name: "Expand Front Matter"
-    });
-    if (await reloadedExpandFrontMatter.count()) {
-      await reloadedExpandFrontMatter.click();
-    }
+    await expect(reloadedSheetLoader.getByRole("button", { name: "Collapse Package Information" })).toHaveAttribute("aria-expanded", "true");
     await reloadedSheetLoader
       .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
       .getByRole("button", { name: "Load" })
@@ -93,7 +85,8 @@ test("references and reloads panel equipment defined before Detailed Panel wirin
     }
     expect(createAssetBox.width).toBeGreaterThanOrEqual(22);
     expect(createAssetBox.width).toBeLessThanOrEqual(25);
-    expect(createAssetBox.height).toBe(createAssetBox.width);
+    // Firefox may report a few millionths of a CSS pixel of layout rounding.
+    expect(createAssetBox.height).toBeCloseTo(createAssetBox.width, 4);
     expect(createAssetBox.x - (managerTitleBox.x + managerTitleBox.width)).toBeLessThanOrEqual(12);
     await expect(createAsset).toHaveAttribute("title", "Create asset");
     await expect(createAsset).not.toContainText("Create asset");
@@ -108,13 +101,13 @@ test("references and reloads panel equipment defined before Detailed Panel wirin
     ).toBeVisible();
     await expect(manager.getByRole("textbox", { name: "Tag" })).toHaveCount(0);
     const assetCategories = manager.getByRole("group", {
-      name: "Asset categories"
+      name: "Asset Device Types"
     });
     const breakerCategory = assetCategories.getByRole("button", {
-      name: /Breakers.*1 asset/
+      name: /Circuit Breaker.*1 asset/
     });
-    await expect(breakerCategory).toHaveAttribute("title", "Breakers");
-    await expect(breakerCategory).not.toContainText("Breakers");
+    await expect(breakerCategory).toHaveAttribute("title", "Circuit Breaker");
+    await expect(breakerCategory).not.toContainText("Circuit Breaker");
     await breakerCategory.click();
     await expect(manager).toContainText("MCB-101");
     const managedBreaker = manager.getByRole("button", { name: /^MCB-101 / });
@@ -188,10 +181,20 @@ test("references and reloads panel equipment defined before Detailed Panel wirin
     }
     await approvedSymbolSelect.selectOption(approvedSymbolValue);
     await expect(approvedSymbolSelect).toHaveValue(approvedSymbolValue);
+    // A linked breaker must not inherit the form's Instrument default.
     await manager
       .getByRole("button", { name: "Create asset", exact: true })
       .last()
       .click();
+    await expect(manager.getByText("Choose a Symbol with the same explicit Device Type. Review its classification first if missing.")).toBeVisible();
+    await expect(manager.getByRole("textbox", { name: "Tag" })).toHaveValue("E2E-ASSET-101");
+    await manager.getByLabel("Device Type", { exact: true }).selectOption("breaker");
+    // The existing type selector regenerates the draft's default tag/title.
+    await expect(manager.getByRole("textbox", { name: "Tag" })).toHaveValue("MCB-102");
+    await manager.getByRole("textbox", { name: "Tag" }).fill("E2E-ASSET-101");
+    await manager.getByRole("textbox", { name: "Title" }).fill("Created Asset Selection Check");
+    await expect(approvedSymbolSelect).toHaveValue(approvedSymbolValue);
+    await manager.getByRole("button", { name: "Create asset", exact: true }).last().click();
     await expect(
       manager.getByRole("heading", { name: "E2E-ASSET-101", exact: true })
     ).toBeVisible();

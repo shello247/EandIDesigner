@@ -47,7 +47,6 @@ function symbol(input: {
           key: input.anchorKey,
           label: input.anchorKey,
           anchorKey: input.anchorKey,
-          requiredForWiring: true
         }
       ]
     }

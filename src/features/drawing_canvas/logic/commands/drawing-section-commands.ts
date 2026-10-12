@@ -56,6 +56,7 @@ export function moveSheetWithinSection(
   sheetId: string,
   direction: -1 | 1
 ): DrawingModel {
+  if (model.sheets.find((sheet) => sheet.id === sheetId)?.kind === "title_sheet") return model;
   const index = buildDrawingSectionIndex(model);
   const membership = index.membershipBySheetId.get(sheetId);
   if (!membership || (membership.kind === "section" && membership.isTitlePage)) {
@@ -70,6 +71,7 @@ export function moveSheetWithinSection(
   const currentGroupIndex = groupSheetIds.indexOf(sheetId);
   const targetSheetId = groupSheetIds[currentGroupIndex + direction];
   if (!targetSheetId) return model;
+  if (model.sheets.find((sheet) => sheet.id === targetSheetId)?.kind === "title_sheet") return model;
 
   const currentIndex = model.sheets.findIndex((sheet) => sheet.id === sheetId);
   const targetIndex = model.sheets.findIndex(
@@ -90,6 +92,7 @@ export function moveSheetToSectionEnd(
   model: DrawingModel,
   sheetId: string
 ): DrawingModel {
+  if (model.sheets.find((sheet) => sheet.id === sheetId)?.kind === "title_sheet") return model;
   const index = buildDrawingSectionIndex(model);
   const membership = index.membershipBySheetId.get(sheetId);
   if (!membership || (membership.kind === "section" && membership.isTitlePage)) {
@@ -117,6 +120,7 @@ export function moveSheetToDrawingSection(
   sheetId: string,
   target: DrawingSectionTarget
 ): DrawingModel {
+  if (model.sheets.find((sheet) => sheet.id === sheetId)?.kind === "title_sheet") return model;
   const initialIndex = buildDrawingSectionIndex(model);
   const membership = initialIndex.membershipBySheetId.get(sheetId);
   if (!membership || (membership.kind === "section" && membership.isTitlePage)) {

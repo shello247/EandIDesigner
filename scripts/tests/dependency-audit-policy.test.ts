@@ -72,18 +72,56 @@ function evaluate(value: unknown, now = evaluationDate) {
 }
 
 describe("dependency audit policy", () => {
-  it("has no production exceptions and accepts a clean report", () => {
-    expect(DEFAULT_AUDIT_ALLOWLIST).toEqual([]);
+  it("has only the approved, dated tooling exception and no production exceptions", () => {
+    expect(DEFAULT_AUDIT_ALLOWLIST).toHaveLength(1);
+    expect(DEFAULT_AUDIT_ALLOWLIST[0]).toMatchObject({
+      advisoryId: "GHSA-vfj7-8cjw-p6xm", maximumSeverity: "high", expiresOn: "2026-10-22",
+      packages: ["braces", "micromatch", "fast-glob", "@next/eslint-plugin-next", "eslint-config-next"]
+    });
     expect(evaluateAuditReport(parseAuditReport({
       auditReportVersion: 2, vulnerabilities: {}
-    })).passed).toBe(true);
+    }), { allowlist: [], threshold: "info" }).passed).toBe(true);
+  });
+
+  function toolingReport(): TestAuditReport {
+    return { auditReportVersion: 2, vulnerabilities: {
+      braces: { name: "braces", severity: "high", via: [advisory("GHSA-vfj7-8cjw-p6xm", "high")] },
+      micromatch: { name: "micromatch", severity: "high", via: ["braces"] },
+      "fast-glob": { name: "fast-glob", severity: "high", via: ["micromatch"] },
+      "@next/eslint-plugin-next": { name: "@next/eslint-plugin-next", severity: "high", via: ["fast-glob"] },
+      "eslint-config-next": { name: "eslint-config-next", severity: "high", via: ["@next/eslint-plugin-next"] }
+    } };
+  }
+
+  it("accepts the tooling chain through 22 October but blocks it after expiry", () => {
+    const report = toolingReport();
+    expect(evaluateAuditReport(report, { now: new Date("2026-10-22T23:59:59.000Z") }).passed).toBe(true);
+    expect(evaluateAuditReport(report, { now: new Date("2026-10-23T00:00:00.000Z") }).passed).toBe(false);
+  });
+
+  it("never accepts the tooling advisory if it enters production", () => {
+    const result = evaluateAuditReport(toolingReport(), { allowlist: [], threshold: "info" });
+    expect(result.passed).toBe(false);
+    expect(result.accepted).toHaveLength(0);
+    expect(result.blocking).toHaveLength(5);
+  });
+
+  it("blocks critical severity, expanded chains and stale tooling exceptions", () => {
+    const options = { now: new Date("2026-10-08T12:00:00.000Z") };
+    const critical = toolingReport();
+    critical.vulnerabilities.braces.severity = "critical";
+    expect(evaluateAuditReport(critical, options).passed).toBe(false);
+    const expanded = toolingReport();
+    expanded.vulnerabilities.next = { name: "next", severity: "high", via: ["braces"] };
+    expect(evaluateAuditReport(expanded, options).blocking.some((finding) => finding.packageName === "next")).toBe(true);
+    expect(evaluateAuditReport({ auditReportVersion: 2, vulnerabilities: {} }, options).passed).toBe(false);
   });
 
   it("blocks the previously excepted chains under the current policy", () => {
     const result = evaluateAuditReport(parseAuditReport(currentAuditReport()));
     expect(result.passed).toBe(false);
     expect(result.accepted).toEqual([]);
-    expect(result.blocking.map((finding) => finding.packageName).sort()).toEqual([
+    expect(result.blocking.filter((finding) => !finding.packageName.startsWith("policy:")).map((finding) => finding.packageName).sort()).toEqual([
       "exceljs", "next", "postcss", "uuid"
     ]);
   });

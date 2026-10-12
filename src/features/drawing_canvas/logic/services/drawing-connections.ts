@@ -5,15 +5,8 @@ import type {
   DrawingPlacement
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
-import {
-  getRenderableSymbolForPlacement,
-  packageSymbolKey
-} from "./drawing-generated-symbols";
+import { getRenderableSymbolForPlacement } from "./drawing-generated-symbols";
 import { deriveWireId } from "./drawing-identification";
-
-function packageKey(symbolId: string, versionId: string): string {
-  return packageSymbolKey(symbolId, versionId);
-}
 
 export function endpointKey(endpoint: DrawingEndpoint): string {
   return `${endpoint.placementId}:${endpoint.anchorKey}`;
@@ -188,49 +181,4 @@ export function createConnectionFromEndpoints(input: {
       ...getConnectionCableDefaults(input.model, input.from, input.to)
     }
   };
-}
-
-export function getUnconnectedRequiredTerminals(
-  model: DrawingModel,
-  symbols: ApprovedDrawingSymbol[]
-) {
-  const symbolsByPlacementKey = new Map(
-    symbols.map((symbol) => [
-      packageKey(symbol.symbolId, symbol.versionId),
-      symbol
-    ])
-  );
-  const connectedEndpointKeys = new Set(
-    model.connections.flatMap((connection) => [
-      endpointKey(connection.from),
-      endpointKey(connection.to)
-    ])
-  );
-
-  return model.placements.flatMap((placement) => {
-    const symbol = symbolsByPlacementKey.get(
-      packageKey(placement.symbolId, placement.versionId)
-    );
-
-    if (!symbol) {
-      return [];
-    }
-
-    return symbol.metadata.terminals
-      .filter(
-        (terminal) =>
-          terminal.requiredForWiring &&
-          !connectedEndpointKeys.has(
-            endpointKey({
-              placementId: placement.id,
-              anchorKey: terminal.anchorKey
-            })
-          )
-      )
-      .map((terminal) => ({
-        placement,
-        symbol,
-        terminal
-      }));
-  });
 }

@@ -24,7 +24,6 @@ function hotspot(anchorKey: string, x: number): AnchorHotspot {
       label: anchorKey,
       anchorKey,
       panelSide: "internal",
-      requiredForWiring: true
     },
     point: { x, y: 20 }
   };

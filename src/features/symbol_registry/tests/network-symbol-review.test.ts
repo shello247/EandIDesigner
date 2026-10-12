@@ -4,11 +4,6 @@ import {
   buildNetworkProfileFromReviewDraft,
   createNetworkProfileReviewDraft
 } from "../logic/services/network-profile-review-draft";
-import {
-  assertSymbolVersionEditable,
-  isSymbolVersionEditable
-} from "../logic/services/symbol-version-lifecycle";
-import { canApproveSymbolVersion } from "../logic/use_cases/approve-symbol-version";
 import { validateSymbol } from "../logic/use_cases/validate-symbol";
 
 const validSvg =
@@ -40,15 +35,15 @@ const validNetworkMetadata: SymbolMetadata = {
 };
 
 describe("network symbol review", () => {
-  it("allows a valid network symbol to be approved", () => {
-    const result = canApproveSymbolVersion(validSvg, validNetworkMetadata);
+  it("accepts valid network symbol data", () => {
+    const result = validateSymbol(validSvg, validNetworkMetadata);
 
-    expect(result.ok).toBe(true);
-    expect(result.result.blockingIssueCount).toBe(0);
+    expect(result.metadata).toBeDefined();
+    expect(result.blockingIssueCount).toBe(0);
   });
 
-  it("blocks approval when the network profile has no ports", () => {
-    const result = canApproveSymbolVersion(validSvg, {
+  it("rejects a network profile with no ports", () => {
+    const result = validateSymbol(validSvg, {
       ...validNetworkMetadata,
       networkProfile: {
         ...validNetworkMetadata.networkProfile!,
@@ -56,8 +51,8 @@ describe("network symbol review", () => {
       }
     });
 
-    expect(result.ok).toBe(false);
-    expect(result.result.issues.map((issue) => issue.code)).toContain(
+    expect(result.blockingIssueCount).toBeGreaterThan(0);
+    expect(result.issues.map((issue) => issue.code)).toContain(
       "NETWORK_PORT_REQUIRED"
     );
   });
@@ -84,13 +79,13 @@ describe("network symbol review", () => {
   });
 
   it("blocks network port anchors outside the SVG viewBox", () => {
-    const result = canApproveSymbolVersion(validSvg, {
+    const result = validateSymbol(validSvg, {
       ...validNetworkMetadata,
       anchors: [{ key: "ETH1", x: 125, y: 80, kind: "network_port" }]
     });
 
-    expect(result.ok).toBe(false);
-    expect(result.result.issues.map((issue) => issue.code)).toContain(
+    expect(result.blockingIssueCount).toBeGreaterThan(0);
+    expect(result.issues.map((issue) => issue.code)).toContain(
       "ANCHOR_OUT_OF_BOUNDS"
     );
   });
@@ -115,16 +110,4 @@ describe("network symbol review", () => {
     });
   });
 
-  it("only permits draft and needs-review versions to be edited", () => {
-    expect(isSymbolVersionEditable("draft")).toBe(true);
-    expect(isSymbolVersionEditable("needs_review")).toBe(true);
-    expect(isSymbolVersionEditable("approved")).toBe(false);
-    expect(isSymbolVersionEditable("archived")).toBe(false);
-    expect(() => assertSymbolVersionEditable("approved")).toThrow(
-      /controlled artwork/i
-    );
-    expect(() => assertSymbolVersionEditable("archived")).toThrow(
-      /controlled artwork/i
-    );
-  });
 });
