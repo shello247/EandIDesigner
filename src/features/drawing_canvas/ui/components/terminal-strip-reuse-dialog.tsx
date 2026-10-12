@@ -335,7 +335,7 @@ export function TerminalStripReuseDialog({
             disabled={!canSubmit}
             onClick={submit}
           >
-            {mode === "copy_as_new" ? "Copy terminal strip" : "Place representation"}
+            Continue to placement
           </button>
         </div>
       </div>

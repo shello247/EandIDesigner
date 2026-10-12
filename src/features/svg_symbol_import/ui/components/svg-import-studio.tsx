@@ -26,7 +26,6 @@ import {
   type SymbolMetadataFormState
 } from "./symbol-metadata-form";
 import { TerminalAnchorEditor } from "./terminal-anchor-editor";
-import type { SymbolCategoryRecord } from "@/features/symbol_categories/api/public";
 
 function symbolKeyFromName(value: string): string {
   const normalized = value
@@ -47,18 +46,13 @@ function displayNameFromFile(value: string): string {
     .trim();
 }
 
-function createInitialForm(
-  categories: SymbolCategoryRecord[]
-): SymbolMetadataFormState {
-  const otherCategory =
-    categories.find((category) => category.name === "Other") ?? categories[0];
-
+function createInitialForm(): SymbolMetadataFormState {
   return {
     symbolKey: "",
     displayName: "",
     manufacturer: "",
     model: "",
-    categoryId: otherCategory?.id ?? "",
+    deviceType: "",
     technicalKind: "other",
     layoutUsage: "wiring",
     physicalWidthMm: "",
@@ -66,7 +60,6 @@ function createInitialForm(
     mountingType: "",
     resizable: false,
     panelWiringEnabled: false,
-    panelWiringAssetType: "other",
     panelWiringTagPrefix: "EQ",
     panelWiringSchematicScale: ""
   };
@@ -78,16 +71,12 @@ const initialNetworkProfile: SvgImportNetworkProfileDraft = {
   ports: []
 };
 
-export function SvgImportStudio({
-  categories
-}: {
-  categories: SymbolCategoryRecord[];
-}) {
+export function SvgImportStudio() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [preview, setPreview] = useState<SvgImportPreview | null>(null);
   const [form, setForm] = useState<SymbolMetadataFormState>(() =>
-    createInitialForm(categories)
+    createInitialForm()
   );
   const [anchors, setAnchors] = useState<SymbolAnchor[]>([]);
   const [terminals, setTerminals] = useState<SymbolTerminal[]>([]);
@@ -113,7 +102,7 @@ export function SvgImportStudio({
     preview !== null &&
     form.displayName.trim().length > 0 &&
     form.symbolKey.trim().length > 0 &&
-    form.categoryId.length > 0 &&
+    form.deviceType.length > 0 &&
     networkProfileReady;
 
   const parseFile = (file: File) => {
@@ -154,7 +143,7 @@ export function SvgImportStudio({
   };
 
   const saveImport = () => {
-    if (!preview) {
+    if (!preview || !form.deviceType) {
       return;
     }
 
@@ -165,6 +154,7 @@ export function SvgImportStudio({
       try {
         metadata = buildImportedSymbolMetadata({
           ...form,
+          panelWiringAssetType: form.deviceType || undefined,
           viewBox: preview.viewBox,
           anchors,
           terminals,
@@ -179,7 +169,7 @@ export function SvgImportStudio({
       const result = await saveImportedSvgSymbolAction({
         svg: preview.svg,
         sourceAsset: preview.sourceAsset,
-        categoryId: form.categoryId,
+        deviceType: form.deviceType || undefined,
         metadata
       });
 
@@ -221,7 +211,6 @@ export function SvgImportStudio({
           />
           <SymbolMetadataForm
             form={form}
-            categories={categories}
             disabled={isPending}
             onChange={(updates) =>
               setForm((current) => ({

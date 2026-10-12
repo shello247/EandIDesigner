@@ -42,14 +42,12 @@ const symbol: ApprovedDrawingSymbol = {
         label: "1",
         anchorKey: "T1",
         panelSide: "single",
-        requiredForWiring: false
       },
       {
         key: "T2",
         label: "2",
         anchorKey: "T2",
         panelSide: "single",
-        requiredForWiring: false
       }
     ]
   }

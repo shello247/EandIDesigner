@@ -52,6 +52,24 @@ const PROTECTION_RATED_TYPES = [
 ] as const;
 
 const definitions = [
+  { key: "pole_count", version: 1, label: "Pole count", description: "Number of switching poles.",
+    category: "protection", valueKind: "number", minimum: 1, maximum: 16, precision: 0,
+    applicableAssetTypes: ["breaker", "fuse", "isolator"], copyPolicy: "copy" },
+  { key: "trip_characteristic", version: 1, label: "Trip characteristic", description: "Manufacturer trip curve designation; not inferred from the description.",
+    category: "protection", valueKind: "text", maximumTextLength: 120,
+    applicableAssetTypes: ["breaker"], copyPolicy: "copy" },
+  { key: "voltage_conditions", version: 1, label: "Voltage rating conditions", description: "Applicable line/phase voltage conditions and manufacturer limitations.",
+    category: "supply", valueKind: "text", maximumTextLength: 400,
+    applicableAssetTypes: ELECTRICAL_ASSET_TYPES, copyPolicy: "copy" },
+  { key: "mounting_method", version: 1, label: "Mounting method", description: "Manufacturer mounting arrangement.",
+    category: "documentation", valueKind: "text", maximumTextLength: 400,
+    applicableAssetTypes: [...ALL_MANAGED_ASSET_TYPES], copyPolicy: "copy" },
+  ...(["width", "height", "depth"] as const).map((axis): Omit<EngineeringAttributeDefinition, "status"> => ({
+    key: `physical_${axis}`, version: 1, label: `Physical ${axis}`, description: `Manufacturer overall ${axis}, including the stated source conditions.`,
+    category: "documentation", valueKind: "quantity", engineeringDimension: "length",
+    canonicalUnit: "mm", allowedUnits: ["mm", "cm", "m"], minimum: 0, minimumExclusive: true, precision: 6,
+    applicableAssetTypes: [...ALL_MANAGED_ASSET_TYPES], copyPolicy: "copy"
+  })),
   {
     key: "engineering_purpose",
     version: 1,

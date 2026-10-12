@@ -62,7 +62,9 @@ async function requireApprovedSymbol(symbolKey: string): Promise<FixtureSymbol> 
   };
 }
 
-export async function createE2eNmt81ToNrf81Drawing(): Promise<string> {
+export async function createE2eNmt81ToNrf81Drawing(
+  options: { omitConnectionIds?: readonly string[] } = {}
+): Promise<string> {
   const [nmt81, nrf81, cable] = await Promise.all([
     requireApprovedSymbol("nmt81_average_temperature_probe"),
     requireApprovedSymbol("nrf81_tank_side_monitor"),
@@ -169,6 +171,12 @@ export async function createE2eNmt81ToNrf81Drawing(): Promise<string> {
       }
     ]
   };
+  if (options.omitConnectionIds?.length) {
+    const omitted = new Set(options.omitConnectionIds);
+    model.sheets[0].connections = model.sheets[0].connections.filter(
+      connection => !omitted.has(connection.id)
+    );
+  }
   const row = await prisma.drawing.create({
     data: {
       drawingKey: `e2e_nmt81_to_nrf81_wiring_${Date.now()}_${Math.random()
@@ -203,6 +211,7 @@ export async function createE2eConnectedWireScheduleDrawing(): Promise<{
         create: {
           versionNumber: 1,
           status: "approved",
+          deviceType: "other",
           svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 50"><rect x=".5" y=".5" width="29" height="49" fill="white" stroke="#334155"/><circle cx="28" cy="12" r="1.5" fill="none" stroke="#0f766e"/><circle cx="28" cy="25" r="1.5" fill="none" stroke="#0f766e"/><circle cx="28" cy="38" r="1.5" fill="none" stroke="#0f766e"/></svg>',
           metadataJson: stringifyMetadata({
             symbolKey,
@@ -221,7 +230,6 @@ export async function createE2eConnectedWireScheduleDrawing(): Promise<{
               key,
               label: key,
               anchorKey: key,
-              requiredForWiring: true
             }))
           })
         }
@@ -467,6 +475,7 @@ export async function createE2eWireHitTestingDrawing(): Promise<{
         create: {
           versionNumber: 1,
           status: "approved",
+          deviceType: "other",
           svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="white" stroke="#334155"/><circle cx="5" cy="5" r="1.5" fill="none" stroke="#0f766e"/></svg>',
           metadataJson: stringifyMetadata({
             symbolKey,
@@ -480,7 +489,6 @@ export async function createE2eWireHitTestingDrawing(): Promise<{
                 key: "T",
                 label: "Terminal",
                 anchorKey: "T",
-                requiredForWiring: true
               }
             ]
           })
@@ -616,6 +624,7 @@ export async function createE2ePlacementLabelDrawing(): Promise<{
         create: {
           versionNumber: 1,
           status: "approved",
+          deviceType: "other",
           svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><rect x="1" y="1" width="98" height="78" fill="white" stroke="#334155"/></svg>',
           metadataJson: stringifyMetadata({
             symbolKey,
@@ -929,6 +938,106 @@ export async function createE2ePanelQualityPackage(): Promise<string> {
   return drawingId;
 }
 
+export async function createE2eTerminalOccupancyPackage(): Promise<{
+  drawingId: string;
+  firstConnectionId: string;
+  conflictingConnectionId: string;
+  editableConnectionId: string;
+}> {
+  const drawingId = await createE2ePanelDiscoveryPackage();
+  const row = await prisma.drawing.findUniqueOrThrow({
+    where: { id: drawingId },
+    select: { modelJson: true }
+  });
+  const model = parseDrawingModelJson(row.modelJson);
+  const fieldSheet = model.sheets.find((sheet) => sheet.id === "sheet_field")!;
+  const sourceTerminal = fieldSheet.placements.find(
+    (placement) => placement.tag === "TB-101"
+  )!;
+  const terminal = {
+    ...sourceTerminal,
+    id: "placement_tb_101_second_occurrence"
+  };
+  const conflictingCable = {
+    ...fieldSheet.placements.find((placement) => placement.tag === "C-101")!,
+    id: "placement_cable_202",
+    assetId: "asset_cable_202",
+    tag: "C-202",
+    x: 65,
+    y: 70
+  };
+  const editableCable = {
+    ...conflictingCable,
+    id: "placement_cable_203",
+    assetId: "asset_cable_203",
+    tag: "C-203",
+    y: 145
+  };
+  const conflictingConnectionId = "connection_cross_sheet_conflict";
+  const editableConnectionId = "connection_cross_sheet_editable";
+  const secondSheet = {
+    ...createDefaultDrawingSheet({
+      id: "sheet_second_terminal_occurrence",
+      name: "Second TB-101 occurrence"
+    }),
+    placements: [conflictingCable, editableCable, terminal],
+    connections: [
+      {
+        id: conflictingConnectionId,
+        from: {
+          placementId: conflictingCable.id,
+          anchorKey: "CH1_T1"
+        },
+        to: { placementId: terminal.id, anchorKey: "T1_BOTTOM" },
+        wireId: "C-202-P1-WHT",
+        cablePlacementId: conflictingCable.id,
+        conductorKey: "P1-WHT"
+      },
+      {
+        id: editableConnectionId,
+        from: {
+          placementId: editableCable.id,
+          anchorKey: "CH2_T1"
+        },
+        to: { placementId: terminal.id, anchorKey: "T2_BOTTOM" },
+        wireId: "C-203-P2-BLK",
+        cablePlacementId: editableCable.id,
+        conductorKey: "P2-BLK"
+      }
+    ]
+  };
+  const firstConnectionId = "connection_field_tb_101_1";
+  const nextModel: DrawingModel = {
+    ...model,
+    assets: [
+      ...model.assets,
+      {
+        id: conflictingCable.assetId,
+        tag: conflictingCable.tag,
+        type: "cable",
+        title: "Cross-sheet conflict cable"
+      },
+      {
+        id: editableCable.assetId,
+        tag: editableCable.tag,
+        type: "cable",
+        title: "Editable cable"
+      }
+    ],
+    sheets: [...model.sheets, secondSheet]
+  };
+  await prisma.drawing.update({
+    where: { id: drawingId },
+    data: { modelJson: stringifyDrawingModel(nextModel) }
+  });
+  return {
+    drawingId,
+    firstConnectionId,
+    conflictingConnectionId,
+    editableConnectionId
+  };
+}
+
 export async function createE2eGenericPanelReleasePackage(): Promise<string> {
   const base = createDefaultDrawingModel();
   const fieldSheet = createDefaultDrawingSheet({
@@ -1052,6 +1161,7 @@ export async function createE2ePanelComponentPackage(): Promise<{
         create: {
           versionNumber: 1,
           status: "approved",
+          deviceType: "breaker",
           svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 80"><rect x="8" y="8" width="44" height="64" fill="white" stroke="#334155"/><line x1="30" y1="8" x2="30" y2="72" stroke="#334155"/></svg>',
           metadataJson: stringifyMetadata({
             symbolKey: `e2e_panel_breaker_${unique}`,
@@ -1068,14 +1178,12 @@ export async function createE2ePanelComponentPackage(): Promise<{
                 label: "Line",
                 anchorKey: "LINE",
                 panelSide: "single",
-                requiredForWiring: true
               },
               {
                 key: "T",
                 label: "Load",
                 anchorKey: "LOAD",
                 panelSide: "single",
-                requiredForWiring: true
               }
             ],
             panelWiring: {
@@ -1212,7 +1320,12 @@ export async function createE2eTerminalBlockGroupPackage(): Promise<{
   endBracketSymbolId: string;
 }> {
   await prisma.symbol.deleteMany({
-    where: { symbolKey: { startsWith: "e2e_terminal_group_module_" } }
+    // Recover both fixture components after an interrupted test. Otherwise a
+    // leftover default bracket makes the next isolated builder ambiguous.
+    where: { OR: [
+      { symbolKey: { startsWith: "e2e_terminal_group_module_" } },
+      { symbolKey: { startsWith: "e2e_terminal_group_bracket_" } }
+    ] }
   });
   const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const symbolKey = `e2e_terminal_group_module_${unique}`;
@@ -1228,6 +1341,7 @@ export async function createE2eTerminalBlockGroupPackage(): Promise<{
         create: {
           versionNumber: 1,
           status: "approved",
+          deviceType: "terminal_block",
           svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 178"><rect x="0.25" y="0.25" width="19.5" height="177.5" fill="white" stroke="#334155"/><circle cx="10" cy="50" r="5" fill="none" stroke="#334155"/><circle cx="10" cy="128" r="5" fill="none" stroke="#334155"/></svg>',
           metadataJson: stringifyMetadata({
             symbolKey,
@@ -1258,14 +1372,12 @@ export async function createE2eTerminalBlockGroupPackage(): Promise<{
                 label: "1",
                 anchorKey: "left",
                 panelSide: "external",
-                requiredForWiring: true
               },
               {
                 key: "2",
                 label: "2",
                 anchorKey: "right",
                 panelSide: "internal",
-                requiredForWiring: true
               }
             ]
           })
@@ -1285,6 +1397,7 @@ export async function createE2eTerminalBlockGroupPackage(): Promise<{
         create: {
           versionNumber: 1,
           status: "approved",
+          deviceType: "other",
           svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 131"><rect x="0.25" y="0.25" width="19.5" height="130.5" fill="#e2e8f0" stroke="#334155"/></svg>',
           metadataJson: stringifyMetadata({
             symbolKey: `e2e_terminal_group_bracket_${unique}`,
@@ -1572,6 +1685,7 @@ export async function createE2eDinRailResizePackage(): Promise<{
         create: {
           versionNumber: 1,
           status: "approved",
+          deviceType: "din_rail",
           svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 35"><rect x="0.5" y="0.5" width="299" height="34" fill="#f8fafc" stroke="#475569"/><path d="M20 17.5h260" stroke="#94a3b8" stroke-dasharray="8 6"/></svg>',
           metadataJson: stringifyMetadata({
             symbolKey,

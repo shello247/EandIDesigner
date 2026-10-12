@@ -4,13 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, PackageCheck, PackageX } from "lucide-react";
 import { useTransition } from "react";
-import type { SymbolListItem, SymbolListPage } from "../../types";
+import type { SymbolListPage } from "../../types";
+import { DEVICE_TYPE_OPTIONS, getDeviceTypeLabel } from "@/shared/device-classification/device-types";
 import { buildSymbolRegistryListUrl } from "../../logic/services/symbol-registry-list-url";
 import { SymbolDeleteButton } from "./symbol-delete-button";
 import { SymbolStatusBadge } from "./symbol-status-badge";
 
 type SymbolTableProps = {
-  categories: Array<SymbolListItem["category"]>;
   result: SymbolListPage;
 };
 
@@ -72,19 +72,19 @@ function PageControl({
   );
 }
 
-export function SymbolTable({ categories, result }: SymbolTableProps) {
+export function SymbolTable({ result }: SymbolTableProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const selectedCategoryId = result.categoryId ?? "all";
+  const selectedType = result.deviceType ?? "all";
 
-  if (result.totalCount === 0 && !result.categoryId) {
+  if (result.totalCount === 0 && !result.deviceType) {
     return (
       <div className="tool-panel flex min-h-[260px] items-center justify-center p-8 text-center">
         <div>
           <h2 className="text-lg font-bold">No symbols yet</h2>
           <p className="mt-2 max-w-md text-sm text-slate-600">
-            Import an approved SVG symbol, validate its terminal map, then
-            approve it into the registry.
+            Import an SVG symbol, complete its terminal details, and save it
+            for use in drawings.
           </p>
         </div>
       </div>
@@ -95,28 +95,29 @@ export function SymbolTable({ categories, result }: SymbolTableProps) {
     <div className="tool-panel overflow-hidden">
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 px-3 py-2">
         <label className="grid min-w-56 gap-1 text-xs font-semibold text-slate-700">
-          Category
+          Device Type
           <select
-            aria-label="Filter symbols by category"
+            aria-label="Filter symbols by Device Type"
             className="field-control h-9 py-1.5"
             disabled={isPending}
             onChange={(event) => {
-              const categoryId = event.currentTarget.value;
+              const deviceType = event.currentTarget.value;
               startTransition(() => {
                 router.push(
                   buildSymbolRegistryListUrl({
-                    categoryId: categoryId === "all" ? undefined : categoryId,
+                    deviceType: deviceType === "all" ? undefined : deviceType,
                     page: 1
                   })
                 );
               });
             }}
-            value={selectedCategoryId}
+            value={selectedType}
           >
-            <option value="all">All categories</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
+            <option value="all">All Device Types</option>
+            <option value="needs_classification">Needs classification</option>
+            {DEVICE_TYPE_OPTIONS.map((type) => (
+              <option key={type.value} value={type.value}>
+                {type.label}
               </option>
             ))}
           </select>
@@ -137,7 +138,7 @@ export function SymbolTable({ categories, result }: SymbolTableProps) {
         <thead>
           <tr>
             <th>Symbol</th>
-            <th>Category</th>
+            <th>Device Type</th>
             <th>Status</th>
             <th>Item association</th>
             <th>Version</th>
@@ -156,7 +157,7 @@ export function SymbolTable({ categories, result }: SymbolTableProps) {
                 </Link>
               </td>
               <td className="whitespace-nowrap">
-                {symbol.category.name}
+                {getDeviceTypeLabel(symbol.deviceType)}
               </td>
               <td className="whitespace-nowrap">
                 <SymbolStatusBadge status={symbol.status} />
@@ -182,7 +183,7 @@ export function SymbolTable({ categories, result }: SymbolTableProps) {
                 className="py-8 text-center text-sm text-slate-500"
                 colSpan={6}
               >
-                No symbols are assigned to this category.
+                No symbols match this Device Type.
               </td>
             </tr>
           ) : null}
@@ -204,7 +205,7 @@ export function SymbolTable({ categories, result }: SymbolTableProps) {
           <PageControl
             disabled={result.page <= 1}
             href={buildSymbolRegistryListUrl({
-              categoryId: result.categoryId,
+              deviceType: result.deviceType,
               page: result.page - 1
             })}
             label="Previous symbols page"
@@ -218,7 +219,7 @@ export function SymbolTable({ categories, result }: SymbolTableProps) {
           <PageControl
             disabled={result.page >= result.totalPages}
             href={buildSymbolRegistryListUrl({
-              categoryId: result.categoryId,
+              deviceType: result.deviceType,
               page: result.page + 1
             })}
             label="Next symbols page"

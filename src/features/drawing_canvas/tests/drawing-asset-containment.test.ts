@@ -8,6 +8,7 @@ import {
 import {
   assignPlacementToContainer,
   constrainPanelEnclosureDimensions,
+  createExistingPanelEnclosurePlacement,
   createPanelEnclosurePlacement,
   getPanelEnclosureBounds,
   getPanelEnclosureCenteredPosition,
@@ -163,6 +164,34 @@ function modelWithPanelAndBreaker(): DrawingModel {
 }
 
 describe("drawing asset containment", () => {
+  it("places a registered panel before its backplane without changing its identity or source model", () => {
+    const model = createDefaultDrawingModel();
+    model.assets = [{ id: "plc-01", tag: "PLC-01", title: "Panel Overview Drawing PLC 01", type: "panel" }];
+    const before = structuredClone(model);
+    const panel = createExistingPanelEnclosurePlacement({ model, activeSheet: model.sheets[0], assetId: "plc-01" });
+    expect(panel).toMatchObject({ assetId: "plc-01", tag: "PLC-01", role: "enclosure", enclosure: { title: "Panel Overview Drawing PLC 01" } });
+    expect(panel.panelConnectionView).toBeUndefined();
+    expect(createBackplanePlacement({ panelPlacement: panel }).containerAssetId).toBe("plc-01");
+    expect(model).toEqual(before);
+    expect(drawingPackageModelSchema.safeParse({ ...model, sheets: [{ ...model.sheets[0], placements: [panel] }] }).success).toBe(true);
+  });
+
+  it("rejects a removed asset and duplicate physical placement on the same sheet", () => {
+    const model = modelWithPanelAndBreaker();
+    expect(() => createExistingPanelEnclosurePlacement({ model, activeSheet: model.sheets[0], assetId: "missing" })).toThrow(/no longer exists/);
+    expect(() => createExistingPanelEnclosurePlacement({ model, activeSheet: model.sheets[0], assetId: "asset_pdp_101" })).toThrow(/already physically placed/);
+  });
+
+  it("preserves existing physical dimensions and kind on a different sheet", () => {
+    const model = modelWithPanelAndBreaker();
+    model.sheets[0].placements[0].enclosure = { kind: "junction_box", title: "Field box", width: 310, height: 450 };
+    const activeSheet = { ...model.sheets[0], id: "layout-2", placements: [], connections: [] };
+    const panel = createExistingPanelEnclosurePlacement({ model, activeSheet, assetId: "asset_pdp_101" });
+    expect(panel.enclosure).toEqual({ kind: "junction_box", title: "Field box", width: 310, height: 450 });
+    expect(panel.assetId).toBe("asset_pdp_101");
+    expect(() => createExistingPanelEnclosurePlacement({ model, activeSheet: { ...activeSheet, kind: "title_sheet" }, assetId: "asset_pdp_101" })).toThrow(/ordinary drawing sheet/);
+  });
+
   it("constrains typed enclosure dimensions to physical content while allowing auto-scaled sizes", () => {
     const model = createDefaultDrawingModel();
     const placement = createPanelEnclosurePlacement({

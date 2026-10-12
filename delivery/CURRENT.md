@@ -1,5 +1,20 @@
 # CURRENT — Delivery OS
 
+## Current consolidated release — 12 October 2026
+
+PLAN-016 reconciles the current engineering application and the tested Package
+Information workflow. See [release runbook](../docs/application/releases/2026-10-12.md),
+[feature register](../docs/application/REGISTER.md), [plan](plans/planned/PLAN-016-reconcile_package_information_release.md)
+and [release receipt](reports/PLAN-016-release.md).
+
+This public checkpoint intentionally excludes local customer-record reports,
+canonical database inventories, attachments and source snapshots. The full
+manufacturer record audit remains unfinished; tidy grouping is not approval.
+
+Next action: complete release verification and publication, then review remaining
+engineering-evidence findings separately. Earlier runtime/task details below are
+historical, not instructions to launch those older checkouts.
+
 ## Where to look first
 
 - Tasks index: `delivery/TASKS.md`
@@ -10,21 +25,21 @@
 
 ## Active plan
 
-- PlanId: none (PLAN-002 completed)
-- Plan path: `delivery/plans/completed/PLAN-002-drawing-performance-improvements.md`
-- Started: 2026-08-26 12:55 America/Port_of_Spain
-- Completed: 2026-08-26 18:55 America/Port_of_Spain
-- Elapsed: approximately 6 hours including serial verification and checkpoint waits
+- PlanId: PLAN-016 (bounded release; not closure of wider programmes)
+- Plan path: `delivery/plans/planned/PLAN-016-reconcile_package_information_release.md`
+- Started: 12 October 2026, America/Port_of_Spain; exact overall start not captured.
+- Elapsed: not reconstructed. Full unit gate: 196.62 s; build: 131.677 s; initial browser matrix: 771.174 s.
 
 ## Current task
 
-- TaskId: none
-- Status: complete / idle
-- Most recent task: PLAN-002-TASK-023, approximately 8 minutes
+- TaskId: PLAN-016-TASK-003
+- Task spec: `delivery/tasks/PLAN-016-TASK-003-publication.md`
+- Status: publication in progress; administrative task checkboxes unchanged.
+- PLAN-016 integration/qualification evidence is in the release receipt; pending administrative close after handoff.
 
 ## Next action
 
-- Await the user's separate decision on squash-PR/live promotion or a new production-readiness programme. Do not merge, restart the live editor, or begin deferred work automatically.
+- Finish the authorized same-name release branch, checked squash PR and canonical fast-forward. Do not publish local customer evidence or close the outstanding manufacturer audit.
 
 ## Quick commands
 
@@ -34,19 +49,19 @@
 - Drawing E2E: `npm run test:drawing -- --reporter=line`
 - Lint: `npm run lint`
 - Type-check: `npm run typecheck`
-- Build: `$env:DATABASE_URL='file:./dev.db'; npm run build`
+- Build/browser verification: follow the guarded [release runbook](../docs/application/releases/2026-10-12.md), with a saved-draft window.
 
 ## Open these files next
 
 - `delivery/PROJECT.md`
 - `delivery/TASKS.md`
-- `delivery/plans/completed/PLAN-002-drawing-performance-improvements.md`
-- `delivery/reports/PRODUCTION-READINESS-ASSESSMENT-2026-08-28.md`
-- `delivery/reports/PLAN-002-final-assessment.md`
-- `delivery/reports/PLAN-002-recovery-map.md`
-- `delivery/reports/PLAN-002-TASK-023-recovery-rehearsal.md`
+- `delivery/plans/planned/PLAN-016-reconcile_package_information_release.md`
+- `delivery/tasks/PLAN-016-TASK-003-publication.md`
+- `delivery/reports/PLAN-016-release.md`
 
 ## Progress snapshot
+
+The following PLAN-002 entries are historical verification, not current runtime or task instructions. Current PLAN-016 facts are recorded above and in its release receipt.
 
 023 complete18:55 (approximately8m): detached exact `d93c29f2f782e2e93a4e9671082b5f04de62e4ae` completed independent npm ci (zero audit findings), fresh guarded SQLite bootstrap, production build and create/save/reload smoke. Original source verification is unchanged/removed empty; live3000 remains PID31720 and3100 is clear. Final documentation checkpoint `d2357379dd7e34026699747a8bc35b76eb709432` is remotely verified; Stage7 tag is remotely verified and peels to exact tested candidate `d93c29f…`. PLAN-002 is complete; no live promotion.
 

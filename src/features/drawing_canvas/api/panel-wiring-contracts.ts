@@ -8,6 +8,7 @@ import { drawingPackageModelSchema } from "../data/schema";
 import type { ApprovedDrawingSymbol } from "../types";
 import { buildDrawingPanelWiringSource } from "../logic/services/drawing-panel-wiring-source";
 import { normalizeNetworkDeviceDrawingAssets } from "../logic/services/drawing-network-device-assets";
+import { normalizeComponentDrawingAssets } from "../logic/services/drawing-component-assets";
 
 function emptyPanelWiringData() {
   return {
@@ -46,7 +47,7 @@ export function createPanelWiringSource(
   symbols: ApprovedDrawingSymbol[]
 ): PanelWiringSourcePackage {
   return buildDrawingPanelWiringSource(
-    normalizeNetworkDeviceDrawingAssets(model, symbols),
+    normalizeComponentDrawingAssets(normalizeNetworkDeviceDrawingAssets(model, symbols), symbols),
     symbols
   );
 }

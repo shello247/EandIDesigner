@@ -51,21 +51,18 @@ const metadata: SymbolMetadata = {
       label: "0 V DC",
       function: "Negative",
       anchorKey: "2.5",
-      requiredForWiring: true
     },
     {
       key: "3.1",
       label: "13",
       function: "DC OK",
       anchorKey: "3.1",
-      requiredForWiring: true
     },
     {
       key: "3.2",
       label: "14",
       function: "DC OK",
       anchorKey: "3.2",
-      requiredForWiring: true
     }
   ]
 };

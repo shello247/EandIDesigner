@@ -7,7 +7,7 @@ import {
   parseRetirementArguments,
   retireNetworkMapStorage
 } from "../retire-network-map-storage";
-import { toPrismaSqliteFileUrl } from "../development-runtime";
+import { toPrismaMaintenanceSqliteFileUrl } from "../development-runtime";
 
 const clients: PrismaClient[] = [];
 
@@ -15,7 +15,7 @@ async function fixture() {
   const root = mkdtempSync(path.join(tmpdir(), "ei-network-retirement-"));
   const databasePath = path.join(root, "fixture.db");
   const prisma = new PrismaClient({
-    datasourceUrl: toPrismaSqliteFileUrl(databasePath)
+    datasourceUrl: toPrismaMaintenanceSqliteFileUrl(databasePath)
   });
   clients.push(prisma);
   await prisma.$executeRawUnsafe(
@@ -176,7 +176,7 @@ describe("NetworkMap storage retirement", () => {
   it("refuses a locked database without creating an archive", async () => {
     const { root, databasePath, prisma } = await fixture();
     const locker = new PrismaClient({
-      datasourceUrl: toPrismaSqliteFileUrl(databasePath)
+      datasourceUrl: toPrismaMaintenanceSqliteFileUrl(databasePath)
     });
     clients.push(locker);
     await locker.$executeRawUnsafe("BEGIN EXCLUSIVE");

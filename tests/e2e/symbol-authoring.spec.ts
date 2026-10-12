@@ -1,4 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
+import {
+  getSymbolDetail,
+  getSymbolVersionForExport,
+  listDrawingSymbolVersions
+} from "../../src/features/symbol_registry/data/queries";
+import { prisma } from "../../src/lib/prisma";
 
 const validSvg = `
 <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
@@ -72,6 +78,17 @@ async function expectIndependentSymbolDetailsPane(page: Page) {
 
   await expect(details).toBeVisible();
   await expect(preview).toBeVisible();
+  const headingBox = await page.getByRole("heading", { level: 1 }).boundingBox();
+  const tabsBox = await page.getByRole("tablist").boundingBox();
+  const saveBox = await page.getByRole("button", { name: "Save changes", exact: true }).boundingBox();
+  const contentBox = await preview.boundingBox();
+  expect(headingBox).not.toBeNull();
+  expect(tabsBox).not.toBeNull();
+  expect(saveBox).not.toBeNull();
+  expect(contentBox).not.toBeNull();
+  expect(tabsBox!.y - (headingBox!.y + headingBox!.height)).toBeLessThanOrEqual(24);
+  expect(Math.abs(saveBox!.y - tabsBox!.y)).toBeLessThanOrEqual(8);
+  expect(contentBox!.y - (tabsBox!.y + tabsBox!.height)).toBeLessThanOrEqual(20);
 
   const detailsMetrics = await details.evaluate((element) => ({
     clientHeight: element.clientHeight,
@@ -115,19 +132,22 @@ async function expectIndependentSymbolDetailsPane(page: Page) {
   expect(previewAfter!.x).toBeCloseTo(previewBefore!.x, 0);
   expect(previewAfter!.y).toBeCloseTo(previewBefore!.y, 0);
   expect(await page.evaluate(() => window.scrollY)).toBe(windowScrollBefore);
-  await expect(page.getByRole("button", { name: "Validate" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^(Validate|Approve|Archive)$/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save changes" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Overview" })).toBeVisible();
 
   return details;
 }
 
-test("imports an SVG symbol draft and keeps review workflows available", async ({
+test("imports an SVG symbol draft and keeps the two-tab workspace workflows available", async ({
   page
-}) => {
+}, testInfo) => {
   const runId = Date.now().toString();
   const symbolName = `Imported SVG Device ${runId}`;
   const symbolKey = `imported_svg_device_${runId}`;
-  const noteText = `Reviewed imported SVG terminal section ${runId}.`;
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
 
   await page.goto("/symbols/new");
 
@@ -175,7 +195,15 @@ test("imports an SVG symbol draft and keeps review workflows available", async (
   await expect(
     page.getByRole("heading", { name: symbolName, exact: true })
   ).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("Needs review")).toBeVisible();
+  await expect(page.getByText("Needs review", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^(Validate|Approve|Archive)$/ })).toHaveCount(0);
+  const importedSymbolId = new URL(page.url()).pathname.split("/").at(-1)!;
+  const exportable = await getSymbolVersionForExport(importedSymbolId);
+  expect(exportable?.symbolKey).toBe(symbolKey);
+  expect(exportable?.metadata.terminals.map((terminal) => terminal.key)).toEqual(["1", "2", "GND"]);
+  expect((await listDrawingSymbolVersions()).some(
+    (symbol) => symbol.symbolId === importedSymbolId
+  )).toBe(true);
 
   await expectAlignedCoordinateStage(page);
   await expectIndependentSymbolDetailsPane(page);
@@ -232,27 +260,28 @@ test("imports an SVG symbol draft and keeps review workflows available", async (
     page.getByRole("heading", { name: "AI terminal-map review" })
   ).toBeVisible();
 
-  await page.getByRole("tab", { name: "Engineer Notes" }).click();
-  await page.getByLabel("Notes").fill(noteText);
-  await page.getByRole("button", { name: "Save note" }).click();
-  await expect(page.getByText("Engineer note saved.")).toBeVisible();
-  await expect(page.getByText(noteText)).toBeVisible();
-
-  await page.getByRole("tab", { name: "Documents" }).click();
-  await page.getByLabel("Document title").fill("Installation Manual");
-  await page.setInputFiles("#document-file", {
-    name: "installation-manual.pdf",
-    mimeType: "application/pdf",
-    buffer: Buffer.concat([
-      Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nstream\n"),
-      Buffer.alloc(1_250_000, 32),
-      Buffer.from("\nendstream\nendobj\ntrailer\n<<>>\n%%EOF")
-    ])
-  });
-  await page.getByRole("button", { name: "Upload document" }).click();
-  await expect(page.getByText("Document uploaded.")).toBeVisible();
-  await expect(page.getByText("Installation Manual")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Download" })).toBeVisible();
+  const tabs = page.getByRole("tablist", { name: "Symbol workspace" });
+  await expect(tabs.getByRole("tab")).toHaveText(["Overview", "BOM"]);
+  await expect(page.getByRole("tab", { name: "Engineer Notes", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Documents", exact: true })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Overview", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "BOM", exact: true })).toBeFocused();
+  await expect(page.getByRole("tabpanel", { name: "BOM", exact: true })).toBeVisible();
+  await page.keyboard.press("Home");
+  await expect(page.getByRole("tab", { name: "Overview", exact: true })).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(page.getByRole("tab", { name: "BOM", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByRole("tab", { name: "Overview", exact: true })).toBeFocused();
+  const oldDownload = await page.request.get("/symbols/documents/retired-document/download");
+  expect(oldDownload.status()).toBe(404);
+  const stored = await getSymbolDetail(importedSymbolId);
+  expect(stored).not.toHaveProperty("engineerNotes");
+  expect(stored).not.toHaveProperty("documents");
+  expect(await prisma.$queryRawUnsafe("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('SymbolEngineerNote','SymbolDocument','LegacyDocumentTransfer')")).toEqual([]);
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("symbol-two-tabs-desktop.png"), fullPage: true });
 
   await page.getByRole("tab", { name: "Overview" }).click();
   await page.setViewportSize({ width: 1280, height: 600 });
@@ -271,6 +300,10 @@ test("imports an SVG symbol draft and keeps review workflows available", async (
         .evaluate((element) => window.getComputedStyle(element).overflowY)
     )
     .toBe("visible");
+  await page.setViewportSize({ width: 360, height: 800 });
+  await expect(tabs.getByRole("tab")).toHaveText(["Overview", "BOM"]);
+  await page.screenshot({ path: testInfo.outputPath("symbol-two-tabs-narrow.png"), fullPage: true });
+  expect(errors).toEqual([]);
 });
 
 test("keeps a portrait import aligned and selects the intended dense terminal", async ({

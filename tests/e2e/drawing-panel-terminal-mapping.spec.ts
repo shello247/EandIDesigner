@@ -10,8 +10,7 @@ import {
 
 async function openPanelWorkQueue(page: Page) {
   await page.getByRole("button", { name: "Open sheet loader" }).click();
-  await page.getByRole("dialog", { name: "Sheet Loader" })
-    .getByRole("button", { name: "Expand Front Matter" }).click();
+  await expect(page.getByRole("dialog", { name: "Sheet Loader" }).getByRole("button", { name: "Collapse Package Information" })).toHaveAttribute("aria-expanded", "true");
   await page
     .getByRole("dialog", { name: "Sheet Loader" })
     .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })

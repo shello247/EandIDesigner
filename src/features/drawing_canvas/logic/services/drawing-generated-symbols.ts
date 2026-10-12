@@ -10,6 +10,14 @@ import { resolveTerminalBlockModuleForDefinition } from "@/features/drawing_term
 import type { DrawingAssetRecord, DrawingPlacement } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import {
+  structuredTerminalStripSymbolId,
+  structuredTerminalStripVersionId
+} from "./drawing-generated-asset-reference";
+export {
+  structuredTerminalStripSymbolId,
+  structuredTerminalStripVersionId
+} from "./drawing-generated-asset-reference";
+import {
   composeTerminalStripGeometry,
   projectStructuredTerminalStripTerminals,
   renderStructuredTerminalStripSvg
@@ -195,14 +203,6 @@ let generatedPanelPatternLegend: ApprovedDrawingSymbol | undefined;
 
 export function packageSymbolKey(symbolId: string, versionId: string): string {
   return `${symbolId}:${versionId}`;
-}
-
-export function structuredTerminalStripSymbolId(assetId: string): string {
-  return `__generated_structured_terminal_strip__:${assetId}`;
-}
-
-export function structuredTerminalStripVersionId(assetId: string): string {
-  return `generated_structured_terminal_strip_v1:${assetId}`;
 }
 
 export function isGeneratedStructuredTerminalStripPlacement(

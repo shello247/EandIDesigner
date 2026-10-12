@@ -39,6 +39,7 @@ describe("lean BOM generation queries", () => {
         itemKey: `ITEM-${index}`,
         displayName: `Item ${index}`,
         category: "accessory",
+        engineeringRevisions: [],
         unit: "each",
         manufacturer: null,
         partNumber: null,
@@ -51,6 +52,7 @@ describe("lean BOM generation queries", () => {
     const templates = await listBomGenerationTemplatesForSymbols(["symbol_1"]);
 
     expect(templates[0].lines).toHaveLength(1_000);
+    expect(templates[0].lines[0].item.category).toBe("unclassified");
     expect(database.templateFindMany).toHaveBeenCalledTimes(1);
     expect(database.lineFindMany).toHaveBeenCalledTimes(1);
     expect(database.itemFindMany).toHaveBeenCalledTimes(1);

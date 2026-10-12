@@ -1,6 +1,9 @@
 "use client";
 
 import { useId, useMemo, useState, type ReactNode } from "react";
+import dynamic from "next/dynamic";
+import type {ProductChange} from "./selected-product-inspector";
+const SelectedProductInspector=dynamic(()=>import("./selected-product-inspector").then(m=>m.SelectedProductInspector));
 import {
   AlertTriangle,
   ChevronRight,
@@ -16,6 +19,7 @@ import {
 import type {
   DrawingAnnotation,
   DrawingConnection,
+  DrawingEndpoint,
   DrawingMeasurementUnit,
   DrawingModel as DrawingPackageModel,
   DrawingPackageSheet,
@@ -28,6 +32,7 @@ import type {
 } from "@/features/drawing_panel_wiring/api/public";
 import { ConnectionDisplaySelect } from "@/features/drawing_panel_wiring/ui/public";
 import type {
+  DrawingAnchorAvailability,
   DrawingTerminalAvailabilityItem,
   DrawingTerminalAvailabilitySummary
 } from "../../logic/services/drawing-anchor-availability";
@@ -83,7 +88,10 @@ import { isPanelLayoutLibrarySymbol } from "../../logic/services/symbol-library-
 import {
   layoutLabelPositionLabels,
   layoutLabelPositions,
-  resolveLayoutLabel,
+  resolveLayoutLabelGeometry,
+  layoutLabelDisplayToStored,
+  layoutLabelSizes,
+  type LayoutLabelSize,
   type LayoutLabelPosition
 } from "../../logic/services/drawing-layout-labels";
 import {
@@ -348,8 +356,10 @@ export function DrawingObjectInspector({
   onEditTerminalStrip,
   onReuseTerminalStrip,
   onAssetComponentSelectionsChange,
+  onProductChange,
   selectedConnectionId,
   onConnectionChange,
+  getConnectionEndpointState,
   onConnectionRemove,
   onConnectionRouteRecover,
   onConnectionRouteReset,
@@ -367,6 +377,7 @@ export function DrawingObjectInspector({
 }: {
   model: DrawingModel;
   packageModel: DrawingPackageModel;
+  onProductChange?: ProductChange;
   activeSheet: DrawingPackageSheet;
   symbols: ApprovedDrawingSymbol[];
   measurementUnit: DrawingMeasurementUnit;
@@ -407,6 +418,11 @@ export function DrawingObjectInspector({
     connectionId: string,
     updates: Partial<DrawingConnection>
   ) => void;
+  getConnectionEndpointState?: (
+    connectionId: string,
+    endpointRole: "from" | "to",
+    endpoint: DrawingEndpoint
+  ) => DrawingAnchorAvailability;
   onConnectionRemove: (connectionId: string) => void;
   onConnectionRouteRecover: (connectionId: string) => void;
   onConnectionRouteReset: (connectionId: string) => void;
@@ -562,7 +578,8 @@ export function DrawingObjectInspector({
             onOpenAssetLinkDialog={onOpenAssetLinkDialog}
           />
 
-          {selectedAsset ? (
+          {selectedAsset&&onProductChange&&<SelectedProductInspector key={`product:${selectedAsset.id}`} model={packageModel} symbols={symbols} assetId={selectedAsset.id} onChange={onProductChange}/>}
+          {selectedAsset && !selectedAsset.productSelection ? (
             <EngineeringAttributesCard
               key={`engineering-attributes:${selectedAsset.id}`}
               assetId={selectedAsset.id}
@@ -764,6 +781,7 @@ export function DrawingObjectInspector({
               symbols={symbols}
               selectedConnectionId={context.connectionId}
               onConnectionChange={onConnectionChange}
+              getConnectionEndpointState={getConnectionEndpointState}
               onConnectionRemove={onConnectionRemove}
               onConnectionRouteRecover={onConnectionRouteRecover}
               onConnectionRouteReset={onConnectionRouteReset}
@@ -1076,6 +1094,13 @@ function SelectedPlacementConnectionDisplayEditor({
             onConnectionDisplayModeChange(placement.id, nextMode)
           }
         />
+        {hasSidedTerminals ? (
+          <p className="text-[11px] leading-4 text-slate-500">
+            Internal and external describe the engineering record. The wire is
+            drawn from its actual selected terminal end, which may be TOP or
+            BOTTOM on junction-box feed-through terminals.
+          </p>
+        ) : null}
         {mode !== "sheet_only" ? (
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
             {summaryText}
@@ -2522,7 +2547,17 @@ function SelectedPlacementLayoutEditor({
     widthMm: symbol.metadata.physicalHeightMm ?? symbol.metadata.viewBox.height
   };
   const canEditDimensions = shouldAutosizeLayoutSymbolToBackplane(symbol);
-  const resolvedLabel = resolveLayoutLabel({ placement, symbol });
+  const displayedPlacement = currentBackplane ? resolveLayoutHelperDisplayPlacement({
+    sheet: model.sheet, placement: normalizedPlacement, backplane: currentBackplane,
+    parentPanel: containers.find(container => container.assetId === currentBackplane.containerAssetId)?.placement
+  }) : normalizedPlacement;
+  const resolvedLabel = resolveLayoutLabelGeometry({ placement: displayedPlacement, symbol });
+  const updateLabelCoordinate = (axis: "x" | "y", value: number) => {
+    if (Math.abs(value - resolvedLabel.point[axis]) < 0.001) return;
+    onPlacementChange(placement.id, { labelPosition: layoutLabelDisplayToStored({
+      ...resolvedLabel.point, [axis]: value
+    }, placement, displayedPlacement) });
+  };
 
   const updateDimension = (
     key: "lengthMm" | "widthMm",
@@ -2656,7 +2691,7 @@ function SelectedPlacementLayoutEditor({
                 Label
               </div>
               <div className="mt-0.5 text-xs text-slate-500">
-                Generated from item tag.
+                {resolvedLabel.text} · appearance only
               </div>
             </div>
             <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
@@ -2668,7 +2703,7 @@ function SelectedPlacementLayoutEditor({
                   updateLayoutLabel({ visible: event.currentTarget.checked })
                 }
               />
-              Show
+              Show label
             </label>
           </div>
           <label className="field-label" htmlFor="layout-symbol-label-position">
@@ -2696,6 +2731,44 @@ function SelectedPlacementLayoutEditor({
               </option>
             ))}
           </select>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <label className="field-label" htmlFor="layout-label-size">Text size</label>
+              <select id="layout-label-size" className="field-input" value={resolvedLabel.size}
+                disabled={!resolvedLabel.visible}
+                onChange={event => updateLayoutLabel({ size: event.currentTarget.value as LayoutLabelSize })}>
+                {Object.keys(layoutLabelSizes).map(size => (
+                  <option key={size} value={size}>{size.charAt(0).toUpperCase() + size.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="field-label" htmlFor="layout-label-orientation">Orientation</label>
+              <select id="layout-label-orientation" className="field-input"
+                value={placement.layoutLabel?.rotation ?? "automatic"} disabled={!resolvedLabel.visible}
+                onChange={event => updateLayoutLabel({
+                  rotation: event.currentTarget.value === "automatic" ? undefined : Number(event.currentTarget.value) as 0 | 90 | 270
+                })}>
+                <option value="automatic">Automatic</option>
+                <option value="0">Horizontal</option>
+                <option value="270">Vertical up</option>
+                <option value="90">Vertical down</option>
+              </select>
+            </div>
+            <DrawingMeasurementField id="layout-label-x" label="Label X" valueMm={resolvedLabel.point.x}
+              measurementUnit={measurementUnit} disabled={!resolvedLabel.visible}
+              onCommit={value => updateLabelCoordinate("x", value)} />
+            <DrawingMeasurementField id="layout-label-y" label="Label Y" valueMm={resolvedLabel.point.y}
+              measurementUnit={measurementUnit} disabled={!resolvedLabel.visible}
+              onCommit={value => updateLabelCoordinate("y", value)} />
+          </div>
+          <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-slate-700">
+            <input type="checkbox" role="switch" className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              checked={placement.layoutLabel?.leader ?? false} disabled={!resolvedLabel.visible}
+              onChange={event => updateLayoutLabel({ leader: event.currentTarget.checked })} />
+            Leader line
+          </label>
+          <p className="mt-1 text-[11px] leading-4 text-slate-500">Coordinates are measured from the sheet origin. Leader lines are annotations, not wires.</p>
           <div className="mt-2 flex items-center justify-between gap-2">
             <p className="text-[11px] leading-4 text-slate-500">
               Select the item and drag the purple label handle to position it manually.
@@ -3550,6 +3623,7 @@ function ConnectionEditor({
   symbols,
   selectedConnectionId,
   onConnectionChange,
+  getConnectionEndpointState,
   onConnectionRemove,
   onConnectionRouteRecover,
   onConnectionRouteReset
@@ -3561,6 +3635,11 @@ function ConnectionEditor({
     connectionId: string,
     updates: Partial<DrawingConnection>
   ) => void;
+  getConnectionEndpointState?: (
+    connectionId: string,
+    endpointRole: "from" | "to",
+    endpoint: DrawingEndpoint
+  ) => DrawingAnchorAvailability;
   onConnectionRemove: (connectionId: string) => void;
   onConnectionRouteRecover: (connectionId: string) => void;
   onConnectionRouteReset: (connectionId: string) => void;
@@ -3585,10 +3664,23 @@ function ConnectionEditor({
     endpointName: "from" | "to",
     placementId: string
   ) => {
+    const firstAvailableAnchor = placementAnchorOptions(
+      placementId,
+      model,
+      symbols
+    ).find(
+      (anchor) =>
+        getConnectionEndpointState?.(connection.id, endpointName, {
+          placementId,
+          anchorKey: anchor.key
+        }).enabled ?? true
+    );
     onConnectionChange(connection.id, {
       [endpointName]: {
         placementId,
-        anchorKey: firstAnchorForPlacement(placementId, model, symbols)
+        anchorKey:
+          firstAvailableAnchor?.key ??
+          firstAnchorForPlacement(placementId, model, symbols)
       }
     });
   };
@@ -3660,6 +3752,13 @@ function ConnectionEditor({
               endpoint={selectedConnection.from}
               model={model}
               symbols={symbols}
+              getAnchorState={(endpoint) =>
+                getConnectionEndpointState?.(
+                  selectedConnection.id,
+                  "from",
+                  endpoint
+                )
+              }
               onPlacementChange={(placementId) =>
                 updateEndpoint(selectedConnection, "from", placementId)
               }
@@ -3676,6 +3775,13 @@ function ConnectionEditor({
               endpoint={selectedConnection.to}
               model={model}
               symbols={symbols}
+              getAnchorState={(endpoint) =>
+                getConnectionEndpointState?.(
+                  selectedConnection.id,
+                  "to",
+                  endpoint
+                )
+              }
               onPlacementChange={(placementId) =>
                 updateEndpoint(selectedConnection, "to", placementId)
               }
@@ -3834,6 +3940,7 @@ function EndpointEditor({
   endpoint,
   model,
   symbols,
+  getAnchorState,
   onPlacementChange,
   onAnchorChange
 }: {
@@ -3842,10 +3949,32 @@ function EndpointEditor({
   endpoint: DrawingConnection["from"];
   model: DrawingModel;
   symbols: ApprovedDrawingSymbol[];
+  getAnchorState?: (
+    endpoint: DrawingEndpoint
+  ) => DrawingAnchorAvailability | undefined;
   onPlacementChange: (placementId: string) => void;
   onAnchorChange: (anchorKey: string) => void;
 }) {
   const anchors = placementAnchorOptions(endpoint.placementId, model, symbols);
+  const placementAvailability = new Map(
+    model.placements.map((placement) => {
+      const placementAnchors = placementAnchorOptions(
+        placement.id,
+        model,
+        symbols
+      );
+      return [
+        placement.id,
+        placementAnchors.some(
+          (anchor) =>
+            getAnchorState?.({
+              placementId: placement.id,
+              anchorKey: anchor.key
+            })?.enabled ?? true
+        )
+      ] as const;
+    })
+  );
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
@@ -3860,7 +3989,14 @@ function EndpointEditor({
           onChange={(event) => onPlacementChange(event.currentTarget.value)}
         >
           {model.placements.map((placement) => (
-            <option key={placement.id} value={placement.id}>
+            <option
+              key={placement.id}
+              value={placement.id}
+              disabled={
+                placement.id !== endpoint.placementId &&
+                placementAvailability.get(placement.id) === false
+              }
+            >
               {placement.tag}
             </option>
           ))}
@@ -3876,11 +4012,25 @@ function EndpointEditor({
           value={endpoint.anchorKey}
           onChange={(event) => onAnchorChange(event.currentTarget.value)}
         >
-          {anchors.map((anchor) => (
-            <option key={anchor.key} value={anchor.key}>
-              {anchor.key}
-            </option>
-          ))}
+          {anchors.map((anchor) => {
+            const availability = getAnchorState?.({
+              placementId: endpoint.placementId,
+              anchorKey: anchor.key
+            });
+            const isCurrent = anchor.key === endpoint.anchorKey;
+            return (
+              <option
+                key={anchor.key}
+                value={anchor.key}
+                disabled={!isCurrent && availability?.enabled === false}
+              >
+                {anchor.key}
+                {availability && !availability.enabled
+                  ? ` — ${availability.reason ?? "occupied"}`
+                  : ""}
+              </option>
+            );
+          })}
         </select>
       </div>
     </div>

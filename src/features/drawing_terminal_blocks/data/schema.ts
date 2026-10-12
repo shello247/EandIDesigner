@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {drawingProductSelectionSchema,engineeringProjectSettingsSchema} from "@/features/item_engineering/api/contracts";
 import { engineeringAttributeContainerSchema } from "@/features/engineering_attributes/api/public";
 import { drawingComponentSelectionsSchema } from "@/features/symbol_components/api/public";
 
@@ -29,6 +30,8 @@ export const structuredTerminalStripMemberRoleSchema = z.enum([
 ]);
 
 export const structuredTerminalStripMemberSchema = z.object({
+  productSelection: drawingProductSelectionSchema.optional(),
+  engineeringSettings: engineeringProjectSettingsSchema.optional(),
   id: z.string().trim().min(1).max(120),
   token: z.string().trim().regex(/^M\d{2,}$/),
   symbolId: z.string().trim().min(1).max(120),

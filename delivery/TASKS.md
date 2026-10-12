@@ -1,8 +1,20 @@
 # Drawing performance investigation
 
+## Current bounded release
+
+[PLAN-016 — Package Information reconciliation and release](plans/planned/PLAN-016-reconcile_package_information_release.md)
+is the current publication checkpoint; older sections below are historical.
+
+- [ ] [Integration](tasks/PLAN-016-TASK-001-integration.md)
+- [ ] [Qualification and rollout](tasks/PLAN-016-TASK-002-qualification.md)
+- [ ] [Public release](tasks/PLAN-016-TASK-003-publication.md)
+
+The complete manufacturer record audit remains outstanding. Local customer audit
+records are not published with this source release.
+
 ## Active plan
 
-None.
+[PLAN-016](plans/planned/PLAN-016-reconcile_package_information_release.md) — bounded release. Administrative checkboxes remain unchanged; factual qualification is in [the receipt](reports/PLAN-016-release.md). The older queue below is retained as history.
 
 ## Queue
 

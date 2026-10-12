@@ -21,6 +21,7 @@ import {
 import { AssetComponentConfigurator } from "@/features/symbol_components/ui/components/asset-component-configurator";
 
 export type AddSymbolAssetSubmission = {
+  mode: "create" | "reference";
   symbol: ApprovedDrawingSymbol;
   assetId: string;
   tag: string;
@@ -101,6 +102,7 @@ export function AddSymbolAssetDialog({
       }
 
       onPlace({
+        mode: "reference",
         symbol,
         assetId: selectedAsset.assetId,
         tag: selectedAsset.tag
@@ -123,6 +125,7 @@ export function AddSymbolAssetDialog({
     }
 
     onPlace({
+      mode: "create",
       symbol,
       assetId: createDrawingAssetId(),
       tag: normalizedTag,
@@ -343,7 +346,7 @@ export function AddSymbolAssetDialog({
             onClick={placeSymbol}
           >
             <PackagePlus aria-hidden="true" size={14} />
-            Place symbol
+            Continue to placement
           </button>
         </div>
       </div>

@@ -34,7 +34,6 @@ function symbol({
           label: terminalKey,
           anchorKey: `anchor_${terminalKey}`,
           panelSide: "single",
-          requiredForWiring: true
         }
       ]
     : [];

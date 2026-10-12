@@ -28,12 +28,12 @@ export function ConnectionDisplaySelect({
       <option value="sheet_only">Sheet routes only</option>
       <option value="internal_connected">
         {hasSidedTerminals
-          ? "Internal wires only — TOP"
+          ? "Internal wires only — internal records"
           : "Internal wires only"}
       </option>
       <option value="external_connected">
         {hasSidedTerminals
-          ? "External connections only — BOTTOM"
+          ? "External connections only — field records"
           : "External connections only"}
       </option>
       <option value="all_connected">Both — all directly landed wires</option>

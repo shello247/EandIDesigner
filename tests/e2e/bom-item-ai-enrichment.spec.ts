@@ -8,7 +8,7 @@ test.describe.serial("BOM item AI enrichment and documents", () => {
 
   test.afterAll(async () => {
     if (createdItemIds.length > 0) {
-      await prisma.bomItem.deleteMany({ where: { id: { in: createdItemIds } } });
+      await prisma.bomItem.updateMany({ where: { id: { in: createdItemIds } }, data: { status: "archived" } });
     }
   });
 
@@ -31,6 +31,7 @@ test.describe.serial("BOM item AI enrichment and documents", () => {
       "Mock Manufacturer"
     );
     await expect(page.locator("#bom-part-number")).toHaveValue("AI-100");
+    await page.getByRole("dialog", { name: "New item" }).getByLabel("Device Type", { exact: true }).selectOption("other");
 
     await page.getByRole("button", { name: "Next", exact: true }).click();
     await page.getByRole("button", { name: "Next", exact: true }).click();
@@ -62,15 +63,17 @@ test.describe.serial("BOM item AI enrichment and documents", () => {
 
     await page.getByRole("link", { name: displayName }).click();
     await expect(page.getByRole("heading", { name: displayName })).toBeVisible();
-    await expect(page.getByText(documentName)).toBeVisible();
     await expect(
       page.locator('a[href="https://example.com/product"]').first()
     ).toBeVisible();
+    await page.getByRole("tab", { name: "Documents", exact: true }).click();
+    await expect(page.getByText(documentName, { exact: false })).toBeVisible();
 
     const documentLink = page.locator(
       `a[href="/api/bom/items/documents/${item!.documents[0]!.id}"]`
     );
-    const response = await page.request.get(await documentLink.getAttribute("href") as string);
+    const documentUrl = await documentLink.getAttribute("href") as string;
+    const response = await page.request.get(documentUrl);
     expect(response.status()).toBe(200);
     expect(response.headers()["content-type"]).toBe("application/pdf");
     expect(response.headers()["content-length"]).toBe(String(validPdf.byteLength));
@@ -82,7 +85,7 @@ test.describe.serial("BOM item AI enrichment and documents", () => {
     expect(response.headers()["etag"]).toMatch(/^"sha256-/);
     expect(await response.body()).toEqual(validPdf);
     const notModified = await page.request.get(
-      await documentLink.getAttribute("href") as string,
+      documentUrl,
       { headers: { "If-None-Match": response.headers()["etag"]! } }
     );
     expect(notModified.status()).toBe(304);
@@ -93,16 +96,20 @@ test.describe.serial("BOM item AI enrichment and documents", () => {
     expect(missing.status()).toBe(404);
     expect(missing.headers()["cache-control"]).toBe("private, no-store");
 
-    await page.getByRole("button", { name: "Edit item" }).click();
-    await page.getByRole("button", { name: "Next", exact: true }).click();
-    await page.getByRole("button", { name: "Next", exact: true }).click();
-    await page.getByRole("button", { name: `Delete ${documentName}` }).click();
-    await page.getByRole("button", { name: "Delete", exact: true }).click();
-    await expect(page.getByText(documentName)).toHaveCount(0);
-
-    expect(
-      await prisma.bomItemDocument.count({ where: { itemId: item!.id } })
-    ).toBe(0);
+    page.once("dialog", request => request.accept());
+    await page.getByRole("button", { name: "Remove document", exact: true }).click();
+    await expect(page.getByText(documentName, { exact: false })).toHaveCount(0);
+    const retiredDocument = await prisma.bomItemDocument.findUniqueOrThrow({ where: { id: item!.documents[0]!.id } });
+    expect(retiredDocument.archivedAt).not.toBeNull();
+    expect(await prisma.bomItemDocument.count({ where: { itemId: item!.id, archivedAt: null } })).toBe(0);
+    const history = await prisma.bomItemEngineeringRevision.findMany({ where: { itemId: item!.id }, orderBy: { revisionNumber: "asc" }, include: { documents: true } });
+    expect(history.map(revision => revision.documents.length)).toEqual([0, 1, 0]);
+    const historicalDownload = await page.request.get(documentUrl);
+    expect(historicalDownload.status()).toBe(200);
+    expect(await historicalDownload.body()).toEqual(validPdf);
+    await page.reload();
+    await page.getByRole("tab", { name: "Documents", exact: true }).click();
+    await expect(page.getByText(documentName, { exact: false })).toHaveCount(0);
   });
 
   test("retains the created item and retries after a document upload failure", async ({
@@ -116,7 +123,7 @@ test.describe.serial("BOM item AI enrichment and documents", () => {
     await page.goto("/bom/items");
     await page.getByRole("button", { name: "New item" }).click();
     await page.locator("#bom-display-name").fill(displayName);
-    await page.locator("#bom-category").selectOption("accessory");
+    await page.getByRole("dialog", { name: "New item" }).getByLabel("Device Type", { exact: true }).selectOption("other");
     await page.locator("#bom-unit").selectOption("each");
     await page.getByRole("button", { name: "Next", exact: true }).click();
     await page.getByRole("button", { name: "Next", exact: true }).click();

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Copy, Search, X } from "lucide-react";
+import { Copy, X } from "lucide-react";
+import { SearchInput } from "@/shared/ui/search-input";
 import type { DrawingModel } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import {
@@ -84,6 +85,7 @@ export function TerminalStripCopyDialog({
   const canSubmit = Boolean(
     targetSheet &&
       targetSheet.kind !== "section_title" &&
+      targetSheet.kind !== "title_sheet" &&
       selectedSource &&
       (backplanes.length === 0 || effectiveBackplaneId)
   );
@@ -203,20 +205,13 @@ export function TerminalStripCopyDialog({
 
           <label className="field-label">
             Find terminal strip
-            <span className="relative mt-1 block">
-              <Search
-                aria-hidden="true"
-                size={15}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                ref={searchRef}
-                className="field-input pl-9"
-                value={query}
-                placeholder="Search tag, name, panel, or sheet"
-                onChange={(event) => setQuery(event.currentTarget.value)}
-              />
-            </span>
+            <SearchInput
+              ref={searchRef}
+              containerClassName="mt-1"
+              value={query}
+              placeholder="Search tag, name, panel, or sheet"
+              onChange={(event) => setQuery(event.currentTarget.value)}
+            />
           </label>
 
           <div
@@ -295,7 +290,7 @@ export function TerminalStripCopyDialog({
             disabled={!canSubmit}
             onClick={submit}
           >
-            Copy terminal strip
+            Continue to placement
           </button>
         </div>
       </div>

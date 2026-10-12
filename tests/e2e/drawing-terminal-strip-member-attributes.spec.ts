@@ -1,3 +1,4 @@
+import { confirmCanvasPlacement } from "./drawing-placement-helpers";
 import { expect, test, type Page } from "./drawing-test";
 import {
   createE2eTerminalBlockGroupPackage,
@@ -66,8 +67,9 @@ test("edits and projects terminal-strip member engineering attributes", async ({
     await expect(memberSpecifications).toContainText("2 recorded");
     await memberSpecifications.getByRole("button", { name: "Done" }).click();
     await builder
-      .getByRole("button", { name: "Create terminal strip" })
+      .getByRole("button", { name: "Continue to placement" })
       .click();
+    await confirmCanvasPlacement(page);
     await expect(builder).toHaveCount(0);
 
     const terminalStripCard = page.getByRole("button", {

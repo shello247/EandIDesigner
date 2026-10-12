@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "./drawing-test";
+import { waitForDrawingViewport } from "./drawing-viewport-helpers";
 import {
   createE2eWireHitTestingDrawing,
   deleteE2eDrawing,
@@ -10,6 +11,7 @@ async function clickDrawingPoint(
   point: { x: number; y: number },
   clickCount = 1
 ) {
+  await waitForDrawingViewport(page);
   const clientPoint = await page
     .locator('svg[aria-label="Interactive drawing overlay"]')
     .evaluate((svg, userPoint) => {

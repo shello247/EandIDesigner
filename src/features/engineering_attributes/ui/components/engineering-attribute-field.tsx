@@ -17,7 +17,8 @@ export function EngineeringAttributeField({
   pending = false,
   onCommit,
   onCancel,
-  onRemove
+  onRemove,
+  editSource = false
 }: {
   definition: EngineeringAttributeDefinition;
   value?: EngineeringAttributeValue;
@@ -25,6 +26,7 @@ export function EngineeringAttributeField({
   onCommit: (value: EngineeringAttributeValue) => string | undefined;
   onCancel: () => void;
   onRemove?: () => void;
+  editSource?: boolean;
 }) {
   const [scalar, setScalar] = useState(initialScalar(value));
   const [unit, setUnit] = useState(
@@ -33,12 +35,13 @@ export function EngineeringAttributeField({
       : definition.canonicalUnit ?? definition.allowedUnits?.[0] ?? ""
   );
   const [error, setError] = useState<string>();
+  const [source, setSource] = useState<EngineeringAttributeValue["source"]>(value?.source ?? { kind: "engineer_entered" });
 
   const buildValue = (): EngineeringAttributeValue | undefined => {
     const base = {
       definitionKey: definition.key,
       definitionVersion: 1 as const,
-      source: value?.source ?? { kind: "engineer_entered" as const }
+      source: editSource ? source : value?.source ?? { kind: "engineer_entered" as const }
     };
     if (definition.valueKind === "text") {
       return { ...base, kind: "text", value: scalar };
@@ -134,6 +137,14 @@ export function EngineeringAttributeField({
         ) : null}
       </div>
 
+      {editSource && <div className="mt-4 grid gap-3">
+        <label className="text-sm">Source type<select className="field-input block" value={source.kind}
+          onChange={event => setSource({ ...source, kind: event.target.value as typeof source.kind })}>
+          <option value="engineer_entered">Engineer entered</option><option value="manufacturer">Manufacturer</option><option value="imported">Imported</option>
+        </select></label>
+        <label className="text-sm">Source reference / rating conditions<textarea className="field-input block" maxLength={500}
+          value={source.reference ?? ""} onChange={event => setSource({ ...source, reference: event.target.value })} /></label>
+      </div>}
       {error ? (
         <div className="mt-2 text-xs font-medium text-rose-700" role="alert">
           {error}

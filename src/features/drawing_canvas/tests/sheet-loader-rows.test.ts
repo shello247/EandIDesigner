@@ -12,6 +12,17 @@ import {
 } from "../logic/services/sheet-loader-rows";
 
 describe("sheet loader rows", () => {
+  it("presents Package Information and searchable legacy warnings without mutating the drawing", () => {
+    const model = createDefaultDrawingModel({ withTitleSheet: true });
+    model.sheets.push({ ...model.sheets[0], id: "legacy", kind: "drawing", name: "Old Layout" });
+    const before = structuredClone(model);
+    const groups = buildSheetLoaderGroups(model);
+    expect(groups[0].title).toBe("Package Information");
+    expect(groups[0].rows.map(row => row.needsSection)).toEqual([false, true]);
+    expect(filterSheetLoaderGroups(groups, "package information")).toEqual(groups);
+    expect(filterSheetLoaderGroups(groups, "needs section")[0].rows.map(row => row.sheetId)).toEqual(["legacy"]);
+    expect(model).toEqual(before);
+  });
   it("summarizes sheet rows with type labels and counts", () => {
     let model = createDefaultDrawingModel();
     model = {

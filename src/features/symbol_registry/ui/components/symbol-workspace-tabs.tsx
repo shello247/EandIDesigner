@@ -1,38 +1,34 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
-import { FileText, LayoutDashboard, NotebookPen, PackageSearch } from "lucide-react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { LayoutDashboard, PackageSearch } from "lucide-react";
 import type { SymbolDetail, SymbolVersionSummary } from "../../types";
 import type { SymbolMetadata } from "../../data/schema";
-import type { ValidationIssue } from "../../data/schema";
 import type { NetworkProfileReviewDraft } from "../../logic/services/network-profile-review-draft";
-import { EngineerNotesPanel } from "./engineer-notes-panel";
 import { NetworkProfilePanel } from "./network-profile-panel";
 import { SvgPreviewPanel } from "./svg-preview-panel";
-import { SymbolDocumentsPanel } from "./symbol-documents-panel";
 import { SymbolLayoutMetadataPanel } from "./symbol-layout-metadata-panel";
 import { SymbolPanelWiringCapabilityPanel } from "./symbol-panel-wiring-capability-panel";
 import { SymbolElectricalTopologyPanel } from "./symbol-electrical-topology-panel";
 import { SymbolRegistryDetailsPanel } from "./symbol-registry-details-panel";
 import { TerminalMapTable } from "./terminal-map-table";
-import { ValidationPanel } from "./validation-panel";
 import type { ComponentAlternativeCandidate } from "@/features/symbol_components/api/public";
 import { SymbolComponentsPanel } from "@/features/symbol_components/ui/components/symbol-components-panel";
 import { SymbolBomPanelLoader } from "@/features/bom_creator/ui/components/symbol-bom-panel-loader";
-import type { SymbolCategoryRecord } from "@/features/symbol_categories/api/public";
-import type { SymbolCategoryManagerUpdate } from "@/features/symbol_categories/ui/components/symbol-category-manager";
+import dynamic from "next/dynamic";
+const SymbolProductConfiguration = dynamic(() => import("@/features/item_engineering/ui/components/symbol-product-configuration").then(m=>m.SymbolProductConfiguration));
 import styles from "./symbol-detail-workspace.module.css";
 
-type WorkspaceTab = "overview" | "bom" | "engineer_notes" | "documents";
+type WorkspaceTab = "overview" | "bom" | "products";
 
-const baseTabs: Array<{
+const tabs: Array<{
   key: WorkspaceTab;
   label: string;
   icon: typeof LayoutDashboard;
 }> = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
-  { key: "engineer_notes", label: "Engineer Notes", icon: NotebookPen },
-  { key: "documents", label: "Documents", icon: FileText }
+  { key: "bom", label: "BOM", icon: PackageSearch },
+  { key: "products", label: "Compatible Items", icon: PackageSearch }
 ];
 
 const viewportWorkspaceQuery =
@@ -53,50 +49,42 @@ function isServerViewportWorkspace() {
 }
 
 export function SymbolWorkspaceTabs({
+  actions,
+  artworkAction,
   symbol,
   latest,
   metadata,
-  categories,
-  categoryId,
   componentAlternatives,
   manufacturer,
   model,
   networkDraft,
-  validationIssues,
   readOnly,
+  classificationBlocked,
   onMetadataChange,
-  onCategoryChange,
-  onCategoriesUpdated,
   onManufacturerChange,
   onModelChange,
   onNetworkDraftChange
 }: {
+  actions: ReactNode;
+  artworkAction?: ReactNode;
   symbol: SymbolDetail;
   latest: SymbolVersionSummary;
   metadata: SymbolMetadata;
-  categories: SymbolCategoryRecord[];
-  categoryId: string;
   componentAlternatives: ComponentAlternativeCandidate[];
   manufacturer: string;
   model: string;
   networkDraft: NetworkProfileReviewDraft;
-  validationIssues: ValidationIssue[];
   readOnly: boolean;
+  classificationBlocked: boolean;
   onMetadataChange: (
     updater: (current: SymbolMetadata) => SymbolMetadata
   ) => void;
-  onCategoryChange: (categoryId: string) => void;
-  onCategoriesUpdated: (update: SymbolCategoryManagerUpdate) => void;
   onManufacturerChange: (value: string) => void;
   onModelChange: (value: string) => void;
   onNetworkDraftChange: (draft: NetworkProfileReviewDraft) => void;
 }) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
-  const tabs = [
-    baseTabs[0],
-    { key: "bom" as const, label: "BOM", icon: PackageSearch },
-    ...baseTabs.slice(1)
-  ];
+  const [productsVisited,setProductsVisited] = useState(false);
   const isNetworkSymbol = symbol.technicalKind === "network_device";
   const viewportWorkspace = useSyncExternalStore(
     subscribeToViewportWorkspace,
@@ -105,38 +93,56 @@ export function SymbolWorkspaceTabs({
   );
 
   return (
-    <div className={`flex min-h-0 flex-col gap-5 ${styles.tabWorkspace}`}>
+    <div className={`flex min-h-0 flex-col gap-3 ${styles.tabWorkspace}`}>
       <div
-        className={`flex flex-wrap gap-2 border-b border-slate-200 ${styles.tabList}`}
-        role="tablist"
+        className={`flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-slate-200 ${styles.tabList}`}
       >
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.key;
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Symbol workspace">
+          {tabs.map((tab, index) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.key;
 
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              className={[
-                "inline-flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors",
-                isActive
-                  ? "border-teal-600 text-teal-700"
-                  : "border-transparent text-slate-500 hover:text-slate-900"
-              ].join(" ")}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              <Icon aria-hidden="true" size={14} />
-              {tab.label}
-            </button>
-          );
-        })}
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                id={`symbol-${symbol.id}-tab-${tab.key}`}
+                aria-controls={`symbol-${symbol.id}-panel-${tab.key}`}
+                aria-selected={isActive}
+                tabIndex={isActive ? 0 : -1}
+                className={[
+                  "inline-flex items-center gap-2 border-b-2 px-3 py-2 text-xs font-semibold transition-colors",
+                  isActive
+                    ? "border-teal-600 text-teal-700"
+                    : "border-transparent text-slate-500 hover:text-slate-900"
+                ].join(" ")}
+                onClick={() => {setActiveTab(tab.key);if(tab.key==="products")setProductsVisited(true);}}
+                onKeyDown={(event) => {
+                  const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
+                    : event.key === "ArrowRight" ? (index + 1) % tabs.length
+                    : event.key === "ArrowLeft" ? (index - 1 + tabs.length) % tabs.length : undefined;
+                  if (next === undefined) return;
+                  event.preventDefault();
+                  setActiveTab(tabs[next].key);
+                  if(tabs[next].key==="products")setProductsVisited(true);
+                  document.getElementById(`symbol-${symbol.id}-tab-${tabs[next].key}`)?.focus();
+                }}
+              >
+                <Icon aria-hidden="true" size={14} />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="ml-auto max-w-full pb-1">{actions}</div>
       </div>
 
       {activeTab === "overview" ? (
         <div
+          role="tabpanel"
+          id={`symbol-${symbol.id}-panel-overview`}
+          aria-labelledby={`symbol-${symbol.id}-tab-overview`}
           className={[
             `grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5 ${styles.overview}`,
             isNetworkSymbol
@@ -148,6 +154,7 @@ export function SymbolWorkspaceTabs({
             className={styles.previewColumn}
             data-testid="symbol-preview-column"
           >
+            {artworkAction ? <div className="mb-2 flex justify-end">{artworkAction}</div> : null}
             <SvgPreviewPanel
               svg={latest.svg}
               title={`Version ${latest.versionNumber}`}
@@ -170,12 +177,11 @@ export function SymbolWorkspaceTabs({
           >
             <SymbolRegistryDetailsPanel
               metadata={metadata}
-              categories={categories}
-              categoryId={categoryId}
+              versionId={latest.id}
+              deviceType={latest.deviceType}
+              classificationBlocked={classificationBlocked}
               readOnly={readOnly}
               onChange={onMetadataChange}
-              onCategoryChange={onCategoryChange}
-              onCategoriesUpdated={onCategoriesUpdated}
             />
             {isNetworkSymbol ? (
               <NetworkProfilePanel
@@ -197,6 +203,7 @@ export function SymbolWorkspaceTabs({
                   onChange={onMetadataChange}
                 />
                 <SymbolPanelWiringCapabilityPanel
+                  deviceType={latest.deviceType}
                   metadata={metadata}
                   readOnly={readOnly}
                   onChange={onMetadataChange}
@@ -233,46 +240,19 @@ export function SymbolWorkspaceTabs({
                 />
               </>
             )}
-            <ValidationPanel issues={validationIssues} />
           </div>
         </div>
       ) : null}
 
-      {activeTab === "engineer_notes" ? (
-        <div
-          className={`${styles.tabScrollRegion} ${styles.scrollRegion}`}
-          role="region"
-          aria-label="Scrollable tab content"
-          tabIndex={0}
-        >
-          <EngineerNotesPanel
-            symbolId={symbol.id}
-            versionId={latest.id}
-            notes={symbol.engineerNotes}
-          />
-        </div>
-      ) : null}
-
-      {activeTab === "documents" ? (
-        <div
-          className={`${styles.tabScrollRegion} ${styles.scrollRegion}`}
-          role="region"
-          aria-label="Scrollable tab content"
-          tabIndex={0}
-        >
-          <SymbolDocumentsPanel
-            symbolId={symbol.id}
-            versionId={latest.id}
-            documents={symbol.documents}
-          />
-        </div>
-      ) : null}
-
+      {productsVisited && <div hidden={activeTab!=="products"} className={`${styles.tabScrollRegion} ${styles.scrollRegion}`} role="tabpanel" id={`symbol-${symbol.id}-panel-products`} aria-labelledby={`symbol-${symbol.id}-tab-products`}>
+        <SymbolProductConfiguration symbolVersionId={latest.id} readOnly={readOnly}/>
+      </div>}
       {activeTab === "bom" ? (
         <div
           className={`${styles.tabScrollRegion} ${styles.scrollRegion}`}
-          role="region"
-          aria-label="Scrollable tab content"
+          role="tabpanel"
+          id={`symbol-${symbol.id}-panel-bom`}
+          aria-labelledby={`symbol-${symbol.id}-tab-bom`}
           tabIndex={0}
         >
           <SymbolBomPanelLoader symbolId={symbol.id} />

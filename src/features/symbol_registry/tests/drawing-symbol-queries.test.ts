@@ -46,7 +46,6 @@ const metadataJson = JSON.stringify({
       key: "1",
       label: "1",
       anchorKey: "T1",
-      requiredForWiring: true
     }
   ],
   anchors: [{ key: "T1", x: 5, y: 10, kind: "terminal" }]

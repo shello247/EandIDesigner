@@ -24,7 +24,6 @@ const validMetadata: SymbolMetadata = {
       label: "Terminal 1",
       function: "Signal",
       anchorKey: "T1",
-      requiredForWiring: true
     }
   ]
 };
@@ -43,6 +42,48 @@ describe("symbol registry validation", () => {
     expect(result.issues).toHaveLength(0);
   });
 
+  it("keeps terminal electrical roles optional for historical versions", () => {
+    expect(
+      symbolMetadataSchema.parse(validMetadata).terminals[0].electricalRole
+    ).toBeUndefined();
+    expect(
+      symbolMetadataSchema.parse({
+        ...validMetadata,
+        terminals: [
+          {
+            ...validMetadata.terminals[0],
+            electricalRole: "analog_signal_positive"
+          }
+        ]
+      }).terminals[0].electricalRole
+    ).toBe("analog_signal_positive");
+    expect(() =>
+      symbolMetadataSchema.parse({
+        ...validMetadata,
+        terminals: [
+          {
+            ...validMetadata.terminals[0],
+            electricalRole: "guessed_positive"
+          }
+        ]
+      })
+    ).toThrow();
+  });
+
+  it("accepts legacy terminal requirement metadata and discards it", () => {
+    const parsed = symbolMetadataSchema.parse({
+      ...validMetadata,
+      terminals: [
+        {
+          ...validMetadata.terminals[0],
+          requiredForWiring: true
+        }
+      ]
+    });
+
+    expect(parsed.terminals[0]).not.toHaveProperty("requiredForWiring");
+  });
+
   it("blocks unsafe SVG content", () => {
     const result = sanitizeSvg(
       '<svg viewBox="0 0 100 100" onload="alert(1)"><script>alert(1)</script><circle cx="50" cy="50" r="10"/></svg>'
@@ -55,7 +96,7 @@ describe("symbol registry validation", () => {
     );
   });
 
-  it("detects missing required terminal anchors", () => {
+  it("detects missing terminal anchors", () => {
     const result = validateSymbol(validSvg, {
       ...validMetadata,
       terminals: [
@@ -64,7 +105,6 @@ describe("symbol registry validation", () => {
           label: "Terminal 1",
           function: "Signal",
           anchorKey: "DOES_NOT_EXIST",
-          requiredForWiring: true
         }
       ]
     });
@@ -87,14 +127,12 @@ describe("symbol registry validation", () => {
           label: "Terminal 1",
           function: "Signal",
           anchorKey: "T1",
-          requiredForWiring: true
         },
         {
           key: "1",
           label: "Terminal 1 duplicate",
           function: "Signal",
           anchorKey: "T2",
-          requiredForWiring: true
         }
       ]
     });

@@ -91,7 +91,6 @@ export type PanelTerminalNode = {
   label: string;
   function?: string;
   allowedDomains?: PanelElectricalDomain[];
-  requiredSides?: PanelTerminalSide[];
   supportedSides: PanelTerminalSide[];
   anchors: PanelWiringSourceTerminal["anchors"];
   occurrenceRefs: PanelTerminalOccurrenceRef[];
@@ -414,6 +413,72 @@ export type PanelTerminalSideOccupancy = {
   structuralOccupants: PanelTerminalOccupant[];
 };
 
+export type TerminalSideOccupant = PanelTerminalOccupant & {
+  sourceKey: string;
+  recordKind: "field_connection" | "internal_wire";
+  sheetId?: string;
+  sheetNumber?: number;
+  sheetName?: string;
+  connectionId?: string;
+  endpointRole?: "from" | "to";
+  placementId?: string;
+  anchorKey?: string;
+};
+
+export type PackageTerminalEndpointResolution =
+  | {
+      kind: "terminal";
+      terminal: PanelTerminalSideRef;
+    }
+  | {
+      kind: "graphical";
+    }
+  | {
+      kind: "unresolved_managed_terminal";
+      reason: string;
+    };
+
+export type ConnectionEndpointAvailability = {
+  status: "available" | "occupied" | "conflicting" | "unresolved" | "graphical";
+  enabled: boolean;
+  terminal?: PanelTerminalSideRef;
+  occupants: TerminalSideOccupant[];
+  reason?: string;
+};
+
+export type TerminalConflictFingerprint = {
+  sideId: string;
+  terminal: PanelTerminalSideRef;
+  occupantSourceKeys: string[];
+  occupants: TerminalSideOccupant[];
+};
+
+export type TerminalConflictDelta = {
+  ok: boolean;
+  conflicts: TerminalConflictFingerprint[];
+  unresolvedManagedEndpoints: Array<{
+    sourceKey: string;
+    sheetId: string;
+    sheetNumber: number;
+    sheetName: string;
+    connectionId: string;
+    endpointRole: "from" | "to";
+    placementId: string;
+    anchorKey: string;
+    reason: string;
+  }>;
+};
+
+export type PackageTerminalOccupancyIndex = {
+  occupancyBySideId: ReadonlyMap<string, PanelTerminalSideOccupancy>;
+  conductorOccupantsBySideId: ReadonlyMap<string, TerminalSideOccupant[]>;
+  endpointResolutionByOccurrenceAnchor: ReadonlyMap<
+    string,
+    PackageTerminalEndpointResolution
+  >;
+  unresolvedManagedEndpoints: TerminalConflictDelta["unresolvedManagedEndpoints"];
+};
+
 export type PanelTerminalCatalogRow = {
   terminalId: string;
   terminal: PanelTerminalRef;
@@ -423,7 +488,6 @@ export type PanelTerminalCatalogRow = {
   label: string;
   function?: string;
   supportedSides: PanelTerminalSide[];
-  requiredSides?: PanelTerminalSide[];
   allowedDomains?: PanelElectricalDomain[];
   occupancy: Partial<Record<PanelTerminalSide, PanelTerminalSideOccupancy>>;
   findings: PanelConnectivityFinding[];
@@ -482,6 +546,7 @@ export type PanelDiscoverySnapshot = {
 };
 
 export type PanelComponentSymbol = {
+  deviceType?: import("@/shared/device-classification/device-types").DeviceType | null;
   symbolId: string;
   versionId: string;
   symbolKey: string;
@@ -497,17 +562,7 @@ export type PanelComponentTerminalSummary = {
   anchors: Array<{ anchorKey: string; side?: PanelTerminalSide }>;
 };
 
-export type PanelComponentPaletteGroup =
-  | "circuit_protection"
-  | "relays"
-  | "power"
-  | "control_io"
-  | "networking"
-  | "isolation_conversion"
-  | "terminal_blocks"
-  | "earth_ground"
-  | "instruments"
-  | "other";
+export type PanelComponentPaletteGroup = import("@/shared/device-classification/device-types").DeviceType | "needs_classification";
 
 export type PanelComponentPaletteRow = {
   symbolId: string;

@@ -1,5 +1,5 @@
 export const MIN_VIEWPORT_ZOOM = 0.2;
-export const MAX_VIEWPORT_ZOOM = 4;
+export const MAX_VIEWPORT_ZOOM = 8;
 export const DEFAULT_VIEWPORT_PADDING = 36;
 
 export type ViewportTransform = {
@@ -28,6 +28,18 @@ export function clampZoom(zoom: number): number {
   }
 
   return round(Math.min(MAX_VIEWPORT_ZOOM, Math.max(MIN_VIEWPORT_ZOOM, zoom)));
+}
+
+export function wheelDeltaInPixels(
+  event: { deltaMode: number; deltaY: number },
+  viewportHeight: number
+): number {
+  // WheelEvent units vary by browser/device. Use a consistent 16px line step;
+  // page-based wheels use the current canvas height, not the whole document.
+  const unit = event.deltaMode === 1
+    ? 16
+    : event.deltaMode === 2 ? Math.max(1, viewportHeight) : 1;
+  return event.deltaY * unit;
 }
 
 export function calculateFitTransform(

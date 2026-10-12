@@ -42,7 +42,7 @@ export function validateAnchors(metadata: SymbolMetadata): ValidationIssue[] {
     }
     terminalKeys.add(terminal.key);
 
-    if (terminal.requiredForWiring && !anchorKeys.has(terminal.anchorKey)) {
+    if (!anchorKeys.has(terminal.anchorKey)) {
       issues.push({
         severity: "blocking",
         code: "TERMINAL_ANCHOR_MISSING",

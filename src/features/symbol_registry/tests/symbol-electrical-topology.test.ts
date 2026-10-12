@@ -19,7 +19,6 @@ function metadata(): SymbolMetadata {
       label: key.toUpperCase(),
       anchorKey: key,
       electricalDomains: ["power" as const],
-      requiredForWiring: false
     })),
     electricalTopology: {
       version: 1,

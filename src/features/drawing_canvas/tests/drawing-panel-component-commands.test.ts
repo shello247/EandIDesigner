@@ -43,14 +43,12 @@ function breakerSymbol(): ApprovedDrawingSymbol {
           label: "Line",
           anchorKey: "LINE",
           panelSide: "single",
-          requiredForWiring: true
         },
         {
           key: "T",
           label: "Load",
           anchorKey: "LOAD",
           panelSide: "single",
-          requiredForWiring: true
         }
       ],
       panelWiring: {

@@ -3,10 +3,12 @@ import { performance } from "node:perf_hooks";
 import {
   buildPanelDiscoveryIndex,
   buildPanelEngineeringSnapshot,
+  buildPackageTerminalOccupancyIndex,
   buildPanelQualityIndex,
   buildPlacementWireContextDisplayIndex,
   runPackagePanelDrawingQualityChecks,
-  runPanelDrawingQualityChecks
+  runPanelDrawingQualityChecks,
+  resolveConnectionEndpointAvailability
 } from "../src/features/drawing_panel_wiring/api/public";
 import { buildPanelDeliverableBundle } from "../src/features/drawing_panel_reports/api/public";
 import { buildPanelTerminalSchedule } from "../src/features/drawing_panel_reports/logic/services/panel-terminal-schedule";
@@ -65,6 +67,7 @@ function measure(name: string, budgetMs: number, operation: () => void): Metric 
 const source = createLargePanelPerformanceSource();
 const snapshot = buildPanelEngineeringSnapshot(source, "large-fixture");
 const graph = snapshot.graph;
+const terminalOccupancy = buildPackageTerminalOccupancyIndex(graph);
 const packageQuality = runPackagePanelDrawingQualityChecks(graph);
 const panelAssetId = snapshot.panelAssetIds[0];
 const detailedSheetId = source.sheets.find(
@@ -83,6 +86,39 @@ metrics.sourceAdapterAndGraph = measure(
   100,
   () => {
     buildPanelEngineeringSnapshot(source, "large-fixture");
+  }
+);
+metrics.packageTerminalOccupancy = measure(
+  "package terminal-side occupancy index",
+  100,
+  () => {
+    buildPackageTerminalOccupancyIndex(graph);
+  }
+);
+const terminalAnchorLookups = source.sheets.flatMap((sheet) =>
+  sheet.occurrences.flatMap((occurrence) =>
+    occurrence.terminals.flatMap((terminal) =>
+      terminal.anchors.map((anchor) => ({
+        sheetId: sheet.id,
+        placementId: occurrence.placementId,
+        anchorKey: anchor.anchorKey
+      }))
+    )
+  )
+);
+let terminalLookupIndex = 0;
+metrics.terminalEndpointPointerLookups = measure(
+  "indexed terminal availability lookups during pointer preview",
+  16.7,
+  () => {
+    const endpoint = terminalAnchorLookups[
+      terminalLookupIndex % terminalAnchorLookups.length
+    ];
+    terminalLookupIndex += 1;
+    resolveConnectionEndpointAvailability({
+      index: terminalOccupancy,
+      ...endpoint
+    });
   }
 );
 const connectionDisplayRequests = source.sheets.flatMap((sheet) =>

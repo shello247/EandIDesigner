@@ -1,3 +1,4 @@
+import { confirmCanvasPlacement } from "./drawing-placement-helpers";
 import { expect, test } from "./drawing-test";
 import {
   createE2eTerminalBlockGroupPackage,
@@ -46,8 +47,9 @@ test("copies a structured strip and places a shared representation", async ({
       .click();
     await memberSpecifications.getByRole("button", { name: "Done" }).click();
     await builder
-      .getByRole("button", { name: "Create terminal strip" })
+      .getByRole("button", { name: "Continue to placement" })
       .click();
+    await confirmCanvasPlacement(page);
     await expect(builder).toHaveCount(0);
 
     const sourceProperties = page.getByRole("button", {
@@ -81,13 +83,12 @@ test("copies a structured strip and places a shared representation", async ({
     });
     await reuse.getByLabel("Destination mount").selectOption("");
     await reuse
-      .getByRole("button", { name: "Copy terminal strip" })
+      .getByRole("button", { name: "Continue to placement" })
       .click();
+    await confirmCanvasPlacement(page);
 
     await expect(reuse).toHaveCount(0);
-    await expect(page.getByTestId("drawing-toast")).toContainText(
-      "TB-102 created as an independent terminal strip"
-    );
+    await expect(page.getByTestId("placement-session")).toHaveCount(0);
     await expect(page.locator("[data-terminal-strip-member]")).toHaveCount(7);
 
     const copiedProperties = page.getByRole("button", {
@@ -113,13 +114,12 @@ test("copies a structured strip and places a shared representation", async ({
     });
     await representation.getByLabel("Destination mount").selectOption("");
     await representation
-      .getByRole("button", { name: "Place representation" })
+      .getByRole("button", { name: "Continue to placement" })
       .click();
+    await confirmCanvasPlacement(page);
 
     await expect(representation).toHaveCount(0);
-    await expect(page.getByTestId("drawing-toast")).toContainText(
-      "TB-102 representation placed"
-    );
+    await expect(page.getByTestId("placement-session")).toHaveCount(0);
     await expect(page.locator("[data-terminal-strip-member]")).toHaveCount(14);
 
     await page.getByRole("button", { name: "Save", exact: true }).click();

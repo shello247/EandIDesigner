@@ -1,0 +1,2 @@
+import { StandardsRecord } from "@/features/standards_assurance/ui/components/standards-record";
+export default async function ProfilePage({ params, searchParams }: { params: Promise<{ profileId: string }>; searchParams: Promise<{ revision?: string }> }) { const [{ profileId }, { revision }] = await Promise.all([params, searchParams]); return <StandardsRecord kind="profile" entityId={profileId} initialRevisionId={revision}/>; }

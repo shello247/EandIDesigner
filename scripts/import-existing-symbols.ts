@@ -54,7 +54,6 @@ const existingSymbols: ExistingSymbol[] = [
             label: `${channel}${terminal}`,
             function: "",
             anchorKey: `${channel}${terminal}`,
-            requiredForWiring: true
           }))
         ),
         ...["E"].flatMap((channel) =>
@@ -63,7 +62,6 @@ const existingSymbols: ExistingSymbol[] = [
             label: `${channel}${terminal}`,
             function: "",
             anchorKey: `${channel}${terminal}`,
-            requiredForWiring: true
           }))
         ),
         ...["F"].flatMap((channel) =>
@@ -72,7 +70,6 @@ const existingSymbols: ExistingSymbol[] = [
             label: `${channel}${terminal}`,
             function: "",
             anchorKey: `${channel}${terminal}`,
-            requiredForWiring: true
           }))
         ),
         ...[1, 2, 3].map((terminal) => ({
@@ -80,14 +77,12 @@ const existingSymbols: ExistingSymbol[] = [
           label: `G${terminal}`,
           function: "Power",
           anchorKey: `G${terminal}`,
-          requiredForWiring: true
         })),
         {
           key: "GND",
           label: "Ground",
           function: "Protective earth",
           anchorKey: "GND",
-          requiredForWiring: false
         }
       ]
     }
@@ -112,21 +107,18 @@ const existingSymbols: ExistingSymbol[] = [
           label: "Terminal 1",
           function: "Signal +",
           anchorKey: "1",
-          requiredForWiring: true
         },
         {
           key: "2",
           label: "Terminal 2",
           function: "Signal -",
           anchorKey: "2",
-          requiredForWiring: true
         },
         {
           key: "GND",
           label: "Ground",
           function: "Shield / ground",
           anchorKey: "GND",
-          requiredForWiring: false
         }
       ]
     }
@@ -152,28 +144,24 @@ const existingSymbols: ExistingSymbol[] = [
           label: "Terminal 1",
           function: "Temperature signal conductor",
           anchorKey: "1",
-          requiredForWiring: true
         },
         {
           key: "2",
           label: "Terminal 2",
           function: "Temperature signal conductor",
           anchorKey: "2",
-          requiredForWiring: true
         },
         {
           key: "GND_INTERNAL",
           label: "Internal ground",
           function: "Shield / ground",
           anchorKey: "GND_INTERNAL",
-          requiredForWiring: false
         },
         {
           key: "GND_EXTERNAL",
           label: "External ground",
           function: "Protective earth",
           anchorKey: "GND_EXTERNAL",
-          requiredForWiring: false
         }
       ]
     }

@@ -135,7 +135,7 @@ export async function extractBomItemFromUrlAction(
 
 export async function uploadBomItemDocumentAction(
   formData: FormData
-): Promise<ActionResult<BomItemDocumentMetadata>> {
+): Promise<ActionResult<BomItemDocumentMetadata & { revisionId: string | null }>> {
   try {
     const itemId = formDataString(formData, "itemId");
     const titleInput = formDataString(formData, "title");
@@ -176,6 +176,8 @@ export async function uploadBomItemDocumentAction(
 
     const document = await uploadBomItemDocument({
       itemId,
+      expectedEngineeringRevisionId: formData.has("expectedEngineeringRevisionId")
+        ? formDataString(formData, "expectedEngineeringRevisionId") || null : undefined,
       title: titleInput || documentTitleFromFileName(file.name) || "Document",
       fileName: file.name,
       mimeType: "application/pdf",
@@ -196,7 +198,7 @@ export async function uploadBomItemDocumentAction(
 
 export async function deleteBomItemDocumentAction(
   input: BomItemDocumentDeleteInput
-): Promise<ActionResult<{ id: string; itemId: string }>> {
+): Promise<ActionResult<{ id: string; itemId: string; revisionId: string | null }>> {
   try {
     const document = await deleteBomItemDocument(input);
     revalidateBomPaths({ itemId: document.itemId });

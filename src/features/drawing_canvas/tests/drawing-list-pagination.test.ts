@@ -29,6 +29,8 @@ function drawingRow(id: string, sheetCount: number) {
   return {
     id,
     title: `Drawing ${id}`,
+    description: null,
+    project: null,
     status: "needs_review",
     modelJson: stringifyDrawingModel(model),
     updatedAt: new Date("2026-08-26T12:00:00.000Z")
@@ -73,9 +75,19 @@ describe("drawing list pagination", () => {
       select: {
         id: true,
         title: true,
+        description: true,
         status: true,
         modelJson: true,
-        updatedAt: true
+        updatedAt: true,
+        project: {
+          select: {
+            id: true,
+            name: true,
+            projectNumber: true,
+            client: true,
+            status: true
+          }
+        }
       }
     });
     expect(result).toEqual({
@@ -102,4 +114,18 @@ describe("drawing list pagination", () => {
       expect.objectContaining({ skip: 50, take: 25 })
     );
   });
+
+  it.each([10, 100, 500])(
+    "keeps list document parsing bounded to one 25-row page at %i drawings",
+    async (totalCount) => {
+      database.count.mockResolvedValue(totalCount);
+      database.findMany.mockResolvedValue([]);
+
+      await listDrawingPage(1);
+
+      expect(database.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({ take: DRAWING_LIST_PAGE_SIZE })
+      );
+    }
+  );
 });

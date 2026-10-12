@@ -4,16 +4,31 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  BookOpenCheck,
   ClipboardList,
-  DraftingCompass,
+  FolderKanban,
   LibraryBig,
   PackageSearch,
   PanelLeftClose,
   PanelLeftOpen,
-  Plus
+  Plus,
+  ScanSearch
 } from "lucide-react";
 
+export function panelAnalysisSidebarHref(pathname: string): string {
+  const segments = pathname.split("/").filter(Boolean);
+  const drawingId =
+    segments.length === 2 &&
+    segments[0] === "drawings" &&
+    segments[1] !== "new"
+      ? segments[1]
+      : undefined;
+
+  return drawingId ? `/panel-analysis/${drawingId}` : "/panel-analysis";
+}
+
 const navItems = [
+  { href: "/standards", label: "Standards & Assurance", icon: BookOpenCheck, isActive: (pathname: string) => pathname === "/standards" || pathname.startsWith("/standards/") },
   {
     href: "/symbols",
     label: "Symbols",
@@ -23,11 +38,19 @@ const navItems = [
       (pathname.startsWith("/symbols/") && pathname !== "/symbols/new")
   },
   {
-    href: "/drawings",
-    label: "Drawings",
-    icon: DraftingCompass,
+    href: "/projects",
+    label: "Projects",
+    icon: FolderKanban,
     isActive: (pathname: string) =>
+      pathname === "/projects" || pathname.startsWith("/projects/") ||
       pathname === "/drawings" || pathname.startsWith("/drawings/")
+  },
+  {
+    href: panelAnalysisSidebarHref,
+    label: "Panel Analysis",
+    icon: ScanSearch,
+    isActive: (pathname: string) =>
+      pathname === "/panel-analysis" || pathname.startsWith("/panel-analysis/")
   },
   {
     href: "/bom",
@@ -115,11 +138,13 @@ export function AppSidebar() {
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = item.isActive(pathname);
+            const href =
+              typeof item.href === "function" ? item.href(pathname) : item.href;
 
             return (
               <Link
-                key={item.href}
-                href={item.href}
+                key={item.label}
+                href={href}
                 prefetch={prefetch}
                 className={[
                   "sidebar-nav-item",

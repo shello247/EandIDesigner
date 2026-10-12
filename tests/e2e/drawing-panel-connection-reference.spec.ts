@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { confirmCanvasPlacement } from "./drawing-placement-helpers";
+import { expect, test, type Page } from "./drawing-test";
 import {
   addE2eCablePlacementToDrawing,
   createE2eTerminalBlockGroupPackage,
@@ -42,8 +43,9 @@ test("adds a schematic panel reference and represents its terminal strip", async
     });
     await builder.getByLabel("Name").fill("JB001 field terminal strip");
     await builder
-      .getByRole("button", { name: "Create terminal strip" })
+      .getByRole("button", { name: "Continue to placement" })
       .click();
+    await confirmCanvasPlacement(page);
     await expect(builder).toHaveCount(0);
 
     await activateSheet(page, "Terminal Strip Reuse Drawing");
@@ -54,22 +56,21 @@ test("adds a schematic panel reference and represents its terminal strip", async
 
     const addPanel = page.getByRole("dialog", { name: "Add Panel" });
     await addPanel
-      .getByText("Reference existing", { exact: true })
+      .getByText("Add schematic reference", { exact: true })
       .click();
     await addPanel.getByRole("radio", { name: /JB001/ }).check();
     await expect(addPanel).toContainText(
       "Add a compact schematic connection view linked to its backplane."
     );
     await expect(addPanel).toContainText("Linked backplane:");
-    await addPanel.getByRole("button", { name: "Place panel" }).click();
+    await addPanel.getByRole("button", { name: "Continue to placement" }).click();
+    await confirmCanvasPlacement(page);
 
     await expect(addPanel).toHaveCount(0);
     await expect(page.locator('[data-panel-connection-view="true"]')).toHaveCount(
       1
     );
-    await expect(page.getByTestId("drawing-toast")).toContainText(
-      "JB001 schematic connection reference added."
-    );
+    await expect(page.getByTestId("placement-session")).toHaveCount(0);
     await expect(
       page.getByRole("button", {
         name: /^Panel Connection Reference/
@@ -87,11 +88,15 @@ test("adds a schematic panel reference and represents its terminal strip", async
     await expect(page.getByRole("button", { name: /TB-101/ })).toBeVisible();
 
     await page.getByRole("button", { name: /TB-101/ }).click();
+    await confirmCanvasPlacement(page);
     await expect(page.locator("[data-terminal-strip-member]")).toHaveCount(7);
     await expect(
       page.getByRole("button", { name: /^Location \/ Enclosure/ })
     ).toHaveCount(0);
 
+    // At fit-to-page (20%) neighbouring terminal hit targets overlap. Use the
+    // normal 100% inspection view for selecting this exact terminal.
+    await page.getByRole("button", { name: "Set drawing zoom to 100 percent" }).click();
     await page.getByRole("button", { name: "Connect", exact: true }).click();
     await page
       .locator('[data-anchor-hotspot$=":M02.left"]')

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode, Ref } from "react";
 import {
   Cable,
   FilePenLine,
@@ -12,6 +13,9 @@ import { DrawingViewportToolbar } from "./drawing-viewport-toolbar";
 import { DrawingGuidesToggle } from "./drawing-guides-toggle";
 
 export function DrawingSheetToolbar({
+  insertionControl,
+  preview = false,
+  previewToolbarRef,
   zoom,
   disabled,
   readOnly,
@@ -23,6 +27,7 @@ export function DrawingSheetToolbar({
   guidesVisible,
   onOpenSheetLoader,
   onEditActiveSheet,
+  isTitleSheet = false,
   onOpenConnections,
   onToggleConnect,
   onTogglePattern,
@@ -32,6 +37,9 @@ export function DrawingSheetToolbar({
   onZoomIn,
   onZoomOut
 }: {
+  insertionControl: ReactNode;
+  preview?: boolean;
+  previewToolbarRef: Ref<HTMLDivElement>;
   zoom: number;
   disabled: boolean;
   readOnly: boolean;
@@ -43,6 +51,7 @@ export function DrawingSheetToolbar({
   guidesVisible: boolean;
   onOpenSheetLoader: () => void;
   onEditActiveSheet: () => void;
+  isTitleSheet?: boolean;
   onOpenConnections: () => void;
   onToggleConnect: () => void;
   onTogglePattern: () => void;
@@ -53,9 +62,10 @@ export function DrawingSheetToolbar({
   onZoomOut: () => void;
 }) {
   return (
-    <div className="drawing-sheet-toolbar">
+    <div className="drawing-sheet-toolbar" data-testid="drawing-sheet-toolbar">
       <div className="drawing-sheet-toolbar-primary">
         <div className="drawing-sheet-toolbar-group" aria-label="Sheet controls">
+          {!preview ? insertionControl : null}
           <button
             type="button"
             className="icon-button h-9"
@@ -67,15 +77,16 @@ export function DrawingSheetToolbar({
             <List aria-hidden="true" size={18} />
             Sheets
           </button>
-          <button
+          {!preview ? <><button
             type="button"
-            className="icon-button drawing-toolbar-icon-action h-9 w-9 p-0"
+            className={isTitleSheet ? "icon-button icon-button-primary h-9" : "icon-button drawing-toolbar-icon-action h-9 w-9 p-0"}
             disabled={disabled || readOnly}
-            aria-label="Edit active sheet"
-            data-tooltip="Edit Sheet"
+            aria-label={isTitleSheet ? "Edit Title Sheet" : "Edit active sheet"}
+            data-tooltip={isTitleSheet ? undefined : "Edit Sheet"}
             onClick={onEditActiveSheet}
           >
             <FilePenLine aria-hidden="true" size={18} />
+            {isTitleSheet ? "Edit Title Sheet" : null}
           </button>
           <button
             type="button"
@@ -86,9 +97,9 @@ export function DrawingSheetToolbar({
             onClick={onOpenConnections}
           >
             <ListTree aria-hidden="true" size={18} />
-          </button>
+          </button></> : null}
         </div>
-        <div className="drawing-sheet-toolbar-group" aria-label="Canvas authoring controls">
+        {!preview ? <div className="drawing-sheet-toolbar-group" aria-label="Canvas authoring controls">
           <DrawingGuidesToggle
             disabled={disabled || readOnly}
             visible={guidesVisible}
@@ -129,16 +140,16 @@ export function DrawingSheetToolbar({
               Pattern
             </button>
           ) : null}
-        </div>
+        </div> : null}
       </div>
-      <div className="drawing-sheet-toolbar-viewport">
-        <DrawingViewportToolbar
+      <div className="drawing-sheet-toolbar-viewport" ref={preview ? previewToolbarRef : undefined}>
+        {!preview ? <DrawingViewportToolbar
           zoom={zoom}
           onFit={onFit}
           onActualSize={onActualSize}
           onZoomIn={onZoomIn}
           onZoomOut={onZoomOut}
-        />
+        /> : null}
       </div>
     </div>
   );

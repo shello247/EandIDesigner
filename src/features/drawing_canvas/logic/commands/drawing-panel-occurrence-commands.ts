@@ -1,6 +1,7 @@
 import {
   buildPackageConnectivityGraph,
-  buildPanelDiscoveryIndex
+  buildPanelDiscoveryIndex,
+  type PanelWiringSourceOccurrence
 } from "@/features/drawing_panel_wiring/api/public";
 import { TERMINAL_BLOCK_SCHEMATIC_SCALE } from "../services/drawing-terminal-blocks";
 import {
@@ -333,7 +334,7 @@ function createRepresentationPlacement({
   symbols
 }: {
   source: DrawingPlacement;
-  sourceOccurrenceKind: "wiring" | "layout" | "enclosure_reference";
+  sourceOccurrenceKind: PanelWiringSourceOccurrence["occurrenceKind"];
   asset: DrawingAssetRecord;
   panelAssetId: string;
   id: string;
@@ -378,12 +379,14 @@ export function placePanelAssetOccurrence({
   model: inputModel,
   sheetId,
   assetId,
-  symbols = []
+  symbols = [],
+  positionMode = "automatic"
 }: {
   model: DrawingModel;
   sheetId: string;
   assetId: string;
   symbols?: ApprovedDrawingSymbol[];
+  positionMode?: "automatic" | "interactive";
 }): PlacePanelAssetOccurrenceResult {
   const model = drawingPackageModelSchema.parse(inputModel);
   const sheet = getDetailedPanelSheet(model, sheetId);
@@ -446,7 +449,7 @@ export function placePanelAssetOccurrence({
     );
   }
 
-  const position = findNextPanelOccurrencePosition({
+  const position = positionMode === "interactive" ? { x: 0, y: 0 } : findNextPanelOccurrencePosition({
     sheet,
     placement: draft,
     symbols: draftSymbol ? [...symbols, draftSymbol] : symbols
@@ -471,12 +474,14 @@ export function placePanelAssetOccurrences({
   model: inputModel,
   sheetId,
   assetIds,
-  symbols = []
+  symbols = [],
+  positionMode = "automatic"
 }: {
   model: DrawingModel;
   sheetId: string;
   assetIds: string[];
   symbols?: ApprovedDrawingSymbol[];
+  positionMode?: "automatic" | "interactive";
 }): PlacePanelAssetOccurrencesResult {
   const uniqueAssetIds = [...new Set(assetIds)];
   if (uniqueAssetIds.length === 0) {
@@ -491,7 +496,8 @@ export function placePanelAssetOccurrences({
       model,
       sheetId,
       assetId,
-      symbols
+      symbols,
+      positionMode
     });
     model = result.model;
     placements.push(result.placement);

@@ -45,9 +45,18 @@ export type AuditEvaluation = {
   nonBlocking: AuditFinding[];
 };
 
-// The formerly excepted PostCSS and UUID chains are patched. Keep the strict
-// evaluator for future policy review, but do not silently tolerate any findings.
-export const DEFAULT_AUDIT_ALLOWLIST: readonly AuditAllowlistEntry[] = [];
+// Sheldon approved this tooling-only exception on 8 October 2026. The audit
+// runner separately evaluates production dependencies with no exceptions.
+export const DEFAULT_AUDIT_ALLOWLIST: readonly AuditAllowlistEntry[] = [{
+  advisoryId: "GHSA-vfj7-8cjw-p6xm",
+  packages: ["braces", "micromatch", "fast-glob", "@next/eslint-plugin-next", "eslint-config-next"],
+  maximumSeverity: "high",
+  expiresOn: "2026-10-22",
+  rationale: "Development-only Next ESLint chain; no patched braces release is available. " +
+    "The application ESLint configuration supplies no next.rootDir glob to the affected parser. " +
+    "Production dependencies are gated separately without exceptions. Review on patch availability; " +
+    "this approval expires at the end of 22 October 2026 UTC."
+}];
 
 const severityRank: Record<AuditSeverity, number> = {
   info: 0,

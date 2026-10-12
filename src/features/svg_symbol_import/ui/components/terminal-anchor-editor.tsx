@@ -80,8 +80,7 @@ export function TerminalAnchorEditor({
         key,
         label: key,
         function: "",
-        anchorKey: anchors[0]?.key ?? "",
-        requiredForWiring: true
+        anchorKey: anchors[0]?.key ?? ""
       }
     ]);
   };
@@ -283,7 +282,6 @@ export function TerminalAnchorEditor({
                 <th>Function</th>
                 <th>Anchor</th>
                 <th>Panel side</th>
-                <th>Required</th>
                 <th></th>
               </tr>
             </thead>
@@ -407,26 +405,6 @@ export function TerminalAnchorEditor({
                     </select>
                   </td>
                   <td>
-                    <input
-                      aria-label={`Terminal required ${terminal.key}`}
-                      type="checkbox"
-                      checked={terminal.requiredForWiring}
-                      disabled={disabled}
-                      onChange={(event) =>
-                        onTerminalsChange(
-                          terminals.map((item, itemIndex) =>
-                            itemIndex === index
-                              ? {
-                                  ...item,
-                                  requiredForWiring: event.currentTarget.checked
-                                }
-                              : item
-                          )
-                        )
-                      }
-                    />
-                  </td>
-                  <td>
                     <button
                       type="button"
                       className="icon-button icon-button-danger"
@@ -447,7 +425,7 @@ export function TerminalAnchorEditor({
               ))}
               {terminals.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-slate-500">
+                  <td colSpan={6} className="text-slate-500">
                     No terminals defined.
                   </td>
                 </tr>

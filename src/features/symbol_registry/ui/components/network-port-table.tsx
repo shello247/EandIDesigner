@@ -92,7 +92,7 @@ export function NetworkPortTable({
                   className="py-8 text-center text-sm text-slate-500"
                 >
                   No ports are mapped. At least one valid port is required for
-                  approval.
+                  use in drawings.
                 </td>
               </tr>
             ) : (

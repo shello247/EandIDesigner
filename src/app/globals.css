@@ -289,6 +289,44 @@ svg {
   border-color: var(--accent);
 }
 
+/* Opt-in density for the tabbed Item details popup; other editors stay unchanged. */
+.engineering-dialog-compact .field-input {
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.search-input {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+/* Unlayered base/compact padding overrides utility classes. Reserve icon space
+   here, with equal specificity and after both rules, for every search consumer. */
+.field-input.search-input-control {
+  min-width: 0;
+  padding-right: 38px;
+}
+
+.search-input-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.engineering-dialog-compact .icon-button {
+  font-size: 12px;
+}
+
+/* Keep compact tab titles bold despite the unlayered button font reset. */
+.engineering-dialog-compact [role="tab"] {
+  font-weight: 700;
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -418,9 +456,44 @@ svg {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--line);
-  padding: 8px 12px 8px 14px;
+  gap: 8px 16px;
+  padding: 10px 14px 6px;
+}
+
+.drawing-canvas-heading {
+  min-width: 0;
+  flex: 1 1 180px;
+  overflow-wrap: anywhere;
+}
+
+.drawing-representation-control {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.drawing-representation-control select {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  padding: 0 28px 0 10px;
+  color: var(--foreground);
+  font: inherit;
+}
+
+.drawing-representation-control select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .drawing-package-toolbar {
@@ -545,12 +618,15 @@ svg {
 
 .drawing-sheet-toolbar {
   display: flex;
-  min-width: min(100%, 560px);
-  flex: 1 1 640px;
+  position: relative;
+  z-index: 40;
+  min-width: 0;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 8px 12px;
+  padding: 6px 14px 10px;
+  border-bottom: 1px solid var(--line);
 }
 
 .drawing-sheet-toolbar-primary,
@@ -598,13 +674,17 @@ svg {
 }
 
 .drawing-sheet-toolbar-primary {
-  justify-content: flex-end;
+  min-width: 0;
+  justify-content: flex-start;
 }
 
-.drawing-sheet-toolbar-group + .drawing-sheet-toolbar-group,
-.drawing-sheet-toolbar-viewport {
+.drawing-sheet-toolbar-group + .drawing-sheet-toolbar-group {
   border-left: 1px solid #e2e8f0;
   padding-left: 10px;
+}
+
+.drawing-sheet-toolbar-viewport:empty {
+  display: none;
 }
 
 .drawing-viewport-toolbar {
@@ -615,62 +695,34 @@ svg {
 
 .drawing-canvas-viewport-shell {
   position: relative;
+  overflow: hidden;
+  border-radius: 0 0 8px 8px;
 }
 
 .drawing-canvas-add-menu {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  z-index: 25;
+  position: relative;
   width: max-content;
-  pointer-events: none;
 }
 
-.drawing-canvas-add-menu-trigger {
-  display: inline-flex;
-  height: 34px;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid #cbd5e1;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.94);
-  padding: 0 10px;
-  color: #0f172a;
-  font-size: 12px;
-  font-weight: 700;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
-  pointer-events: auto;
-  transition:
-    border-color 140ms ease,
-    background 140ms ease,
-    box-shadow 140ms ease;
-}
-
-.drawing-canvas-add-menu-trigger:hover {
-  border-color: #94a3b8;
-  background: #ffffff;
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
-}
-
-.drawing-canvas-add-menu-trigger:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.drawing-canvas-add-menu-trigger:focus-visible,
 .drawing-canvas-add-menu-item:focus-visible {
   outline: 2px solid #0ea5e9;
   outline-offset: 2px;
 }
 
 .drawing-canvas-add-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 60;
   display: grid;
-  min-width: 220px;
+  width: 240px;
+  max-width: calc(100vw - 48px);
+  max-height: min(420px, 65dvh);
+  overflow-y: auto;
   gap: 4px;
-  margin-top: 8px;
   border: 1px solid #d7dee8;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.98);
+  background: #ffffff;
   padding: 6px;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
   pointer-events: auto;
@@ -737,9 +789,7 @@ svg {
 
 @media (max-width: 1100px) {
   .drawing-package-toolbar-row,
-  .drawing-package-toolbar-actions,
-  .drawing-sheet-toolbar,
-  .drawing-sheet-toolbar-primary {
+  .drawing-package-toolbar-actions {
     justify-content: flex-start;
   }
 
@@ -752,9 +802,6 @@ svg {
     margin-left: 0;
   }
 
-  .drawing-sheet-toolbar {
-    flex-basis: 100%;
-  }
 }
 
 .drawing-canvas-viewport {
@@ -880,18 +927,14 @@ svg {
   max-width: 100%;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
   scroll-margin: 56px;
-}
-
-.drawing-sheet-frame-with-rulers {
-  gap: 28px;
 }
 
 .drawing-sheet-frame[role="button"] {
   cursor: pointer;
 }
 
+/* Package Preview still needs its page captions; the editable canvas does not. */
 .drawing-sheet-caption {
   display: flex;
   width: 100%;

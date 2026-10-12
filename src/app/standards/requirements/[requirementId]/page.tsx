@@ -1,0 +1,2 @@
+import { StandardsRecord } from "@/features/standards_assurance/ui/components/standards-record";
+export default async function RequirementPage({ params, searchParams }: { params: Promise<{ requirementId: string }>; searchParams: Promise<{ revision?: string }> }) { const [{ requirementId }, { revision }] = await Promise.all([params, searchParams]); return <StandardsRecord kind="requirement" entityId={requirementId} initialRevisionId={revision}/>; }

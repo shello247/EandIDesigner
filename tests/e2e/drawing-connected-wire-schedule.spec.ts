@@ -1,3 +1,4 @@
+import { confirmCanvasPlacement } from "./drawing-placement-helpers";
 import { expect, test } from "./drawing-test";
 import {
   createE2eConnectedWireScheduleDrawing,
@@ -25,6 +26,7 @@ test("adds, configures, persists, and exports a connected wire schedule", async 
     await page
       .getByRole("menuitem", { name: /Connected Wire Schedule/ })
       .click();
+    await confirmCanvasPlacement(page);
 
     const scheduleHit = page.getByTestId("connected-wire-schedule-hit");
     await expect(scheduleHit).toBeVisible();

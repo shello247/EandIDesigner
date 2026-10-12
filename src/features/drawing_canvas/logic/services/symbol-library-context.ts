@@ -1,3 +1,4 @@
+import { DEVICE_TYPE_OPTIONS, deviceTypeSchema, getDeviceTypeLabel } from "@/shared/device-classification/device-types";
 import type { DrawingPackageSheetKind } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 import type { DrawingSymbolCatalogSummary } from "@/features/symbol_registry/api/public";
@@ -17,7 +18,7 @@ import {
   createGeneratedTerminalBlockGroupLibrarySymbol,
   isGeneratedTerminalBlockGroupLibrarySymbolReference
 } from "./drawing-terminal-block-groups";
-import { isTerminalBlockModuleSymbol } from "@/features/drawing_terminal_blocks/logic/services/terminal-block-groups";
+import { isTerminalBlockModuleSymbol, LEGACY_TERMINAL_BLOCK_MODULE_SYMBOL_KEY } from "@/features/drawing_terminal_blocks/api/public";
 
 export type SymbolLibraryContext = "wiring" | "none";
 
@@ -33,50 +34,7 @@ export type SymbolCatalogLibraryGroup = {
   symbols: DrawingSymbolCatalogSummary[];
 };
 
-function labelFromKey(value: string): string {
-  return value
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-const WIRING_GROUP_LABELS: Record<string, string> = {
-  cable_assembly: "Cable Assemblies",
-  instrument: "Instrumentation",
-  monitor: "Controllers",
-  circuit_protection: "Circuit Protection",
-  terminal_block: "Terminal Block",
-  panel_layout: "Panel Layout"
-};
-
-const WIRING_GROUP_ORDER = [
-  "cable_assembly",
-  "instrument",
-  "monitor",
-  "circuit_protection",
-  "terminal_block",
-  "panel_layout"
-];
-
-function isLegacyCircuitProtectionSymbol(
-  symbol: ApprovedDrawingSymbol
-): boolean {
-  const searchable = [
-    symbol.symbolKey,
-    symbol.displayName,
-    symbol.model ?? "",
-    symbol.metadata.panelCategory ?? ""
-  ]
-    .join(" ")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_");
-
-  return (
-    symbol.metadata.panelCategory === "protection" ||
-    searchable.includes("circuit_breaker") ||
-    searchable.includes("breaker") ||
-    /(^|_)mcb(_|$)/.test(searchable)
-  );
-}
+const WIRING_GROUP_ORDER = ["panel_layout", ...DEVICE_TYPE_OPTIONS.map(type => type.value), "needs_classification"];
 
 export function hasPanelLayoutPhysicalDimensions(
   symbol: ApprovedDrawingSymbol | undefined
@@ -118,23 +76,13 @@ function symbolLibraryGroupKey(symbol: ApprovedDrawingSymbol): string {
     return "panel_layout";
   }
 
-  if (symbol.managedCategory) {
-    return `managed:${symbol.managedCategory.id}`;
-  }
-
-  if (isLegacyCircuitProtectionSymbol(symbol)) {
-    return "circuit_protection";
-  }
-
-  if (isPanelLayoutLibrarySymbol(symbol)) {
-    return "panel_layout";
-  }
-
-  return symbol.category;
+  return symbol.deviceType ?? "needs_classification";
 }
 
 function symbolLibraryGroupLabel(key: string): string {
-  return WIRING_GROUP_LABELS[key] ?? labelFromKey(key);
+  if (key === "panel_layout") return "Panel Layout Tools";
+  const type = deviceTypeSchema.safeParse(key);
+  return type.success ? getDeviceTypeLabel(type.data) : "Needs classification";
 }
 
 function symbolLibraryGroupSort(
@@ -173,7 +121,7 @@ function symbolSupportsWiring(symbol: ApprovedDrawingSymbol): boolean {
 export function getSymbolLibraryContextForSheetKind(
   sheetKind: DrawingPackageSheetKind
 ): SymbolLibraryContext {
-  if (sheetKind === "section_title") {
+  if (sheetKind === "section_title" || sheetKind === "title_sheet") {
     return "none";
   }
 
@@ -282,27 +230,6 @@ function isPanelLayoutCatalogSymbol(
   );
 }
 
-function isLegacyCatalogCircuitProtection(
-  symbol: DrawingSymbolCatalogSummary
-): boolean {
-  const searchable = [
-    symbol.symbolKey,
-    symbol.displayName,
-    symbol.model ?? "",
-    symbol.capabilities.panelCategory ?? ""
-  ]
-    .join(" ")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_");
-
-  return (
-    symbol.capabilities.panelCategory === "protection" ||
-    searchable.includes("circuit_breaker") ||
-    searchable.includes("breaker") ||
-    /(^|_)mcb(_|$)/.test(searchable)
-  );
-}
-
 function catalogGroupKey(symbol: DrawingSymbolCatalogSummary): string {
   if (
     isGeneratedBackplaneSymbolReference(symbol) ||
@@ -312,16 +239,11 @@ function catalogGroupKey(symbol: DrawingSymbolCatalogSummary): string {
   ) {
     return "panel_layout";
   }
-  if (symbol.managedCategory) {
-    return `managed:${symbol.managedCategory.id}`;
-  }
-  if (isLegacyCatalogCircuitProtection(symbol)) return "circuit_protection";
-  if (isPanelLayoutCatalogSymbol(symbol)) return "panel_layout";
-  return symbol.technicalKind;
+  return symbol.deviceType ?? "needs_classification";
 }
 
 function catalogSupportsWiring(symbol: DrawingSymbolCatalogSummary): boolean {
-  if (symbol.capabilities.terminalBlockModule) return false;
+  if (symbol.capabilities.terminalBlockModule || symbol.symbolKey === LEGACY_TERMINAL_BLOCK_MODULE_SYMBOL_KEY) return false;
   return (
     (symbol.capabilities.layoutUsage ?? "wiring") !== "panel_layout" ||
     isPanelLayoutCatalogSymbol(symbol)
@@ -362,10 +284,7 @@ export function groupCatalogSummariesForLibrary(
   return [...grouped.entries()]
     .map(([key, items]) => ({
       key,
-      label:
-        key === "panel_layout" || key === "circuit_protection"
-          ? symbolLibraryGroupLabel(key)
-          : items[0]?.managedCategory?.name ?? symbolLibraryGroupLabel(key),
+      label: symbolLibraryGroupLabel(key),
       symbols: items.sort((first, second) =>
         first.displayName.localeCompare(second.displayName)
       )
@@ -398,9 +317,7 @@ export function groupSymbolsForLibrary(
   return [...grouped.entries()]
     .map(([key, items]) => ({
       key,
-      label:
-        items.find((item) => item.managedCategory)?.managedCategory?.name ??
-        symbolLibraryGroupLabel(key),
+      label: symbolLibraryGroupLabel(key),
       symbols: items.sort((first, second) =>
         first.displayName.localeCompare(second.displayName)
       )

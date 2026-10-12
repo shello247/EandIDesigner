@@ -54,7 +54,6 @@ function symbol(): ApprovedDrawingSymbol {
           anchorKey: "IN",
           panelSide: "single",
           electricalDomains: ["signal", "protective_earth"],
-          requiredForWiring: true
         },
         {
           key: "OUT",
@@ -62,7 +61,6 @@ function symbol(): ApprovedDrawingSymbol {
           anchorKey: "OUT",
           panelSide: "single",
           electricalDomains: ["signal", "protective_earth"],
-          requiredForWiring: true
         }
       ],
       panelWiring: { assetType: "relay", tagPrefix: "K" }

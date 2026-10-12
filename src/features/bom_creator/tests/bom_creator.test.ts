@@ -15,6 +15,7 @@ import {
   type SymbolBomTemplateDetail
 } from "../data/schema";
 import { generateDrawingBom } from "../logic/use_cases/generate-drawing-bom";
+import { buildBomGenerationContexts } from "../logic/services/bom-generation-context";
 import { validateSymbolBomTemplateInput } from "../logic/use_cases/symbol-bom-template-use-cases";
 
 function symbol(input: {
@@ -294,6 +295,82 @@ function cableTemplate(): SymbolBomTemplateDetail {
 }
 
 describe("bom creator", () => {
+  it.each([false, true])(
+    "counts physical backplane devices once, excluding layout helpers (repeated view: %s)",
+    (includeRepeatedView) => {
+      const model = createDefaultDrawingModel();
+      const sheet = model.sheets[0];
+      const first = instrumentPlacement({
+        layoutKind: "layout_helper",
+        layoutParentId: "backplane"
+      });
+      const second = instrumentPlacement({
+        id: "tt_102",
+        assetId: "asset_tt_102",
+        tag: "TT-102",
+        layoutKind: "layout_helper",
+        layoutParentId: "backplane"
+      });
+      model.assets = [];
+      model.sheets = [{
+        ...sheet,
+        placements: [first, second, instrumentPlacement({
+          id: "backplane",
+          assetId: "helper_backplane",
+          role: "other",
+          layoutKind: "backplane"
+        }), instrumentPlacement({
+          id: "layout_annotation",
+          assetId: "helper_annotation",
+          role: "other",
+          layoutKind: "layout_helper"
+        })],
+        connections: [{
+          id: "wire_1",
+          from: { placementId: first.id, anchorKey: "A" },
+          to: { placementId: second.id, anchorKey: "A" }
+        }]
+      }];
+      if (includeRepeatedView) {
+        model.sheets.push({
+          ...sheet,
+          id: "wiring_sheet",
+          name: "Wiring View",
+          placements: [instrumentPlacement({ id: "tt_101_wiring" })],
+          connections: []
+        });
+      }
+      const moduleItem = item({ id: "module_item" });
+      const template: SymbolBomTemplateDetail = {
+        ...cableTemplate(),
+        symbolId: instrumentSymbol.symbolId,
+        lines: [{
+          id: "module_line",
+          itemId: moduleItem.id,
+          lineNumber: 1,
+          quantityRule: "fixed_per_assembly",
+          quantity: 1,
+          item: moduleItem
+        }]
+      };
+      const contexts = buildBomGenerationContexts(model);
+      expect(contexts).toHaveLength(2);
+      expect(contexts.map((context) => context.connectionCount)).toEqual([1, 1]);
+      const bom = generateDrawingBom({
+        drawingId: "backplane_drawing",
+        drawingTitle: "Backplane Devices",
+        model,
+        symbols: [instrumentSymbol],
+        templates: [template]
+      });
+      expect(bom.assemblies).toHaveLength(2);
+      expect(bom.assemblies.find((assembly) => assembly.assetTag === "TT-101")?.sheetRefs)
+        .toHaveLength(includeRepeatedView ? 2 : 1);
+      expect(bom.consolidatedLines).toHaveLength(1);
+      expect(bom.consolidatedLines[0].quantity).toBe(2);
+    }
+  );
+
   it("validates required item fields", () => {
     expect(() =>
       bomItemInputSchema.parse({

@@ -42,6 +42,8 @@ export type {
   DrawingSheetCanvasModel
 };
 
+export { normalizeComponentDrawingAssets } from "../logic/services/drawing-component-assets";
+
 export {
   isNonAssetDrawingPlacement,
   allocateNextTagFromPrefix,

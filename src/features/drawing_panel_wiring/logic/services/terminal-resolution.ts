@@ -70,7 +70,6 @@ export function terminalDefinitionSignature(
     label: terminal.label,
     function: terminal.function ?? "",
     supportedSides: [...terminal.supportedSides].sort(),
-    requiredSides: [...(terminal.requiredSides ?? [])].sort(),
     allowedDomains: [...(terminal.allowedDomains ?? [])].sort(),
     anchors: terminal.anchors
       .map((anchor) => ({

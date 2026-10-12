@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Link2, Minus, PackagePlus, Plus, X } from "lucide-react";
-import type { DrawingModel } from "../../data/schema";
+import { Box, Link2, Minus, PackagePlus, Plus, X } from "lucide-react";
+import type { DrawingModel, DrawingPackageSheet } from "../../data/schema";
 import {
   buildPanelAssetCatalog,
   getPanelEnclosureKindLabel,
@@ -20,7 +20,7 @@ import { listPanelConnectionViewSources } from "../../logic/services/drawing-pan
 
 export type AddPanelEnclosureSubmission =
   | {
-      mode: "create";
+      mode: "create" | "place-existing";
       assetId: string;
       tag: string;
       title: string;
@@ -33,7 +33,7 @@ export type AddPanelEnclosureSubmission =
       sourceBackplanePlacementId: string;
     };
 
-type AddMode = "create" | "reference";
+type AddMode = "create" | "place-existing" | "reference";
 
 function sheetReferenceSummary(
   panel: ReturnType<typeof buildPanelAssetCatalog>[number]
@@ -49,17 +49,19 @@ function sheetReferenceSummary(
 
 export function AddPanelEnclosureDialog({
   model,
+  activeSheet,
   onCancel,
   onPlace
 }: {
   model: DrawingModel;
+  activeSheet: DrawingPackageSheet;
   onCancel: () => void;
   onPlace: (submission: AddPanelEnclosureSubmission) => void;
 }) {
   const titleId = "add-panel-enclosure-dialog-title";
   const descriptionId = "add-panel-enclosure-dialog-description";
   const existingPanels = useMemo(() => buildPanelAssetCatalog(model), [model]);
-  const [mode, setMode] = useState<AddMode>("create");
+  const [mode, setMode] = useState<AddMode>(existingPanels.length ? "place-existing" : "create");
   const [tag, setTag] = useState(() =>
     allocateNextTagFromPrefix({
       model,
@@ -70,7 +72,7 @@ export function AddPanelEnclosureDialog({
     normalizePanelEnclosureTitle(undefined, "power_distribution_panel")
   );
   const [selectedAssetId, setSelectedAssetId] = useState(
-    existingPanels[0]?.assetId ?? ""
+    existingPanels.find((panel) => !panel.placementRefs.some((ref) => ref.sheetId === activeSheet.id))?.assetId ?? existingPanels[0]?.assetId ?? ""
   );
   const [error, setError] = useState<string | null>(null);
   const selectedPanel =
@@ -92,13 +94,19 @@ export function AddPanelEnclosureDialog({
           )
         ? selectedBackplaneId
         : "";
-  const displayTag = mode === "reference" ? selectedPanel?.tag ?? "" : tag;
+  const alreadyPlaced = selectedPanel?.placementRefs.some((ref) => ref.sheetId === activeSheet.id) ?? false;
+  const displayTag = mode !== "create" ? selectedPanel?.tag ?? "" : tag;
   const displayTitle =
-    mode === "reference" ? selectedPanel?.title ?? "" : panelTitle;
+    mode !== "create" ? selectedPanel?.title ?? "" : panelTitle;
   const decrementedTag = stepEngineeringTag(tag, -1);
   const incrementedTag = stepEngineeringTag(tag, 1);
 
   const placePanel = () => {
+    if (mode === "place-existing") {
+      if (!selectedPanel || alreadyPlaced) return;
+      onPlace({ mode, assetId: selectedPanel.assetId, tag: selectedPanel.tag, title: selectedPanel.title });
+      return;
+    }
     if (mode === "reference") {
       if (!selectedPanel) {
         setError("Choose an existing panel to reference.");
@@ -160,9 +168,9 @@ export function AddPanelEnclosureDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
-        className="w-full max-w-lg overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
       >
-        <div className="flex items-start gap-3 border-b border-slate-200 px-5 py-4">
+        <div className="flex shrink-0 items-start gap-3 border-b border-slate-200 px-5 py-4">
           <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-700">
             <PackagePlus aria-hidden="true" size={18} />
           </div>
@@ -171,7 +179,7 @@ export function AddPanelEnclosureDialog({
               Add Panel
             </h2>
             <p id={descriptionId} className="mt-1 text-xs leading-5 text-slate-600">
-              Add a generated power distribution panel enclosure to this sheet.
+              Place a physical enclosure or add a schematic reference.
             </p>
           </div>
           <button
@@ -184,8 +192,8 @@ export function AddPanelEnclosureDialog({
           </button>
         </div>
 
-        <div className="space-y-4 px-5 py-4">
-          <div className="grid grid-cols-2 gap-2">
+        <div className="min-h-0 space-y-4 overflow-y-auto px-5 py-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <button
               type="button"
               className={[
@@ -195,7 +203,7 @@ export function AddPanelEnclosureDialog({
                   : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
               ].join(" ")}
               aria-pressed={mode === "create"}
-              onClick={() => setMode("create")}
+              onClick={() => { setMode("create"); setError(null); }}
             >
               <span className="flex items-center gap-2 font-bold">
                 <PackagePlus aria-hidden="true" size={14} />
@@ -207,6 +215,16 @@ export function AddPanelEnclosureDialog({
             </button>
             <button
               type="button"
+              className={`rounded-md border px-3 py-2 text-left text-xs transition ${mode === "place-existing" ? "border-sky-300 bg-sky-50 text-sky-900" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+              aria-pressed={mode === "place-existing"}
+              disabled={existingPanels.length === 0}
+              onClick={() => { setMode("place-existing"); setError(null); }}
+            >
+              <span className="flex items-center gap-2 font-bold"><Box aria-hidden="true" size={14} />Place existing panel</span>
+              <span className="mt-1 block text-slate-500">Reuse its identity. Add a backplane after placement.</span>
+            </button>
+            <button
+              type="button"
               className={[
                 "rounded-md border px-3 py-2 text-left text-xs transition",
                 mode === "reference"
@@ -215,11 +233,11 @@ export function AddPanelEnclosureDialog({
               ].join(" ")}
               aria-pressed={mode === "reference"}
               disabled={existingPanels.length === 0}
-              onClick={() => setMode("reference")}
+              onClick={() => { setMode("reference"); setError(null); }}
             >
               <span className="flex items-center gap-2 font-bold">
                 <Link2 aria-hidden="true" size={14} />
-                Reference existing
+                Add schematic reference
               </span>
               <span className="mt-1 block text-slate-500">
                 Add a compact schematic connection view linked to its backplane.
@@ -236,7 +254,7 @@ export function AddPanelEnclosureDialog({
                 id="add-panel-enclosure-tag"
                 className="field-input"
                 value={displayTag}
-                readOnly={mode === "reference"}
+                readOnly={mode !== "create"}
                 onChange={(event) => {
                   setTag(event.currentTarget.value);
                   setError(null);
@@ -277,7 +295,7 @@ export function AddPanelEnclosureDialog({
               id="add-panel-enclosure-title"
               className="field-input"
               value={displayTitle}
-              readOnly={mode === "reference"}
+              readOnly={mode !== "create"}
               placeholder="Power Distribution Panel"
               onChange={(event) => {
                 setPanelTitle(event.currentTarget.value);
@@ -286,7 +304,7 @@ export function AddPanelEnclosureDialog({
             />
           </div>
 
-          {mode === "reference" ? (
+          {mode !== "create" ? (
             <div className="space-y-2">
               {existingPanels.length > 0 ? (
                 existingPanels.map((panel) => (
@@ -304,15 +322,15 @@ export function AddPanelEnclosureDialog({
                       className="mt-1"
                       name="panel-reference"
                       checked={selectedPanel?.assetId === panel.assetId}
-                      onChange={() => setSelectedAssetId(panel.assetId)}
+                      onChange={() => { setSelectedAssetId(panel.assetId); setSelectedBackplaneId(""); setError(null); }}
                     />
                     <span className="min-w-0">
                       <span className="block font-bold text-slate-950">
                         {panel.tag}
                       </span>
                       <span className="mt-0.5 block text-slate-500">
-                        {panel.title || getPanelEnclosureKindLabel(panel.kind)} /{" "}
-                        {sheetReferenceSummary(panel)}
+                        {panel.title || getPanelEnclosureKindLabel(panel.kind)}
+                        {panel.placementRefs.length ? ` / ${sheetReferenceSummary(panel)}` : " / Not physically placed yet"}
                       </span>
                     </span>
                   </label>
@@ -322,13 +340,18 @@ export function AddPanelEnclosureDialog({
                   No panels exist yet in this drawing.
                 </div>
               )}
-              {selectedPanel && backplaneOptions.length === 1 ? (
+              {mode === "place-existing" && alreadyPlaced ? (
+                <div role="status" className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {selectedPanel?.tag} is already physically placed on this sheet. Select it to add a backplane.
+                </div>
+              ) : null}
+              {mode === "reference" && selectedPanel && backplaneOptions.length === 1 ? (
                 <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                   <span className="font-bold text-slate-800">Linked backplane:</span>{" "}
                   {backplaneOptions[0].label}
                 </div>
               ) : null}
-              {selectedPanel && backplaneOptions.length > 1 ? (
+              {mode === "reference" && selectedPanel && backplaneOptions.length > 1 ? (
                 <div>
                   <label className="field-label" htmlFor="panel-reference-backplane">
                     Linked backplane
@@ -351,9 +374,9 @@ export function AddPanelEnclosureDialog({
                   </select>
                 </div>
               ) : null}
-              {selectedPanel && backplaneOptions.length === 0 ? (
+              {mode === "reference" && selectedPanel && backplaneOptions.length === 0 ? (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-                  This panel has no authoritative physical backplane to reference.
+                  Place this panel using “Place existing panel”, then add its backplane before creating a schematic reference.
                 </div>
               ) : null}
             </div>
@@ -366,7 +389,7 @@ export function AddPanelEnclosureDialog({
           ) : null}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 px-5 py-4">
           <button type="button" className="icon-button" onClick={onCancel}>
             Cancel
           </button>
@@ -375,12 +398,12 @@ export function AddPanelEnclosureDialog({
             className="icon-button icon-button-primary"
             onClick={placePanel}
             disabled={
-              mode === "reference" &&
-              (!selectedPanel || backplaneOptions.length === 0)
+              (mode === "reference" && (!selectedPanel || !effectiveBackplaneId)) ||
+              (mode === "place-existing" && (!selectedPanel || alreadyPlaced))
             }
           >
             <PackagePlus aria-hidden="true" size={14} />
-            Place panel
+            Continue to placement
           </button>
         </div>
       </div>

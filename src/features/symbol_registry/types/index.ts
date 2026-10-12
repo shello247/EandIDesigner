@@ -1,12 +1,13 @@
 import type {
   SymbolMetadata,
   SymbolStatus,
-  SymbolTechnicalKind,
-  ValidationIssue
+  SymbolTechnicalKind
 } from "../data/schema";
 import type { SymbolCategorySummary } from "@/features/symbol_categories/api/public";
+import type { DeviceType } from "@/shared/device-classification/device-types";
 
 export type SymbolListItem = {
+  deviceType?: DeviceType | null;
   id: string;
   symbolKey: string;
   displayName: string;
@@ -16,7 +17,6 @@ export type SymbolListItem = {
   technicalKind: SymbolTechnicalKind;
   status: SymbolStatus;
   latestVersionNumber?: number;
-  blockingIssueCount: number;
   linkedItemCount: number;
   updatedAt: string;
 };
@@ -28,6 +28,7 @@ export type SymbolListPage = {
   totalCount: number;
   totalPages: number;
   categoryId?: string;
+  deviceType?: DeviceType | "needs_classification";
 };
 
 export type SymbolIdentity = {
@@ -36,6 +37,7 @@ export type SymbolIdentity = {
 };
 
 export type SymbolVersionSummary = {
+  deviceType?: DeviceType | null;
   id: string;
   versionNumber: number;
   status: SymbolStatus;
@@ -44,31 +46,6 @@ export type SymbolVersionSummary = {
   sourceInputSummary?: string | null;
   aiResponseId?: string | null;
   createdAt: string;
-};
-
-export type SymbolEngineerNoteSummary = {
-  id: string;
-  symbolId: string;
-  versionId?: string | null;
-  notes: string;
-  imageFileName?: string | null;
-  imageMimeType?: string | null;
-  imageSizeBytes?: number | null;
-  imageDataUrl?: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type SymbolDocumentSummary = {
-  id: string;
-  symbolId: string;
-  versionId?: string | null;
-  title: string;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  createdAt: string;
-  updatedAt: string;
 };
 
 export type SymbolDetail = {
@@ -89,9 +66,6 @@ export type SymbolDetail = {
     status: SymbolStatus;
     createdAt: string;
   }>;
-  validationIssues: ValidationIssue[];
-  engineerNotes: SymbolEngineerNoteSummary[];
-  documents: SymbolDocumentSummary[];
 };
 
 export type ActionResult<T> =

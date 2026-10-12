@@ -59,7 +59,7 @@ export function applyApprovedPanelRepair({
   );
   if (!current?.repair || current.repair.kind !== finding.repair?.kind) {
     throw new Error(
-      "This repair is stale because the drawing has changed. Run Panel Review again."
+      "This repair is stale because the drawing has changed. Regenerate the engineering quality report before applying it."
     );
   }
   const parameters = current.repair.parameters;

@@ -1,5 +1,6 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { itemDeviceTypeRevisionSelect, listItemDeviceTypeOptions, listItemDeviceTypePage, projectItemDeviceTypes } from "./item-device-types";
 import {
   bomItemFilterOptionsSchema,
   bomItemImageMetadataSchema,
@@ -28,6 +29,7 @@ const listRowSelect = Prisma.validator<Prisma.BomItemSelect>()({
   itemKey: true,
   displayName: true,
   category: true,
+  engineeringRevisions: itemDeviceTypeRevisionSelect,
   unit: true,
   manufacturer: true,
   partNumber: true,
@@ -51,12 +53,6 @@ type BomItemListDatabaseRow = Prisma.BomItemGetPayload<{
   select: typeof listRowSelect;
 }>;
 
-function categoryLabel(value: string): string {
-  return value
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (match) => match.toUpperCase());
-}
-
 function imageUrl(imageId: string): string {
   return `/api/bom/items/images/${encodeURIComponent(imageId)}`;
 }
@@ -76,7 +72,7 @@ function toImageMetadata(
   });
 }
 
-function toListRow(row: BomItemListDatabaseRow): BomItemListRow {
+function toListRow(row: Omit<BomItemListDatabaseRow, "engineeringRevisions">): BomItemListRow {
   return bomItemListRowSchema.parse({
     id: row.id,
     itemKey: row.itemKey,
@@ -107,7 +103,6 @@ function itemWhere(input: BomItemListInput): Prisma.BomItemWhereInput {
 
   return {
     status: "active",
-    category: input.category,
     manufacturer: input.manufacturer,
     OR: searchFields.length > 0 ? searchFields : undefined
   };
@@ -116,9 +111,10 @@ function itemWhere(input: BomItemListInput): Prisma.BomItemWhereInput {
 async function findRows(
   where: Prisma.BomItemWhereInput,
   page: number,
-  pageSize: number
+  pageSize: number,
+  db: Prisma.TransactionClient
 ): Promise<BomItemListDatabaseRow[]> {
-  return prisma.bomItem.findMany({
+  return db.bomItem.findMany({
     where,
     select: listRowSelect,
     orderBy: [{ displayName: "asc" }, { itemKey: "asc" }],
@@ -128,23 +124,39 @@ async function findRows(
 }
 
 export async function listBomItemRows(
-  input: BomItemListInput
+  input: BomItemListInput,
+  db: PrismaClient | Prisma.TransactionClient = prisma
 ): Promise<BomItemListResult> {
+  // Count, filter IDs, Item rows and exact revision verification must share one
+  // read snapshot; reclassification elsewhere cannot change a row mid-projection.
+  if ("$transaction" in db) {
+    return db.$transaction(tx => listBomItemRows(input, tx));
+  }
   const parsed = bomItemListInputSchema.parse(input);
   const where = itemWhere(parsed);
+  if (parsed.category) {
+    const filtered = await listItemDeviceTypePage(parsed, db);
+    const rows = filtered.ids.length ? await findRows({ ...where, id: { in: filtered.ids } }, 1, parsed.pageSize, db) : [];
+    return bomItemListResultSchema.parse({
+      items: (await projectItemDeviceTypes(rows, db)).map(toListRow),
+      totalItems: filtered.totalItems, totalPages: Math.max(1, Math.ceil(filtered.totalItems / parsed.pageSize)),
+      page: filtered.page, pageSize: parsed.pageSize,
+      appliedFilters: { query: parsed.query, category: parsed.category, manufacturer: parsed.manufacturer }
+    });
+  }
   const [totalItems, requestedRows] = await Promise.all([
-    prisma.bomItem.count({ where }),
-    findRows(where, parsed.page, parsed.pageSize)
+    db.bomItem.count({ where }),
+    findRows(where, parsed.page, parsed.pageSize, db)
   ]);
   const totalPages = Math.max(1, Math.ceil(totalItems / parsed.pageSize));
   const page = Math.min(parsed.page, totalPages);
   const rows =
     page === parsed.page || totalItems === 0
       ? requestedRows
-      : await findRows(where, page, parsed.pageSize);
+      : await findRows(where, page, parsed.pageSize, db);
 
   return bomItemListResultSchema.parse({
-    items: rows.map(toListRow),
+    items: (await projectItemDeviceTypes(rows, db)).map(toListRow),
     totalItems,
     totalPages,
     page,
@@ -157,15 +169,10 @@ export async function listBomItemRows(
   });
 }
 
-export async function listBomItemFilterOptions(): Promise<BomItemFilterOptions> {
-  const [categoryRows, manufacturerRows] = await Promise.all([
-    prisma.bomItem.findMany({
-      where: { status: "active" },
-      select: { category: true },
-      distinct: ["category"],
-      orderBy: { category: "asc" }
-    }),
-    prisma.bomItem.findMany({
+export async function listBomItemFilterOptions(db: Prisma.TransactionClient = prisma): Promise<BomItemFilterOptions> {
+  const [categories, manufacturerRows] = await Promise.all([
+    listItemDeviceTypeOptions(db),
+    db.bomItem.findMany({
       where: { status: "active", manufacturer: { not: null } },
       select: { manufacturer: true },
       distinct: ["manufacturer"],
@@ -174,10 +181,7 @@ export async function listBomItemFilterOptions(): Promise<BomItemFilterOptions> 
   ]);
 
   return bomItemFilterOptionsSchema.parse({
-    categories: categoryRows.map((row) => ({
-      value: row.category,
-      label: categoryLabel(row.category)
-    })),
+    categories,
     manufacturers: manufacturerRows.flatMap((row) =>
       row.manufacturer
         ? [{ value: row.manufacturer, label: row.manufacturer }]

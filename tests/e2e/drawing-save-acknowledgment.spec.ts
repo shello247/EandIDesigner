@@ -57,4 +57,11 @@ test("keeps edits made while a save acknowledgment is in flight dirty", async ({
   await expect(saveAgain).toBeEnabled();
   await saveAgain.click();
   await expect(page.getByRole("button", { name: "Drawing saved" })).toBeVisible();
+  const savedPosition = await placement.getAttribute("x");
+  await page.reload();
+  await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible();
+  await expect(placement).toHaveAttribute("x", savedPosition!);
+  const exported = await page.request.get(`/drawings/${drawingId}/pdf`);
+  expect(exported.ok()).toBeTruthy();
+  expect((await exported.body()).subarray(0, 4).toString()).toBe("%PDF");
 });

@@ -3,7 +3,10 @@ import type {
   DrawingModel,
   DrawingPlacement
 } from "@/features/drawing_canvas/api/asset-contracts";
-import { placementAssetId } from "@/features/drawing_canvas/api/asset-contracts";
+import {
+  isNonAssetDrawingPlacement,
+  placementAssetId
+} from "@/features/drawing_canvas/api/asset-contracts";
 
 export type BomGenerationSheetRef = {
   sheetId: string;
@@ -77,7 +80,7 @@ export function buildBomGenerationContexts(
       const assetId = placementAssetId(placement);
       rawPlacementCounts.set(assetId, (rawPlacementCounts.get(assetId) ?? 0) + 1);
 
-      if (placement.layoutKind) {
+      if (isNonAssetDrawingPlacement(placement)) {
         continue;
       }
 

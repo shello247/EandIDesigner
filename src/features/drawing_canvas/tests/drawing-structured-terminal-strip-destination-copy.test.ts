@@ -64,7 +64,6 @@ function memberSymbol(params: {
               label: "1",
               anchorKey: "a1",
               panelSide: "single",
-              requiredForWiring: true
             }
           ]
         : []

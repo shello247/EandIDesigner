@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { deviceTypeSchema } from "@/shared/device-classification/device-types";
+import {drawingProductSelectionSchema,engineeringProjectSettingsSchema} from "@/features/item_engineering/api/contracts";
 import {
   structuredTerminalStripSchema,
   terminalBlockPlacementSchema
@@ -11,6 +13,10 @@ import {
 import { drawingComponentSelectionsSchema } from "@/features/symbol_components/api/public";
 import { connectedWireScheduleAnnotationSchema } from "@/features/drawing_connected_wire_schedule/api/public";
 import { engineeringAttributeContainerSchema } from "@/features/engineering_attributes/api/public";
+import {
+  drawingDescriptionSchema,
+  drawingProjectAssignmentSchema
+} from "@/features/drawing_projects/api/public";
 
 export const drawingStatusSchema = z.enum([
   "draft",
@@ -27,26 +33,11 @@ export const placementRoleSchema = z.enum([
   "other"
 ]);
 
-export const drawingAssetTypeSchema = z.enum([
-  "instrument",
-  "controller",
-  "panel",
-  "junction_box",
-  "terminal_block",
-  "breaker",
-  "fuse",
-  "relay",
-  "power_supply",
-  "isolator",
-  "converter",
-  "io_module",
-  "network_device",
-  "earth_bar",
-  "cable",
-  "other"
-]);
+export const drawingAssetTypeSchema = deviceTypeSchema;
 
 export const drawingAssetRecordSchema = z.object({
+  productSelection: drawingProductSelectionSchema.optional(),
+  engineeringSettings: engineeringProjectSettingsSchema.optional(),
   id: z.string().trim().min(1),
   tag: z.string().trim().min(1).max(120),
   type: drawingAssetTypeSchema,
@@ -151,6 +142,9 @@ export const drawingPlacementSchema = z.object({
     .optional(),
   layoutLabel: z
     .object({
+      size: z.enum(["compact", "standard", "large"]).optional(),
+      rotation: z.union([z.literal(0), z.literal(90), z.literal(270)]).optional(),
+      leader: z.boolean().optional(),
       visible: z.boolean().optional(),
       position: z
         .enum([
@@ -289,8 +283,16 @@ export const drawingTitleBlockSchema = z.object({
 
 export const drawingMeasurementUnitSchema = z.enum(["mm", "in"]);
 
+export const titleSheetDraftSchema = z.object({
+  title: z.string().trim().min(1, "Enter a drawing title.").max(200),
+  titleBlock: drawingTitleBlockSchema
+});
+export type TitleSheetDraft = z.infer<typeof titleSheetDraftSchema>;
+
 export const drawingSettingsDraftSchema = z.object({
   title: z.string().trim().min(1, "Enter a drawing title.").max(200),
+  description: drawingDescriptionSchema,
+  projectId: drawingProjectAssignmentSchema,
   titleBlock: drawingTitleBlockSchema,
   measurementUnit: drawingMeasurementUnitSchema
 });
@@ -304,6 +306,7 @@ export const drawingSheetPageSchema = z.object({
 
 export const drawingPackageSheetKindSchema = z.enum([
   "drawing",
+  "title_sheet",
   "section_title"
 ]);
 
@@ -357,24 +360,47 @@ export const sheetSettingsDraftSchema = z.object({
 });
 
 export const drawingPackageModelSchema = z.object({
-  version: z.literal(2),
+  version: z.union([z.literal(2),z.literal(3)]),
   measurementUnit: drawingMeasurementUnitSchema.default("mm"),
   titleBlock: drawingTitleBlockSchema,
   assets: z.array(drawingAssetRecordSchema).default([]),
   panelWiring: panelWiringPackageDataSchema.optional(),
-  sheets: z.array(drawingPackageSheetSchema).min(1)
+  sheets: z.array(drawingPackageSheetSchema).min(1).superRefine((sheets, context) => {
+    sheets.forEach((sheet, index) => {
+      if (sheet.kind !== "title_sheet") return;
+      if (index !== 0) {
+        context.addIssue({ code: "custom", path: [index, "kind"], message: "The package Title Sheet must be the first and only Title Sheet." });
+      }
+      if (sheet.placements.length || sheet.connections.length || sheet.annotations.length || sheet.panelDrawingContext || sheet.sectionTitlePage) {
+        context.addIssue({ code: "custom", path: [index, "kind"], message: "A Title Sheet uses shared drawing information, not drawing objects or section details." });
+      }
+    });
+  })
+}).superRefine((model,ctx)=>{
+  if(model.version===3){
+    if(new Set(model.assets.map(a=>a.id)).size!==model.assets.length)ctx.addIssue({code:"custom",path:["assets"],message:"Physical asset identities must be unique."});
+    return;
+  }
+  const hasProducts=(rows:Array<{productSelection?:unknown;engineeringSettings?:unknown;children?:unknown[]}>,depth=0):boolean=>depth>16||rows.some(r=>r.productSelection||r.engineeringSettings||r.children&&hasProducts(r.children as typeof rows,depth+1));
+  if(model.assets.some(a=>a.productSelection||a.engineeringSettings||hasProducts(a.componentSelections??[])||a.terminalStrip?.members.some(m=>m.productSelection||m.engineeringSettings||hasProducts(m.componentSelections??[]))))
+    ctx.addIssue({code:"custom",path:["version"],message:"Explicit product selection requires drawing model version 3."});
 });
 
 export const drawingModelSchema = drawingPackageModelSchema;
 
 export const createDrawingInputSchema = z.object({
   title: z.string().trim().min(1).max(200),
-  drawingKey: z.string().trim().min(1).max(120).optional()
+  description: drawingDescriptionSchema,
+  projectId: drawingProjectAssignmentSchema.refine((value) => Boolean(value), {
+    message: "Open an active project to create a drawing."
+  })
 });
 
 export const saveDrawingInputSchema = z.object({
   drawingId: z.string().trim().min(1),
   title: z.string().trim().min(1).max(200),
+  description: drawingDescriptionSchema,
+  projectId: drawingProjectAssignmentSchema,
   model: drawingPackageModelSchema,
   expectedUpdatedAt: z
     .string()
@@ -439,7 +465,13 @@ export function createDefaultDrawingSheet({
   };
 }
 
-export function createDefaultDrawingModel(): DrawingModel {
+export function createTitleSheet(id = "sheet_1"): DrawingPackageSheet {
+  return { ...createDefaultDrawingSheet({ id, name: "Title Sheet" }), kind: "title_sheet" };
+}
+
+// The plain model remains useful for legacy fixtures and programmatic drawing
+// authoring. User-created packages explicitly request the cover at creation.
+export function createDefaultDrawingModel({ withTitleSheet = false }: { withTitleSheet?: boolean } = {}): DrawingModel {
   return {
     version: 2,
     measurementUnit: "mm",
@@ -448,7 +480,7 @@ export function createDefaultDrawingModel(): DrawingModel {
       date: new Date().toISOString().slice(0, 10)
     },
     assets: [],
-    sheets: [createDefaultDrawingSheet()]
+    sheets: [withTitleSheet ? createTitleSheet() : createDefaultDrawingSheet()]
   };
 }
 
@@ -487,6 +519,7 @@ export function createStablePlacementAssetId(placementId: string): string {
 }
 
 export function ensureDrawingModelAssetIds(model: DrawingModel): DrawingModel {
+  model = preserveComponentAssetPlacements(model);
   return {
     ...model,
     sheets: model.sheets.map((sheet) => ({
@@ -576,7 +609,35 @@ function placementAssetIdForSchema(placement: DrawingPlacement): string {
   return placement.assetId?.trim() || createStablePlacementAssetId(placement.id);
 }
 
+// Older component placements were incorrectly saved with the decorative-helper
+// role. Preserve any explicit component record before stripping helper IDs.
+// This works without a symbol catalogue, including import/export and BOM reads.
+function preserveComponentAssetPlacements(model: DrawingModel): DrawingModel {
+  const componentAssets = new Map(
+    (model.assets ?? []).filter((asset) => asset.componentSelections !== undefined)
+      .map((asset) => [asset.id, asset])
+  );
+  if (componentAssets.size === 0) return model;
+  let changed = false;
+  const sheets = model.sheets.map((sheet) => {
+    let sheetChanged = false;
+    const placements = sheet.placements.map((placement) => {
+      const asset = componentAssets.get(placementAssetIdForSchema(placement));
+      if (
+        placement.layoutKind !== "layout_helper" || placement.role !== "other" ||
+        placement.panelReference || placement.panelPatternLegend || !asset ||
+        asset.symbolId !== placement.symbolId || asset.versionId !== placement.versionId
+      ) return placement;
+      changed = sheetChanged = true;
+      return { ...placement, role: "device" as const };
+    });
+    return sheetChanged ? { ...sheet, placements } : sheet;
+  });
+  return changed ? { ...model, sheets } : model;
+}
+
 export function ensureDrawingModelAssets(model: DrawingModel): DrawingModel {
+  model = preserveComponentAssetPlacements(model);
   const assets = new Map<string, DrawingAssetRecord>();
   const nonAssetPlacementIds = new Set(
     model.sheets.flatMap((sheet) =>

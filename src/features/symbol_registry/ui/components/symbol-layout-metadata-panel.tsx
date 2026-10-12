@@ -209,7 +209,7 @@ export function SymbolLayoutMetadataPanel({
                   Enable as terminal-strip member
                 </span>
                 <span className="mt-0.5 block leading-5 text-slate-500">
-                  Explicitly allows this approved DIN-rail symbol in structured
+                  Allows this DIN-rail symbol in structured
                   terminal strips.
                 </span>
               </span>

@@ -69,6 +69,14 @@ export {
   getTerminalSideOccupancy,
   validatePanelTerminalMappings
 } from "../logic/services/panel-terminal-catalog";
+export {
+  buildPackageTerminalOccupancyIndex,
+  buildTerminalConflictFingerprints,
+  connectionEndpointSourceKey,
+  packageOccurrenceAnchorKey,
+  resolveConnectionEndpointAvailability,
+  validateTerminalConflictDelta
+} from "../logic/services/package-terminal-occupancy";
 export { createPanelTerminalRef } from "../logic/services/terminal-resolution";
 export { detectPanelDiscoveryWarnings } from "../logic/services/panel-discovery-warnings";
 export {
@@ -180,6 +188,12 @@ export type {
   PanelTerminalMappingCandidate,
   PanelTerminalOccupant,
   PanelTerminalSideOccupancy,
+  PackageTerminalOccupancyIndex,
+  PackageTerminalEndpointResolution,
+  ConnectionEndpointAvailability,
+  TerminalSideOccupant,
+  TerminalConflictFingerprint,
+  TerminalConflictDelta,
   PanelSourceOccurrenceRef,
   PanelTerminalNode,
   PanelTerminalOccurrenceRef,

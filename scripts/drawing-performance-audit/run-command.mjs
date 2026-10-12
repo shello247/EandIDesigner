@@ -28,11 +28,16 @@ function snapshot() {
     });
 }
 if (args.some(arg => arg === 'start' || arg === 'dev') && args.some(arg => /(?:next|next[\\/]dist[\\/]bin[\\/]next)$/.test(arg))) {
-  if (!args.includes('3100') || !args.includes('127.0.0.1')) throw new Error('Isolated server must bind 127.0.0.1:3100 explicitly');
+  // Symbol-only verification can use 3120 when another application owns 3100.
+  // Neither choice permits the shared live port 3000.
+  // Cursor-placement verification has explicit approval to use 3121 while
+  // another worktree owns 3120. Neither path permits the shared live port 3000.
+  const isolatedPort = label === 'placement-server' ? 3121 : label === 'symbol-server' ? 3120 : 3100;
+  if (!args.includes(String(isolatedPort)) || !args.includes('127.0.0.1')) throw new Error(`Isolated server must bind 127.0.0.1:${isolatedPort} explicitly`);
   await new Promise((resolve, reject) => {
     const probe = net.createServer();
-    probe.once('error', () => reject(new Error('Port3100 occupied; do not replace another server')));
-    probe.listen(3100, '127.0.0.1', () => probe.close(resolve));
+    probe.once('error', () => reject(new Error(`Port${isolatedPort} occupied; do not replace another server`)));
+    probe.listen(isolatedPort, '127.0.0.1', () => probe.close(resolve));
   });
 }
 const before = snapshot();
@@ -43,7 +48,7 @@ sourceState.runnerFiles = [import.meta.url, new URL('./run-config.mjs', import.m
 });
 const log = fs.createWriteStream(logFile, { flags: 'wx' });
 const started = Date.now();
-const env = { ...process.env, DATABASE_URL: configuration.databaseUrl, NEXT_TELEMETRY_DISABLED: '1', OPENAI_TERMINAL_MAP_MOCK: 'true', OPENAI_BOM_ITEM_EXTRACTION_MOCK: 'true' };
+const env = { ...process.env, DATABASE_URL: configuration.databaseUrl, EI_SYNTHETIC_PREVIEW: 'true', NEXT_TELEMETRY_DISABLED: '1', OPENAI_TERMINAL_MAP_MOCK: 'true', OPENAI_BOM_ITEM_EXTRACTION_MOCK: 'true' };
 function writeStart(pid) {
   fs.writeFileSync(startFile, JSON.stringify({ label, command, args, pid, startedAt: new Date(started).toISOString(), sourceState, files: before, runId: configuration.runId }, null, 2), { flag: 'wx' });
 }

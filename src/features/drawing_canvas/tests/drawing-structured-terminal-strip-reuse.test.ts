@@ -64,7 +64,6 @@ function memberSymbol(params: {
               label: "1",
               anchorKey: "a1",
               panelSide: "single",
-              requiredForWiring: true
             }
           ]
         : []
@@ -215,7 +214,8 @@ function createFixture() {
   const sourcePlacement = {
     ...created.placement,
     rotation: 0,
-    layoutLabel: { visible: false as const, position: "bottom-center" as const },
+    layoutLabel: { visible: false as const, position: "bottom-center" as const,
+      size: "standard" as const, rotation: 270 as const, leader: true },
     labelPosition: { x: created.placement.x + 4, y: created.placement.y - 5 }
   };
   const createdModel = drawingPackageModelSchema.parse({

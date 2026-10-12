@@ -1,4 +1,7 @@
 "use client";
+import { DEVICE_TYPE_OPTIONS, getDeviceTypeLabel } from "@/shared/device-classification/device-types";
+import { useAssetClassifications } from "@/features/device_classification/api/ui";
+import { classificationGroup, previewClassificationRepair, type ClassificationRepairPreview } from "@/features/device_classification/api/contracts";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
@@ -19,7 +22,6 @@ import {
   Plus,
   Repeat2,
   Rows3,
-  Search,
   ShieldCheck,
   ToggleLeft,
   Trash2,
@@ -28,6 +30,7 @@ import {
   type LucideIcon,
   X
 } from "lucide-react";
+import { SearchInput } from "@/shared/ui/search-input";
 import type {
   ApprovedDrawingSymbol,
   DrawingAssetType,
@@ -60,27 +63,18 @@ import {
   type EngineeringAttributeChange
 } from "@/features/engineering_attributes/ui/public";
 
-const ASSET_GROUPS: Array<{
-  type: DrawingAssetType;
-  title: string;
-  icon: LucideIcon;
-}> = [
-  { type: "instrument", title: "Level Devices / Instruments", icon: Gauge },
-  { type: "controller", title: "Controllers / Monitors", icon: Cpu },
-  { type: "panel", title: "Panels / Enclosures", icon: PanelsTopLeft },
-  { type: "junction_box", title: "Junction Boxes", icon: Box },
-  { type: "terminal_block", title: "Terminal Blocks", icon: Rows3 },
-  { type: "breaker", title: "Breakers", icon: ToggleLeft },
-  { type: "fuse", title: "Fuses", icon: Zap },
-  { type: "relay", title: "Relays", icon: Workflow },
-  { type: "power_supply", title: "Power Supplies", icon: BatteryCharging },
-  { type: "isolator", title: "Isolators", icon: ShieldCheck },
-  { type: "converter", title: "Converters", icon: Repeat2 },
-  { type: "io_module", title: "I/O Modules", icon: CircuitBoard },
-  { type: "network_device", title: "Network Devices", icon: Network },
-  { type: "earth_bar", title: "Earth Bars", icon: Earth },
-  { type: "cable", title: "Cables", icon: Cable },
-  { type: "other", title: "Other Assets", icon: Boxes }
+type AssetGroupType = DrawingAssetType | "needs_classification";
+const ASSET_TYPE_ICONS: Partial<Record<DrawingAssetType, LucideIcon>> = {
+  instrument: Gauge, controller: Cpu, panel: PanelsTopLeft, junction_box: Box,
+  terminal_block: Rows3, breaker: ToggleLeft, fuse: Zap, relay: Workflow,
+  power_supply: BatteryCharging, ups: BatteryCharging, chassis_rack: Boxes,
+  isolator: ShieldCheck, converter: Repeat2, io_module: CircuitBoard,
+  network_device: Network, earth_bar: Earth, cable: Cable
+};
+const ASSET_GROUPS = DEVICE_TYPE_OPTIONS.map(option => ({ type: option.value,
+  title: option.label, icon: ASSET_TYPE_ICONS[option.value] ?? Boxes }));
+const DISPLAY_GROUPS: Array<{ type: AssetGroupType; title: string; icon: LucideIcon }> = [
+  ...ASSET_GROUPS, { type: "needs_classification", title: "Needs classification", icon: AlertTriangle }
 ];
 
 function AssetDetailSection({
@@ -235,6 +229,8 @@ export function AssetManagerDialog({
   onCancel,
   onCreateAsset,
   onUpdateAsset,
+  onRepairClassification,
+  classificationReadOnly = false,
   onLoadSheet,
   onLoadSymbol,
   onDeleteAsset
@@ -254,6 +250,8 @@ export function AssetManagerDialog({
     updates: ManagedAssetUpdateInput,
     engineeringAttributeChange?: EngineeringAttributeChange
   ) => void;
+  onRepairClassification: (preview: ClassificationRepairPreview) => Promise<{ ok: true } | { ok: false; error: string }>;
+  classificationReadOnly?: boolean;
   onLoadSheet: (sheetId: string) => void;
   onLoadSymbol: (
     versionId: string
@@ -269,6 +267,9 @@ export function AssetManagerDialog({
     () => buildManagedAssetCatalog(model, symbols),
     [model, symbols]
   );
+  const classifications = useAssetClassifications(catalog);
+  const [reviewingClassification, setReviewingClassification] = useState(false);
+  const [repairingClassification, setRepairingClassification] = useState(false);
   const initialSelectedAsset = initialAssetId
     ? catalog.find((asset) => asset.id === initialAssetId)
     : undefined;
@@ -276,11 +277,11 @@ export function AssetManagerDialog({
   const [selectedAssetId, setSelectedAssetId] = useState(
     initialSelectedAsset?.id ?? ""
   );
-  const [expandedGroups, setExpandedGroups] = useState<Set<DrawingAssetType>>(
+  const [expandedGroups, setExpandedGroups] = useState<Set<AssetGroupType>>(
     () =>
       initialSelectedAsset
-        ? new Set<DrawingAssetType>([initialSelectedAsset.type])
-        : new Set<DrawingAssetType>()
+        ? new Set<AssetGroupType>([initialSelectedAsset.type])
+        : new Set<AssetGroupType>()
   );
   const [isCreating, setIsCreating] = useState(catalog.length === 0);
   const [createType, setCreateType] = useState<DrawingAssetType>("instrument");
@@ -306,15 +307,18 @@ export function AssetManagerDialog({
   );
   const groupedCatalog = useMemo(
     () =>
-      ASSET_GROUPS.map((group) => ({
+      DISPLAY_GROUPS.map((group) => ({
         ...group,
-        assets: filteredCatalog.filter((asset) => asset.type === group.type),
-        totalCount: catalog.filter((asset) => asset.type === group.type).length
+        assets: filteredCatalog.filter((asset) => classificationGroup(classifications.results.get(asset.id)!) === group.type),
+        totalCount: catalog.filter((asset) => classificationGroup(classifications.results.get(asset.id)!) === group.type).length
       })).filter((group) => group.assets.length > 0),
-    [catalog, filteredCatalog]
+    [catalog, filteredCatalog, classifications.results]
   );
   const isSearching = query.trim().length > 0;
   const selectedAsset = catalog.find((asset) => asset.id === selectedAssetId);
+  const selectedClassification = selectedAsset ? classifications.results.get(selectedAsset.id) : undefined;
+  const classificationProposal = selectedAsset && selectedClassification ? previewClassificationRepair(selectedAsset, selectedClassification) : null;
+  const linkedClassification = Boolean(selectedAsset && (selectedAsset.versionId || selectedAsset.productSelection?.status === "selected"));
   const deletionBlockers = selectedAsset
     ? getAssetDeletionBlockers(model, selectedAsset.id)
     : [];
@@ -363,7 +367,7 @@ export function AssetManagerDialog({
     setError(null);
   };
 
-  const toggleGroup = (type: DrawingAssetType) => {
+  const toggleGroup = (type: AssetGroupType) => {
     setExpandedGroups((current) => {
       const next = new Set(current);
 
@@ -404,6 +408,9 @@ export function AssetManagerDialog({
       return;
     }
 
+    if (loadedSymbol?.ok && loadedSymbol.symbol.deviceType !== createType) {
+      setError("Choose a Symbol with the same explicit Device Type. Review its classification first if missing."); return;
+    }
     try {
       const createdAsset = onCreateAsset({
         type: createType,
@@ -535,6 +542,8 @@ export function AssetManagerDialog({
             <PackagePlus aria-hidden="true" size={18} />
           </div>
           <div className="min-w-0 flex-1">
+            {classifications.error ? <p role="alert" className="text-xs text-amber-800">{classifications.error} <button className="text-link" onClick={classifications.retry}>Retry classifications</button></p> : null}
+            {classifications.loading ? <p role="status" className="text-xs text-slate-500">Loading exact classifications…</p> : null}
             <div className="flex min-h-6 items-center gap-2">
               <h2 id={titleId} className="text-sm font-semibold text-slate-950">
                 Asset Manager
@@ -570,20 +579,12 @@ export function AssetManagerDialog({
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(320px,0.95fr)_minmax(420px,1.05fr)]">
           <div className="flex min-h-0 flex-col border-r border-slate-200 bg-slate-50">
             <div className="border-b border-slate-200 p-4">
-              <div className="relative">
-                <Search
-                  aria-hidden="true"
-                  size={15}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  className="field-input pl-9"
-                  value={query}
-                  placeholder="Search assets or sheets"
-                  onChange={(event) => setQuery(event.currentTarget.value)}
-                  aria-label="Search drawing assets"
-                />
-              </div>
+              <SearchInput
+                value={query}
+                placeholder="Search assets or sheets"
+                onChange={(event) => setQuery(event.currentTarget.value)}
+                aria-label="Search drawing assets"
+              />
             </div>
 
             <div className="min-h-0 flex-1 overflow-auto p-3">
@@ -596,7 +597,7 @@ export function AssetManagerDialog({
                   <div
                     className="grid grid-cols-5 gap-2"
                     role="group"
-                    aria-label="Asset categories"
+                    aria-label="Asset Device Types"
                   >
                     {groupedCatalog.map((group) => {
                       const isExpanded =
@@ -670,6 +671,7 @@ export function AssetManagerDialog({
                                 ].join(" ")}
                                 onClick={() => {
                                   setSelectedAssetId(asset.id);
+                                  setReviewingClassification(false);
                                   setExpandedGroups((current) => {
                                     if (current.has(group.type)) {
                                       return current;
@@ -748,7 +750,7 @@ export function AssetManagerDialog({
 
                 <div>
                   <label className="field-label" htmlFor="asset-manager-type">
-                    Asset type
+                    Device Type
                   </label>
                   <select
                     id="asset-manager-type"
@@ -847,7 +849,7 @@ export function AssetManagerDialog({
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="text-[11px] font-bold uppercase text-slate-500">
-                      {assetTypeLabel(selectedAsset.type)}
+                      {getDeviceTypeLabel(selectedClassification?.deviceType)}
                     </div>
                     <h3 className="mt-1 text-lg font-bold text-slate-950">
                       {selectedAsset.tag}
@@ -878,7 +880,7 @@ export function AssetManagerDialog({
                   sectionKey="identity"
                   sectionNumber={1}
                   title="Identity"
-                  subtitle="Tag, category, title, and description"
+                  subtitle="Tag, Device Type, title, and description"
                 >
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
@@ -922,11 +924,28 @@ export function AssetManagerDialog({
                     </div>
                   </div>
 
-                  <div>
+                  <div className={reviewingClassification ? "sm:col-span-2" : undefined}>
                     <label className="field-label" htmlFor="selected-asset-type">
-                      Type
+                      Device Type
                     </label>
-                    <select
+                    {linkedClassification ? <div className="space-y-2 text-xs">
+                      <p>{selectedClassification?.status === "unavailable" ? "Classification unavailable" : getDeviceTypeLabel(selectedClassification?.deviceType)}</p>
+                      <p className="text-slate-500">{selectedClassification?.source ? (selectedClassification.source.kind === "item_revision" ? "From the selected Item revision" : selectedClassification.source.kind === "managed_asset" ? "From this application-generated asset" : "From the pinned Symbol version") : "Exact source classification needs review."}</p>
+                      <button type="button" className="icon-button" onClick={() => setReviewingClassification(value => !value)}>Review classification</button>
+                      {reviewingClassification ? <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+                        {selectedClassification?.source ? <details className="text-slate-500"><summary className="cursor-pointer">Exact source record</summary><p className="mt-1 break-all">Record: {selectedClassification.source.recordId}<br />Revision: {selectedClassification.source.revisionId}</p></details> : null}
+                        <p>Saved drawing type: {getDeviceTypeLabel(selectedAsset.type)}</p>
+                        {selectedClassification?.issues.map((issue, index) => <p key={index} className="text-amber-800">{issue.message}</p>)}
+                        {classificationProposal ? <><p>Proposed: {getDeviceTypeLabel(classificationProposal.after)}. Tags, placements, wiring and product selections stay unchanged.</p>
+                          <button type="button" className="icon-button icon-button-primary" disabled={repairingClassification || classificationReadOnly}
+                            onClick={async () => { setRepairingClassification(true); const result = await onRepairClassification(classificationProposal); setRepairingClassification(false);
+                              if (!result.ok) setError(result.error); else { setReviewingClassification(false); setError(null); } }}>Apply to drawing draft</button></> : <p>No safe snapshot correction is available. Review the exact Item/Symbol source first.</p>}
+                        {classificationReadOnly ? <p>Approved or archived drawing: record a finding; no repair is permitted here.</p> : null}
+                        <div className="flex flex-wrap items-center gap-3"><button type="button" className="icon-button" onClick={classifications.retry}>Refresh sources</button>
+                        {selectedAsset.symbolId && selectedClassification?.source?.kind !== "managed_asset" ? <a className="text-link" href={`/symbols/${selectedAsset.symbolId}`} target="_blank" rel="noreferrer">Open Symbol classification</a> : null}
+                        </div>
+                      </div> : null}
+                    </div> : <select
                       id="selected-asset-type"
                       className="field-input"
                       value={selectedAsset.type}
@@ -941,7 +960,7 @@ export function AssetManagerDialog({
                           {assetTypeLabel(group.type)}
                         </option>
                       ))}
-                    </select>
+                    </select>}
                   </div>
 
                   <div className="sm:col-span-2">

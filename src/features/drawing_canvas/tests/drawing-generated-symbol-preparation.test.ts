@@ -82,7 +82,6 @@ const terminalMember: ApprovedDrawingSymbol = {
         label: "1",
         anchorKey: "1",
         panelSide: "single",
-        requiredForWiring: true
       }
     ]
   }

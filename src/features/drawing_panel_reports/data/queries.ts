@@ -1,4 +1,5 @@
 import { listSymbolBomTemplatesForSymbols } from "@/features/bom_creator/api/public";
+import {loadSelectedProductBom} from "@/features/bom_creator/api/product-server";
 import type { DrawingAssetRecord } from "@/features/drawing_canvas/api/asset-contracts";
 import {
   collectDrawingSymbolVersionIds,
@@ -41,7 +42,7 @@ export async function buildSavedPanelDeliverables(
       )
     )
   ])];
-  const templates = await listSymbolBomTemplatesForSymbols(symbolIds);
+  const [templates,selectedProducts] = await Promise.all([listSymbolBomTemplatesForSymbols(symbolIds),loadSelectedProductBom(drawing.model,symbols)]);
   const bundle = buildPanelDeliverables({
     drawingId: drawing.id,
     drawingKey: drawing.drawingKey,
@@ -50,6 +51,7 @@ export async function buildSavedPanelDeliverables(
     model: drawing.model,
     symbols,
     templates,
+    selectedProducts,
     request,
     enforceIssuance: true
   });

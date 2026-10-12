@@ -594,8 +594,9 @@ function addLinkedOccurrenceFindings(
         );
       }
       if (
-        (asset.symbolId && occurrence.symbolId !== asset.symbolId) ||
-        (asset.versionId && occurrence.versionId !== asset.versionId)
+        occurrence.occurrenceKind !== "derived_reference" &&
+        ((asset.symbolId && occurrence.symbolId !== asset.symbolId) ||
+          (asset.versionId && occurrence.versionId !== asset.versionId))
       ) {
         addFinding(
           findings,
@@ -791,49 +792,6 @@ function addExternalTerminationFindings(
   }
 }
 
-function addRequiredTerminalFindings(
-  index: PanelQualityIndex,
-  findings: Map<string, PanelDrawingQualityFinding>
-): void {
-  for (const terminal of index.graph.terminalsById.values()) {
-    if (!index.associatedAssetIds.has(terminal.ref.assetId)) continue;
-    const requiredSides = new Set(terminal.requiredSides ?? []);
-    const externalRef = { ...terminal.ref, side: "external" as const };
-    const external = index.terminalCatalog.occupancyBySideId.get(
-      terminalSideNodeId(externalRef)
-    );
-    if (
-      terminal.supportedSides.includes("external") &&
-      terminal.supportedSides.includes("internal") &&
-      (external?.conductorOccupants.length ?? 0) > 0
-    ) {
-      requiredSides.add("internal");
-    }
-    for (const side of requiredSides) {
-      const ref = { ...terminal.ref, side };
-      const occupancy = index.terminalCatalog.occupancyBySideId.get(
-        terminalSideNodeId(ref)
-      );
-      if (occupancy && occupancy.status !== "available") continue;
-      const asset = index.graph.assetsById.get(terminal.ref.assetId);
-      addFinding(
-        findings,
-        makeFinding({
-          id: findingId("required_terminal_unconnected", terminalSideNodeId(ref)),
-          code: "required_terminal_unconnected",
-          severity: "blocking_error",
-          category: "terminal",
-          message: `${asset?.tag ?? terminal.ref.assetId}:${terminal.label}/${side} requires a connection.`,
-          index,
-          assetId: terminal.ref.assetId,
-          terminal: ref,
-          locations: locationsForAsset(index, terminal.ref.assetId)
-        })
-      );
-    }
-  }
-}
-
 function addRouteFinding(
   index: PanelQualityIndex,
   findings: Map<string, PanelDrawingQualityFinding>,
@@ -931,25 +889,6 @@ function addRouteFindings(
   for (const wire of index.graph.internalWiresById.values()) {
     if (wire.panelAssetId !== index.panelAssetId) continue;
     const routes = index.internalWireRoutesByRecordId.get(wire.id) ?? [];
-    if (!wire.domain || wire.domain === "unknown") {
-      addFinding(
-        findings,
-        makeFinding({
-          id: findingId("internal_wire_domain_unverified", wire.id),
-          code: "internal_wire_domain_unverified",
-          severity: "warning",
-          category: "internal_wire",
-          message: `${wire.wireId} has no verified electrical domain.`,
-          index,
-          wireId: wire.wireId,
-          internalWireId: wire.id,
-          locations:
-            routes.length > 0
-              ? routes.map(locationForRoute)
-              : firstDetailedLocation(index, "internal_wire", wire.id)
-        })
-      );
-    }
     if (routes.length === 0) {
       addFinding(
         findings,
@@ -1108,7 +1047,6 @@ export function runPanelDrawingQualityChecks(
   addLinkedOccurrenceFindings(index, findings);
   addDetailedSheetOccurrenceFindings(index, findings);
   addExternalTerminationFindings(index, findings);
-  addRequiredTerminalFindings(index, findings);
   addRouteFindings(index, findings);
 
   const ordered = [...findings.values()].sort(

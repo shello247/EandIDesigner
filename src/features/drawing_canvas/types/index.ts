@@ -3,16 +3,19 @@ import type {
   SymbolTechnicalKind
 } from "@/features/symbol_registry/data/schema";
 import type { SymbolCategorySummary } from "@/features/symbol_categories/api/public";
+import type { DeviceType } from "@/shared/device-classification/device-types";
 import type { DrawingModel, DrawingStatus } from "../data/schema";
 import type { PackagePanelDrawingQualityReport } from "@/features/drawing_panel_wiring/api/contracts";
+import type { DrawingProjectSummary } from "@/features/drawing_projects/api/public";
 
 export type ApprovedDrawingSymbol = {
+  deviceType?: DeviceType | null;
   symbolId: string;
   symbolKey: string;
   displayName: string;
   manufacturer?: string | null;
   model?: string | null;
-  /** @deprecated Technical compatibility field; use managedCategory for grouping. */
+  /** @deprecated Technical compatibility field; use Device Type for grouping. */
   category: SymbolTechnicalKind;
   technicalKind?: SymbolTechnicalKind;
   managedCategory?: SymbolCategorySummary;
@@ -26,6 +29,8 @@ export type ApprovedDrawingSymbol = {
 export type DrawingListItem = {
   id: string;
   title: string;
+  description?: string;
+  project: DrawingProjectSummary | null;
   status: DrawingStatus;
   sheetCount: number;
   updatedAt: string;
@@ -43,6 +48,8 @@ export type DrawingDetail = {
   id: string;
   drawingKey: string;
   title: string;
+  description?: string;
+  project: DrawingProjectSummary | null;
   status: DrawingStatus;
   model: DrawingModel;
   createdAt: string;

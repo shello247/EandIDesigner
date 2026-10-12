@@ -17,6 +17,7 @@ export function BomItemDeleteDialog({
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const isUsed = item.templateLineCount > 0;
+  const hasPreservedHistory = isUsed || item.category !== "unclassified";
 
   const confirmDelete = () => {
     startTransition(async () => {
@@ -56,9 +57,9 @@ export function BomItemDeleteDialog({
                 Delete {item.displayName}
               </h2>
               <p className="mt-1 text-xs text-slate-500">
-                {isUsed
-                  ? "This item is used by symbol mini BOMs, so it will be archived and preserved for existing references."
-                  : "This item is not used by any symbol mini BOMs, so it will be permanently deleted."}
+                {hasPreservedHistory
+                  ? "This item has saved engineering history or symbol mini BOM references, so it will be archived and preserved."
+                  : "Items with saved guidance, engineering history or references are archived; otherwise they are removed permanently."}
               </p>
             </div>
           </div>
@@ -89,7 +90,8 @@ export function BomItemDeleteDialog({
               ? `It appears in ${item.templateLineCount} mini BOM line${
                   item.templateLineCount === 1 ? "" : "s"
                 }. Archiving keeps generated BOMs and symbol templates intact.`
-              : "Permanent deletion removes the library record and its stored images."}
+              : hasPreservedHistory ? "Archiving preserves the Item's saved engineering revisions and attachments."
+              : "Any saved guidance or history will be preserved by archiving. Only Items without saved history or references are permanently removed with their stored images."}
           </p>
         </div>
 
@@ -109,7 +111,7 @@ export function BomItemDeleteDialog({
             disabled={isPending}
           >
             <Trash2 aria-hidden="true" size={14} />
-            {isPending ? "Working..." : isUsed ? "Archive item" : "Delete item"}
+            {isPending ? "Working..." : hasPreservedHistory ? "Archive item" : "Delete item"}
           </button>
         </div>
       </div>

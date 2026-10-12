@@ -27,6 +27,7 @@ function approvedSymbol(input: {
   key: string;
   name: string;
   category: ApprovedDrawingSymbol["category"];
+  deviceType?: ApprovedDrawingSymbol["deviceType"];
   layoutUsage?: ApprovedDrawingSymbol["metadata"]["layoutUsage"];
   panelCategory?: ApprovedDrawingSymbol["metadata"]["panelCategory"];
   physicalWidthMm?: number;
@@ -39,6 +40,7 @@ function approvedSymbol(input: {
     symbolKey: input.key,
     displayName: input.name,
     category: input.category,
+    deviceType: input.deviceType,
     versionId: `version_${input.key}`,
     versionNumber: 1,
     svg: '<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg" />',
@@ -78,6 +80,7 @@ function catalogSummary(
     manufacturer: symbol.manufacturer,
     model: symbol.model,
     technicalKind: symbol.category,
+    deviceType: symbol.deviceType,
     managedCategory: symbol.managedCategory ?? {
       id: symbol.category,
       name: managedCategoryNames[symbol.category] ?? symbol.category
@@ -100,29 +103,29 @@ describe("symbol library context", () => {
   const wiringInstrument = approvedSymbol({
     key: "nmt81",
     name: "NMT81 Average Temperature Probe",
-    category: "instrument"
+    category: "instrument", deviceType: "instrument"
   });
   const cableAssembly = approvedSymbol({
     key: "clx_cable_1_pair",
     name: "CLX Cable 1 Pair",
-    category: "cable_assembly"
+    category: "cable_assembly", deviceType: "cable"
   });
   const controller = approvedSymbol({
     key: "nrf81_tank_side_monitor",
     name: "NRF81 Tank Side Monitor",
-    category: "monitor"
+    category: "monitor", deviceType: "controller"
   });
   const circuitBreaker = approvedSymbol({
     key: "miniature_circuit_breaker_3_pole",
     name: "Miniature Circuit Breaker 3 Pole",
-    category: "terminal_block"
+    category: "terminal_block", deviceType: "breaker"
   });
   const panelRail = approvedSymbol({
     key: "standard_th35_din_rail",
     name: "Standard TH35 DIN Rail",
     category: "terminal_block",
     layoutUsage: "panel_layout",
-    panelCategory: "rail",
+    panelCategory: "rail", deviceType: "din_rail",
     physicalWidthMm: 300,
     physicalHeightMm: 35,
     mountingType: "backplate"
@@ -192,7 +195,7 @@ describe("symbol library context", () => {
     const ioModule = approvedSymbol({
       key: "allen_bradley_2085_if4",
       name: "2085-IF4 4-Channel Analog Input Module",
-      category: "other",
+      category: "other", deviceType: "io_module",
       layoutUsage: "both",
       panelCategory: "controller",
       physicalWidthMm: 28,
@@ -209,22 +212,18 @@ describe("symbol library context", () => {
 
     expect(available).toContainEqual(ioModule);
     expect(
-      groups.find((group) => group.key === "panel_layout")?.symbols
+      groups.find((group) => group.key === "io_module")?.symbols
     ).toContainEqual(ioModule);
   });
 
-  it("groups wiring symbols by engineering library category", () => {
+  it("groups wiring symbols by controlled Device Type without changing availability", () => {
     const groups = groupSymbolsForLibrary(symbols, "wiring");
 
     expect(groups.map((group) => group.label)).toEqual([
-      "Cable Assemblies",
-      "Instrumentation",
-      "Controllers",
-      "Circuit Protection",
-      "Panel Layout"
+      "Panel Layout Tools", "Instrument", "Controller", "Circuit Breaker", "Cable", "DIN Rail"
     ]);
     expect(
-      groups.find((group) => group.key === "circuit_protection")?.symbols[0]
+      groups.find((group) => group.key === "breaker")?.symbols[0]
         .symbolKey
     ).toBe("miniature_circuit_breaker_3_pole");
     expect(
@@ -234,7 +233,6 @@ describe("symbol library context", () => {
     ).toEqual([
       GENERATED_BACKPLANE_SYMBOL_KEY,
       GENERATED_HORIZONTAL_DIMENSION_SYMBOL_KEY,
-      "standard_th35_din_rail",
       GENERATED_TERMINAL_BLOCK_GROUP_LIBRARY_SYMBOL_KEY,
       GENERATED_VERTICAL_DIMENSION_SYMBOL_KEY,
       GENERATED_WIRE_TRAY_SYMBOL_KEY
@@ -249,6 +247,13 @@ describe("symbol library context", () => {
         .find((group) => group.key === "panel_layout")
         ?.symbols.map((symbol) => symbol.symbolId)
     ).toContain(GENERATED_WIRE_TRAY_SYMBOL_ID);
+  });
+
+  it("does not guess missing types from a managed category, tag or product name", () => {
+    const legacy = { ...circuitBreaker, deviceType: null, managedCategory: { id: "misleading", name: "UPS" } };
+    const result = groupSymbolsForLibrary([legacy], "wiring");
+    expect(result.find(group => group.key === "needs_classification")?.symbols).toContainEqual(legacy);
+    expect(result.some(group => group.key === "ups" || group.key === "breaker")).toBe(false);
   });
 
   it("builds the same browsable groups from lightweight catalogue summaries", () => {

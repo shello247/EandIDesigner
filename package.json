@@ -16,7 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:drawing": "node scripts/drawing-performance-audit/run-command.mjs drawing-browser node node_modules/@playwright/test/cli.js test --config scripts/drawing-performance-pass/playwright.release.config.ts",
+    "test:drawing": "node scripts/drawing-performance-audit/run-command.mjs drawing-browser node node_modules/@playwright/test/cli.js test --config scripts/package-information/playwright.release.config.ts",
     "test:panel-perf": "tsx scripts/panel-performance.ts",
     "benchmark:bom": "tsx scripts/benchmark-bom-generation.ts",
     "audit:dependencies": "tsx scripts/audit-dependencies.ts",
@@ -25,6 +25,11 @@
     "db:push": "prisma db push",
     "db:setup": "prisma generate && tsx scripts/bootstrap-sqlite.ts",
     "db:retire-network-maps": "tsx scripts/retire-network-map-storage.ts",
+    "db:retire-required-for-wiring": "tsx scripts/retire-required-for-wiring-storage.ts",
+    "db:retire-symbol-guidance": "tsx scripts/retire-symbol-guidance-storage.ts",
+    "db:repair-north-terminal-sides": "tsx scripts/repair-north-terminal-sides.ts",
+    "db:upgrade-drawing-projects": "tsx scripts/upgrade-drawing-project-storage.ts",
+    "db:upgrade-item-engineering": "tsx scripts/upgrade-item-engineering-storage.ts",
     "db:retire-sheet-templates": "tsx scripts/retire-drawing-sheet-template-storage.ts",
     "db:seed": "tsx prisma/seed.ts",
     "import:symbols": "tsx scripts/import-existing-symbols.ts"
@@ -36,7 +41,7 @@
     "@prisma/client": "6.19.3",
     "exceljs": "^4.4.0",
     "lucide-react": "1.21.0",
-    "next": "16.3.3",
+    "next": "16.3.8",
     "openai": "6.45.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
@@ -49,17 +54,17 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.3.3",
+    "eslint-config-next": "16.3.8",
     "jsdom": "29.1.1",
     "prisma": "6.19.3",
     "tailwindcss": "4.3.3",
     "tsx": "4.22.4",
     "typescript": "6.0.3",
-    "vitest": "4.1.9"
+    "vitest": "4.1.11"
   },
   "overrides": {
     "minimatch@10.2.5": {
-      "brace-expansion": "5.0.9"
+      "brace-expansion": "5.0.12"
     },
     "@prisma/config@6.19.3": {
       "deepmerge-ts": "8.0.0"

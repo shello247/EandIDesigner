@@ -3,28 +3,10 @@
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 import type {
-  SymbolMetadata,
-  SymbolPanelWiringAssetType
+  SymbolMetadata
 } from "../../data/schema";
 
-const assetTypeOptions: Array<{
-  value: SymbolPanelWiringAssetType;
-  label: string;
-}> = [
-  { value: "instrument", label: "Instrument" },
-  { value: "controller", label: "Controller" },
-  { value: "terminal_block", label: "Terminal Block" },
-  { value: "breaker", label: "Breaker" },
-  { value: "fuse", label: "Fuse" },
-  { value: "relay", label: "Relay" },
-  { value: "power_supply", label: "Power Supply" },
-  { value: "isolator", label: "Isolator" },
-  { value: "converter", label: "Converter" },
-  { value: "io_module", label: "I/O Module" },
-  { value: "network_device", label: "Network Device" },
-  { value: "earth_bar", label: "Earth Bar" },
-  { value: "other", label: "Other" }
-];
+import { getDeviceTypeLabel, type DeviceType } from "@/shared/device-classification/device-types";
 
 function terminalReadiness(metadata: SymbolMetadata): string[] {
   const anchorKeys = new Set(metadata.anchors.map((anchor) => anchor.key));
@@ -67,10 +49,12 @@ function parsePositive(value: string): number | undefined {
 
 export function SymbolPanelWiringCapabilityPanel({
   metadata,
+  deviceType,
   readOnly,
   onChange
 }: {
   metadata: SymbolMetadata;
+  deviceType?: DeviceType | null;
   readOnly: boolean;
   onChange: (updater: (current: SymbolMetadata) => SymbolMetadata) => void;
 }) {
@@ -94,7 +78,7 @@ export function SymbolPanelWiringCapabilityPanel({
     onChange((current) => ({
       ...current,
       panelWiring: {
-        assetType: current.panelWiring?.assetType ?? "other",
+        assetType: current.panelWiring?.assetType ?? deviceType ?? "other",
         tagPrefix: current.panelWiring?.tagPrefix ?? "EQ",
         ...current.panelWiring,
         ...updates
@@ -107,7 +91,7 @@ export function SymbolPanelWiringCapabilityPanel({
       <div className="border-b border-slate-200 px-4 py-3">
         <h2 className="text-sm font-bold">Detailed Panel Component</h2>
         <p className="mt-1 text-xs leading-5 text-slate-500">
-          Explicitly approve this symbol for schematic panel wiring drawings.
+          Enable this symbol for schematic panel wiring drawings.
         </p>
       </div>
       <div className="space-y-3 p-4">
@@ -134,27 +118,9 @@ export function SymbolPanelWiringCapabilityPanel({
         </label>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="field-label" htmlFor="panel-wiring-asset-type">
-              Asset type
-            </label>
-            <select
-              id="panel-wiring-asset-type"
-              className="field-input"
-              value={assetType}
-              disabled={readOnly || !enabled}
-              onChange={(event) =>
-                updateCapability({
-                  assetType:
-                    event.currentTarget.value as SymbolPanelWiringAssetType
-                })
-              }
-            >
-              {assetTypeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <span className="field-label">Recorded wiring classification</span>
+            <p className="text-sm">{getDeviceTypeLabel(assetType)}</p>
+            <p className="mt-1 text-xs text-slate-500">Legacy engineering metadata, retained with this version. Use Device Type above for catalogue classification; changing it does not rewrite this wiring definition.</p>
           </div>
           <div>
             <label className="field-label" htmlFor="panel-wiring-tag-prefix">

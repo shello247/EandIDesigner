@@ -1,4 +1,5 @@
 import { generateBomFromProjection } from "@/features/bom_creator/logic/use_cases/generate-bom-from-projection";
+import type {SelectedProductBomOverride} from "@/features/bom_creator/api/product-server";
 import type { SymbolBomTemplateDetail } from "@/features/bom_creator/types";
 import { createPanelWiringSource } from "@/features/drawing_canvas/api/panel-wiring-contracts";
 import type {
@@ -19,6 +20,7 @@ import { buildPanelDeliverableBundle } from "../services/panel-deliverable-bundl
 import { validatePanelDeliverableRequest } from "../services/panel-deliverable-validation";
 
 type SharedDeliverableInput = {
+  selectedProducts?:SelectedProductBomOverride[];
   drawingId: string;
   drawingKey?: string;
   drawingTitle: string;
@@ -69,7 +71,7 @@ export function buildPanelDeliverablesFromGraph({
         drawingTitle: `${input.drawingTitle} - ${panel.panelTag}`,
         assemblies: panel.bomProjection.assemblies,
         symbols: input.symbols,
-        templates: input.templates
+        templates: input.templates,selectedProducts:input.selectedProducts
       })
     ])
   );
@@ -95,6 +97,7 @@ export function buildPanelDeliverables({
   model,
   symbols,
   templates,
+  selectedProducts,
   request,
   enforceIssuance = false
 }: {
@@ -103,6 +106,7 @@ export function buildPanelDeliverables({
   drawingTitle: string;
   drawingStatus: "draft" | "needs_review" | "approved" | "archived";
   model: DrawingModel;
+  selectedProducts?:SelectedProductBomOverride[];
   symbols: ApprovedDrawingSymbol[];
   templates: SymbolBomTemplateDetail[];
   request: PanelDeliverableRequest;
@@ -119,6 +123,7 @@ export function buildPanelDeliverables({
     quality,
     symbols,
     templates,
+    selectedProducts,
     request,
     enforceIssuance
   });

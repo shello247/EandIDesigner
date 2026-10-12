@@ -1,4 +1,5 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { synchronizeItemEngineeringIdentity, synchronizeItemGuidance, hashItemDocumentContent, getLatestItemEngineeringRevision, updateItemEngineeringClassificationInTransaction, ItemEngineeringError } from "@/features/item_engineering/api/server";
 import { prisma } from "@/lib/prisma";
 import {
   bomItemInputSchema,
@@ -186,7 +187,7 @@ function bomItemData(parsed: BomItemInput) {
   return {
     displayName: parsed.displayName,
     description: nullable(parsed.description),
-    category: parsed.category,
+    category: parsed.deviceType ?? parsed.category,
     unit: parsed.unit,
     manufacturer: nullable(parsed.manufacturer),
     partNumber: nullable(parsed.partNumber),
@@ -251,6 +252,9 @@ export async function createBomItem(input: BomItemInput) {
         });
 
         await reconcileBomItemImages(tx, row.id, parsed.images);
+        if (parsed.deviceType) {
+          await updateItemEngineeringClassificationInTransaction({ itemId: row.id, expectedLatestRevisionId: null, deviceType: parsed.deviceType }, tx);
+        }
 
         return row.id;
       });
@@ -373,10 +377,31 @@ export async function updateBomItem(input: BomItemUpdateInput) {
   }
 
   await prisma.$transaction(async (tx) => {
+    const current = await tx.bomItem.findUnique({ where: { id: parsed.id }, select: { status: true, category: true } });
+    if (!current) throw new ItemEngineeringError("NOT_FOUND", "Item was not found.");
+    if (current.status !== "active") throw new ItemEngineeringError("ARCHIVED", "Archived Items are read-only.");
+    if (parsed.category !== undefined) {
+      const latest = await getLatestItemEngineeringRevision(parsed.id, tx);
+      if (latest && parsed.category !== latest.profile.deviceType) {
+        throw new ItemEngineeringError("VALIDATION", "Change Device Type in Item Overview → Edit details. Catalogue grouping cannot be changed independently.");
+      }
+      if (!latest) {
+        if (parsed.category !== current.category && parsed.category !== "unclassified") {
+          throw new ItemEngineeringError("VALIDATION", "Choose Device Type in Item Overview → Edit details before changing catalogue grouping.");
+        }
+        // Older full-form consumers may echo the unclassified read projection.
+        // Never replace the original legacy value without an explicit selection.
+        delete data.category;
+      }
+    }
     await tx.bomItem.update({
       where: { id: parsed.id },
       data
     });
+
+    if (["displayName", "manufacturer", "model", "partNumber"].some(key => key in data)) {
+      await synchronizeItemEngineeringIdentity(parsed.id, parsed.expectedEngineeringRevisionId, tx);
+    }
 
     if ("images" in input) {
       await reconcileBomItemImages(tx, parsed.id, parsed.images ?? []);
@@ -386,13 +411,15 @@ export async function updateBomItem(input: BomItemUpdateInput) {
   return getBomItemDetail(parsed.id);
 }
 
-export async function deleteBomItem(id: string) {
-  return prisma.$transaction(async (tx) => {
+export async function deleteBomItem(id: string, db: PrismaClient = prisma) {
+  return db.$transaction(async (tx) => {
     const templateLineCount = await tx.symbolBomTemplateLine.count({
       where: { itemId: id }
     });
 
-    if (templateLineCount > 0) {
+    const revisionCount = await tx.bomItemEngineeringRevision.count({ where: { itemId: id } });
+    const noteCount = await tx.bomItemEngineerNote.count({ where: { itemId: id } });
+    if (templateLineCount > 0 || revisionCount > 0 || noteCount > 0) {
       const row = await tx.bomItem.update({
         where: { id },
         data: { status: "archived" },
@@ -412,7 +439,8 @@ export async function deleteBomItem(id: string) {
 }
 
 export async function uploadBomItemDocument(
-  input: BomItemDocumentUploadInput
+  input: BomItemDocumentUploadInput,
+  db: PrismaClient = prisma
 ) {
   const parsed = bomItemDocumentUploadInputSchema.parse(input);
 
@@ -424,18 +452,19 @@ export async function uploadBomItemDocument(
     dataUrl: parsed.dataUrl
   });
 
-  const documentId = await prisma.$transaction(async (tx) => {
+  const saved = await db.$transaction(async (tx) => {
     const item = await tx.bomItem.findUnique({
       where: { id: parsed.itemId },
-      select: { id: true }
+      select: { id: true, status: true }
     });
 
     if (!item) {
       throw new Error("BOM item was not found.");
     }
+    if (item.status !== "active") throw new Error("Restore the Item before changing its documents.");
 
     const existing = await tx.bomItemDocument.findMany({
-      where: { itemId: parsed.itemId },
+      where: { itemId: parsed.itemId, archivedAt: null },
       select: { sizeBytes: true }
     });
     const budget = validateBomItemDocumentBudget([
@@ -456,23 +485,30 @@ export async function uploadBomItemDocument(
         fileName: parsed.fileName,
         mimeType: parsed.mimeType,
         sizeBytes: parsed.sizeBytes,
-        dataUrl: parsed.dataUrl
+        dataUrl: parsed.dataUrl,
+        contentHash: hashItemDocumentContent(parsed)
       },
       select: { id: true }
     });
 
-    return row.id;
+    const revision = await synchronizeItemGuidance({ itemId: parsed.itemId,
+      expectedLatestRevisionId: parsed.expectedEngineeringRevisionId, addDocumentId: row.id }, tx);
+    return { id: row.id, revisionId: revision?.id ?? null };
   });
 
-  return getBomItemDocumentMetadata(documentId);
+  const metadata = await getBomItemDocumentMetadata(saved.id, db);
+  return metadata ? { ...metadata, revisionId: saved.revisionId } : null;
 }
 
 export async function deleteBomItemDocument(
-  input: BomItemDocumentDeleteInput
+  input: BomItemDocumentDeleteInput,
+  db: PrismaClient = prisma
 ) {
   const parsed = bomItemDocumentDeleteInputSchema.parse(input);
 
-  return prisma.$transaction(async (tx) => {
+  return db.$transaction(async (tx) => {
+    const item = await tx.bomItem.findUnique({ where: { id: parsed.itemId }, select: { status: true } });
+    if (!item || item.status !== "active") throw new Error("Restore the Item before changing its documents.");
     const document = await tx.bomItemDocument.findFirst({
       where: {
         id: parsed.documentId,
@@ -485,8 +521,15 @@ export async function deleteBomItemDocument(
       throw new Error("BOM item document was not found for this item.");
     }
 
+    const revision = await synchronizeItemGuidance({ itemId: parsed.itemId,
+      expectedLatestRevisionId: parsed.expectedEngineeringRevisionId, removeDocumentId: document.id }, tx);
+    const referenced = await tx.bomItemRevisionDocument.count({ where: { documentId: document.id } });
+    if (referenced) {
+      await tx.bomItemDocument.update({ where: { id: document.id }, data: { archivedAt: new Date() } });
+      return { ...document, revisionId: revision?.id ?? null, mode: "archived" as const };
+    }
     await tx.bomItemDocument.delete({ where: { id: document.id } });
-    return document;
+    return { ...document, revisionId: revision?.id ?? null, mode: "deleted" as const };
   });
 }
 

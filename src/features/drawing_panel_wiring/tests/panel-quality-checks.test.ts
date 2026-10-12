@@ -8,7 +8,8 @@ import {
 import { buildPanelQualityIndex } from "../logic/services/panel-quality-index";
 import {
   createGenericPanelWiringSource,
-  GENERIC_PANEL_ASSET_ID
+  GENERIC_PANEL_ASSET_ID,
+  GENERIC_TERMINAL_ASSET_IDS
 } from "./fixtures";
 
 function sourceWithDetailedPanel() {
@@ -142,7 +143,7 @@ function sourceWithStructuredStripMounts(panelAssetIds: string[]) {
 }
 
 describe("panel drawing quality checks", () => {
-  it("is deterministic and requires the internal side of field-occupied feed-through terminals", () => {
+  it("is deterministic and does not infer missing terminal connections", () => {
     const first = report();
     const second = report();
 
@@ -151,8 +152,58 @@ describe("panel drawing quality checks", () => {
       first.findings.filter(
         (finding) => finding.code === "required_terminal_unconnected"
       )
-    ).toHaveLength(12);
-    expect(first.canApprove).toBe(false);
+    ).toHaveLength(0);
+  });
+
+  it("does not report optional or unknown internal-wire domains as quality findings", () => {
+    const source = sourceWithDetailedPanel();
+    const withLegacyDomains = panelWiringSourcePackageSchema.parse({
+      ...source,
+      panelWiring: {
+        schemaVersion: 1,
+        internalWires: [
+          {
+            id: "internal_wire_missing_domain",
+            panelAssetId: GENERIC_PANEL_ASSET_ID,
+            wireId: "WIRE-001",
+            from: {
+              assetId: GENERIC_TERMINAL_ASSET_IDS[0],
+              terminalKey: "T4",
+              side: "internal"
+            },
+            to: {
+              assetId: GENERIC_TERMINAL_ASSET_IDS[1],
+              terminalKey: "T4",
+              side: "internal"
+            },
+            origin: "engineer"
+          },
+          {
+            id: "internal_wire_unknown_domain",
+            panelAssetId: GENERIC_PANEL_ASSET_ID,
+            wireId: "WIRE-002",
+            from: {
+              assetId: GENERIC_TERMINAL_ASSET_IDS[2],
+              terminalKey: "T4",
+              side: "internal"
+            },
+            to: {
+              assetId: GENERIC_TERMINAL_ASSET_IDS[3],
+              terminalKey: "T4",
+              side: "internal"
+            },
+            domain: "unknown",
+            origin: "engineer"
+          }
+        ]
+      }
+    });
+
+    expect(
+      report(withLegacyDomains).findings.some(
+        (finding) => finding.code === "internal_wire_domain_unverified"
+      )
+    ).toBe(false);
   });
 
   it("blocks duplicate asset tags associated with the panel", () => {
@@ -164,6 +215,133 @@ describe("panel drawing quality checks", () => {
         expect.objectContaining({
           code: "duplicate_asset_tag",
           severity: "blocking_error"
+        })
+      ])
+    );
+  });
+
+  it("allows derived panel references to use a different rendering symbol", () => {
+    const source = sourceWithDetailedPanel();
+    source.assets[0] = {
+      ...source.assets[0],
+      symbolId: "__generated_panel_enclosure__",
+      versionId: "generated_panel_enclosure_v1"
+    };
+    for (const [index, sheet] of source.sheets.slice(0, 2).entries()) {
+      sheet.occurrences.push({
+        sheetId: sheet.id,
+        placementId: `panel_connection_view_${index + 1}`,
+        assetId: GENERIC_PANEL_ASSET_ID,
+        tag: "ENC-001",
+        role: "enclosure",
+        occurrenceKind: "derived_reference",
+        symbolId: "__generated_panel_connection_view__",
+        versionId: "generated_panel_connection_view_v1",
+        terminalResolutionStatus: "not_applicable",
+        terminals: []
+      });
+    }
+
+    expect(
+      report(source).findings.filter(
+        (finding) => finding.code === "linked_asset_symbol_mismatch"
+      )
+    ).toEqual([]);
+  });
+
+  it("continues validating the identity links of derived references", () => {
+    const source = sourceWithDetailedPanel();
+    source.assets[0] = {
+      ...source.assets[0],
+      symbolId: "__generated_panel_enclosure__",
+      versionId: "generated_panel_enclosure_v1"
+    };
+    source.sheets[0].occurrences.push({
+      sheetId: source.sheets[0].id,
+      placementId: "panel_connection_view_wrong_tag",
+      assetId: GENERIC_PANEL_ASSET_ID,
+      tag: "WRONG-TAG",
+      role: "enclosure",
+      occurrenceKind: "derived_reference",
+      symbolId: "__generated_panel_connection_view__",
+      versionId: "generated_panel_connection_view_v1",
+      terminalResolutionStatus: "not_applicable",
+      terminals: []
+    });
+    source.sheets[0].occurrences.push({
+      sheetId: source.sheets[0].id,
+      placementId: "panel_connection_view_missing_asset",
+      assetId: "asset_missing",
+      tag: "MISSING-001",
+      role: "enclosure",
+      occurrenceKind: "derived_reference",
+      containerAssetId: GENERIC_PANEL_ASSET_ID,
+      symbolId: "__generated_panel_connection_view__",
+      versionId: "generated_panel_connection_view_v1",
+      terminalResolutionStatus: "not_applicable",
+      terminals: []
+    });
+
+    const findings = report(source).findings;
+
+    expect(findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "linked_asset_tag_mismatch",
+          assetId: GENERIC_PANEL_ASSET_ID
+        }),
+        expect.objectContaining({
+          code: "missing_asset_record",
+          assetId: "asset_missing"
+        })
+      ])
+    );
+    expect(
+      findings.some(
+        (finding) =>
+          finding.code === "linked_asset_symbol_mismatch" &&
+          finding.assetId === GENERIC_PANEL_ASSET_ID
+      )
+    ).toBe(false);
+  });
+
+  it("blocks ordinary occurrences with a different approved symbol or version", () => {
+    const source = sourceWithDetailedPanel();
+    source.assets[0] = {
+      ...source.assets[0],
+      symbolId: "panel_symbol",
+      versionId: "panel_symbol_v1"
+    };
+    const ordinaryOccurrences = source.sheets
+      .flatMap((sheet) => sheet.occurrences)
+      .filter(
+        (occurrence) =>
+          occurrence.assetId === GENERIC_PANEL_ASSET_ID &&
+          occurrence.occurrenceKind === "enclosure_reference"
+      );
+    for (const occurrence of ordinaryOccurrences) {
+      occurrence.symbolId = "panel_symbol";
+      occurrence.versionId = "panel_symbol_v1";
+    }
+    ordinaryOccurrences[0].symbolId = "different_panel_symbol";
+    ordinaryOccurrences[1].versionId = "panel_symbol_v2";
+
+    const mismatches = report(source).findings.filter(
+      (finding) => finding.code === "linked_asset_symbol_mismatch"
+    );
+
+    expect(mismatches).toHaveLength(2);
+    expect(mismatches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          locations: expect.arrayContaining([
+            expect.objectContaining({ objectId: ordinaryOccurrences[0].placementId })
+          ])
+        }),
+        expect.objectContaining({
+          locations: expect.arrayContaining([
+            expect.objectContaining({ objectId: ordinaryOccurrences[1].placementId })
+          ])
         })
       ])
     );

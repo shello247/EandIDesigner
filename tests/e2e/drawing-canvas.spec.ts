@@ -1,3 +1,4 @@
+import { confirmCanvasPlacement } from "./drawing-placement-helpers";
 import { expect, test, type Locator, type Page } from "./drawing-test";
 import { createE2eNmt81ToNrf81Drawing } from "./drawing-fixtures";
 
@@ -24,7 +25,7 @@ async function addSymbolFromLibrary(
 }
 
 async function addCableFromLibrary(page: Page) {
-  await addSymbolFromLibrary(page, /Cable Assembly 1/, "CLX Cable 1 Pair");
+  await addSymbolFromLibrary(page, /Cable 1/, "CLX Cable 1 Pair");
 }
 
 async function activateSheet(page: Page, sheetName: string) {
@@ -43,6 +44,7 @@ async function activateSheet(page: Page, sheetName: string) {
 async function addNoteFromCanvas(page: Page) {
   await page.getByRole("button", { name: "Add to drawing" }).click();
   await page.getByRole("menuitem", { name: /Note/ }).click();
+  await confirmCanvasPlacement(page);
 }
 
 async function expandInspectorSection(page: Page, name: RegExp) {
@@ -131,9 +133,9 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await page.getByRole("button", { name: "Asset Manager" }).click();
   const assetManager = page.getByRole("dialog", { name: "Asset Manager" });
   const instrumentCategory = assetManager
-    .getByRole("group", { name: "Asset categories" })
+    .getByRole("group", { name: "Asset Device Types" })
     .getByRole("button", {
-      name: /Level Devices \/ Instruments.*1 asset/
+      name: /Instrument.*1 asset/
     });
   await instrumentCategory.click();
   await expect(
@@ -210,9 +212,10 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
       .getByRole("group", { name: "Drawing settings measurement units" })
       .getByRole("button", { name: "in", exact: true })
   ).toHaveAttribute("aria-pressed", "true");
+  await drawingSettings.getByRole("tab", { name: "Printed Title Block" }).click();
   await drawingSettings.getByLabel("Client").fill("Enermach");
   await drawingSettings
-    .getByLabel("Project / process")
+    .getByLabel("Printed project / process", { exact: true })
     .fill("Tank Automation");
   await drawingSettings.getByLabel("Drawing number").fill("EI-001");
   await drawingSettings.getByRole("button", { name: "Apply" }).click();
@@ -293,7 +296,10 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   }
 
   const centerViewportScroll = async () => {
-    await viewport.evaluate((element) => {
+    await viewport.evaluate(async (element) => {
+      // Let the 100% button's scheduled centering finish before the test
+      // deliberately changes scroll position. Otherwise it can race the wheel.
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       element.style.scrollBehavior = "auto";
       element.scrollLeft = Math.max(0, (element.scrollWidth - element.clientWidth) / 2);
       element.scrollTop = Math.max(0, (element.scrollHeight - element.clientHeight) / 2);
@@ -328,30 +334,32 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     const yRatio = (point.y - beforePaperBox.y) / beforePaperBox.height;
     const zoomBefore = await zoomDisplay.textContent();
 
-    await viewport.dispatchEvent("wheel", {
-      bubbles: true,
-      cancelable: true,
-      ctrlKey: true,
-      deltaY: -240,
-      clientX: point.x,
-      clientY: point.y
-    });
+    // A passive React wheel handler can update the canvas while still letting
+    // the browser zoom the entire page. Assert native cancellation explicitly.
+    const cancelled = await viewport.evaluate((element, pointer) => {
+      const event = new WheelEvent("wheel", {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+        deltaY: -240,
+        clientX: pointer.x,
+        clientY: pointer.y
+      });
+      element.dispatchEvent(event);
+      return event.defaultPrevented;
+    }, point);
+    expect(cancelled).toBe(true);
     await expect(zoomDisplay).not.toHaveText(zoomBefore ?? "");
-    await page.waitForTimeout(100);
-
-    const afterPaperBox = await paperLocator.boundingBox();
-
-    if (!afterPaperBox) {
-      throw new Error("Expected sheet paper after cursor zoom.");
-    }
-
-    const anchoredPoint = {
-      x: afterPaperBox.x + afterPaperBox.width * xRatio,
-      y: afterPaperBox.y + afterPaperBox.height * yRatio
-    };
-
-    expect(Math.abs(anchoredPoint.x - point.x)).toBeLessThan(8);
-    expect(Math.abs(anchoredPoint.y - point.y)).toBeLessThan(8);
+    // Anchor correction spans animation frames. Assert the actual result,
+    // retaining the same tolerance, rather than sampling after a fixed delay.
+    await expect.poll(async () => {
+      const afterPaperBox = await paperLocator.boundingBox();
+      if (!afterPaperBox) return Infinity;
+      return Math.max(
+        Math.abs(afterPaperBox.x + afterPaperBox.width * xRatio - point.x),
+        Math.abs(afterPaperBox.y + afterPaperBox.height * yRatio - point.y)
+      );
+    }).toBeLessThan(8);
   };
 
   await page
@@ -411,6 +419,13 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await expect(page.getByTestId("canvas-anchor-tooltip")).toContainText("Terminal");
 
   await page.getByRole("button", { name: "Fit drawing" }).click();
+  // Occupied terminals cannot accept a second wire. Free the existing pair
+  // through the normal editor before exercising reconnection and routing.
+  await page.getByRole("button", { name: "Browse connections" }).click();
+  await page.getByRole("dialog", { name: "Connections" })
+    .getByTestId("drawing-connection-card").filter({ hasText: "C-101-BLK" }).first().click();
+  await page.getByRole("button", { name: /^Connection / }).click();
+  await page.getByRole("button", { name: "Delete connection" }).click();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toHaveAttribute(
     "aria-pressed",
@@ -418,7 +433,7 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   );
   await page.locator('[data-anchor-hotspot="nmt81:2"]').click();
   await expect(page.getByTestId("drawing-toast")).toHaveCount(0);
-  const destinationAnchor = page.locator('[data-anchor-hotspot="clx1p:CH2_T2"]');
+  const destinationAnchor = page.locator('[data-anchor-hotspot="clx1p:CH1_T2"]');
   const destinationBox = await destinationAnchor.boundingBox();
 
   if (!destinationBox) {
@@ -453,7 +468,7 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   });
   await expect(
     updatedConnectionsDialog.getByTestId("drawing-connection-card")
-  ).toHaveCount(5);
+  ).toHaveCount(4);
   const directHartConnection = updatedConnectionsDialog.getByRole("button", {
     name: /C-101-DIRECT-HART/
   });
@@ -536,7 +551,9 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await addCableFromLibrary(page);
   await expect(page.getByRole("dialog", { name: "Add Symbol" })).toBeVisible();
   await expect(page.getByLabel("Asset tag")).toHaveValue("C-102");
-  await page.getByRole("button", { name: "Place symbol" }).click();
+  await page.getByRole("button", { name: "Continue to placement" }).click();
+  // Keep the drag target clear of the installation note already at sheet centre.
+  await confirmCanvasPlacement(page, { x: 90, y: 200 });
   await expect(page.getByRole("dialog", { name: "Add Symbol" })).toHaveCount(0);
   const spareCablePlacement = page
     .locator('svg[aria-label="Interactive drawing overlay"] rect[data-placement-id]')
@@ -564,9 +581,7 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     placementBoxBeforeMove.y + placementBoxBeforeMove.height / 2 + 20
   );
   await page.mouse.up();
-  const placementBoxAfterMove = await spareCablePlacement.boundingBox();
-
-  expect(placementBoxAfterMove?.x ?? 0).toBeGreaterThan(
+  await expect.poll(async () => (await spareCablePlacement.boundingBox())?.x ?? 0).toBeGreaterThan(
     placementBoxBeforeMove.x + 10
   );
 
@@ -588,9 +603,8 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     resizeHandleBox.y + resizeHandleBox.height / 2 + 20
   );
   await page.mouse.up();
+  await expect.poll(async () => (await spareCablePlacement.boundingBox())?.width ?? 0).toBeGreaterThan(beforeResizeBox.width);
   const afterResizeBox = await spareCablePlacement.boundingBox();
-
-  expect(afterResizeBox?.width ?? 0).toBeGreaterThan(beforeResizeBox.width);
   await expect(page.getByTestId("canvas-placement-rotation-label")).toContainText(
     "0\u00b0"
   );
@@ -627,7 +641,7 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await page.keyboard.press("Control+C");
   await expect(page.getByText("Selection copied.")).toBeVisible();
   await page.keyboard.press("Control+V");
-  await expect(page.getByText("Selection pasted.")).toBeVisible();
+  await confirmCanvasPlacement(page);
   await expect(placementHitboxes).toHaveCount(placementCountBeforePaste + 1);
   await expect(page.getByTestId("canvas-note-hit")).toHaveCount(
     noteCountBeforePaste + 1
@@ -750,19 +764,21 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     .getByRole("dialog", { name: "Sheet Loader" })
     .getByRole("button", { name: "Add Sheet" })
     .click();
+  await page.getByRole("dialog", { name: "Add Sheet" }).getByLabel("New section title").fill("Instrumentation");
+  await expect(page.getByRole("dialog", { name: "Add Sheet" }).getByLabel("New section title")).toHaveValue("Instrumentation");
   await page.getByRole("dialog", { name: "Add Sheet" }).getByRole("button", {
     name: "Add sheet",
     exact: true
   }).click();
   await expect(page.getByTestId("drawing-sheet-frame")).toHaveCount(1);
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
-    "Sheet 2 of 2"
+    "Sheet 3 of 3"
   );
   await page.getByRole("button", { name: "Edit active sheet" }).click();
   const sheetSettings = page.getByRole("dialog", {
     name: "Edit Active Sheet"
   });
-  await expect(sheetSettings.getByLabel("Sheet name")).toHaveValue("Sheet 2");
+  await expect(sheetSettings.getByLabel("Sheet name")).toHaveValue("Sheet 3");
   await sheetSettings.getByLabel("Sheet name").fill("Instrumentation");
   await sheetSettings
     .getByLabel("Description")
@@ -770,13 +786,13 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await sheetSettings.getByRole("button", { name: "Apply" }).click();
   await expect(sheetSettings).toHaveCount(0);
   await expect(
-    page.getByTestId("active-sheet-readout")
+    page.getByTestId("active-sheet-heading")
   ).toContainText("Instrumentation");
   await expect(page.getByTestId("drawing-sheet-frame")).toBeVisible();
 
   const sheetFrames = page.getByTestId("drawing-sheet-frame");
   await expect(
-    sheetFrames.locator(".drawing-sheet-caption-name")
+    page.getByTestId("active-sheet-heading")
   ).toHaveText("Instrumentation");
   await expect(
     sheetFrames.getByText("Instrument detail and sheet 2 notes")
@@ -784,11 +800,11 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
 
   await activateSheet(page, "Wiring");
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
-    "Sheet 1 of 2"
+    "Sheet 1 of 3"
   );
   await activateSheet(page, "Instrumentation");
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
-    "Sheet 2 of 2"
+    "Sheet 3 of 3"
   );
   await page
     .getByRole("button", { name: "Set drawing zoom to 100 percent" })
@@ -797,20 +813,21 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await centerViewportScroll();
   await zoomAtVisiblePaperPoint(sheetFrames.locator("[data-sheet-paper]"));
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
-    "Sheet 2 of 2"
+    "Sheet 3 of 3"
   );
   await page.getByRole("button", { name: "Fit drawing" }).click();
 
   await addCableFromLibrary(page);
   await expect(page.getByRole("dialog", { name: "Add Symbol" })).toBeVisible();
   await expect(page.getByLabel("Asset tag")).toHaveValue("C-103");
-  await page.getByRole("button", { name: "Place symbol" }).click();
+  await page.getByRole("button", { name: "Continue to placement" }).click();
+    await confirmCanvasPlacement(page);
   await expandInspectorSection(page, /Asset Identity/);
   await expect(page.getByRole("textbox", { name: "Tag" })).toHaveValue("C-103");
 
   await addSymbolFromLibrary(
     page,
-    /Monitor 1/,
+    /Controller 1/,
     "NRF81 Tank Side Monitor"
   );
   const referenceDialog = page.getByRole("dialog", { name: "Add Symbol" });
@@ -819,7 +836,8 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
     .getByRole("button", { name: /Reference existing Use/ })
     .click();
   await expect(referenceDialog.getByText("TSM-101")).toBeVisible();
-  await page.getByRole("button", { name: "Place symbol" }).click();
+  await page.getByRole("button", { name: "Continue to placement" }).click();
+    await confirmCanvasPlacement(page);
   await expandInspectorSection(page, /Asset Identity/);
   await expect(page.getByRole("textbox", { name: "Tag" })).toHaveValue(
     "TSM-101"
@@ -834,13 +852,13 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
 
   await activateSheet(page, "Wiring");
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
-    "Sheet 1 of 2"
+    "Sheet 1 of 3"
   );
   await expect(sheetStage.getByText("Sheet 2 isolated content")).toHaveCount(0);
   await expect(page.getByText("Installation Instructions")).toBeVisible();
   await activateSheet(page, "Instrumentation");
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
-    "Sheet 2 of 2"
+    "Sheet 3 of 3"
   );
   await expect(
     sheetStage.getByText("Sheet 2 isolated content")
@@ -851,7 +869,7 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   await page.reload();
   await expect(page.getByTestId("drawing-canvas-viewport")).toBeVisible();
   await expect(page.getByTestId("active-sheet-readout")).toContainText(
-    "Sheet 1 of 2"
+    "Sheet 1 of 3"
   );
   await activateSheet(page, "Instrumentation");
   await page.getByRole("button", { name: "Edit active sheet" }).click();
@@ -873,9 +891,10 @@ test("creates, saves, reloads, and edits the NMT81 to NRF81 sample drawing", asy
   );
   expect(multiSheetPrintResponse.ok()).toBeTruthy();
   const multiSheetPrintHtml = await multiSheetPrintResponse.text();
-  expect(multiSheetPrintHtml.match(/class="drawing-page"/g)).toHaveLength(2);
-  expect(multiSheetPrintHtml).toContain("1 OF 2");
-  expect(multiSheetPrintHtml).toContain("2 OF 2");
+  expect(multiSheetPrintHtml.match(/class="drawing-page"/g)).toHaveLength(3);
+  expect(multiSheetPrintHtml).toContain("1 OF 3");
+  expect(multiSheetPrintHtml).toContain("2 OF 3");
+  expect(multiSheetPrintHtml).toContain("3 OF 3");
 
   await page
     .getByRole("button", { name: "Collapse symbol library panel" })

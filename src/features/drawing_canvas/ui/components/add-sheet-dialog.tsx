@@ -1,13 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { CircuitBoard, FileText, Layers, Plus, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CircuitBoard, FileText, Plus } from "lucide-react";
 import type { CompatiblePanelOption } from "@/features/drawing_panel_wiring/api/public";
+import { EngineeringDialog } from "@/shared/ui/engineering-dialog";
+import type { DrawingSection } from "../../logic/services/drawing-sections";
+import type { WorkingSheetDestination } from "../../logic/services/drawing-sheet-destination";
 
 export type AddSheetDialogSubmission =
   | {
       kind: "drawing";
       name: string;
+      destination: WorkingSheetDestination;
     }
   | {
       kind: "section_title";
@@ -18,6 +22,7 @@ export type AddSheetDialogSubmission =
   | {
       kind: "detailed_panel";
       mode: "reference";
+      destination: WorkingSheetDestination;
       panelAssetId: string;
       name?: string;
       description?: string;
@@ -25,6 +30,7 @@ export type AddSheetDialogSubmission =
   | {
       kind: "detailed_panel";
       mode: "create";
+      destination: WorkingSheetDestination;
       panelType: "panel" | "junction_box";
       tag: string;
       title: string;
@@ -41,6 +47,9 @@ export function AddSheetDialog({
   suggestedPanelTag,
   suggestedJunctionBoxTag,
   allowDetailedPanel = true,
+  intent = "sheet",
+  sections,
+  activeSectionId,
   onCancel,
   onAdd
 }: {
@@ -50,17 +59,19 @@ export function AddSheetDialog({
   suggestedPanelTag: string;
   suggestedJunctionBoxTag: string;
   allowDetailedPanel?: boolean;
+  intent?: "sheet" | "section";
+  sections: Pick<DrawingSection, "id" | "number" | "title">[];
+  activeSectionId?: string;
   onCancel: () => void;
-  onAdd: (submission: AddSheetDialogSubmission) => void;
+  onAdd: (submission: AddSheetDialogSubmission) => string | undefined;
 }) {
-  const [mode, setMode] = useState<SheetMode>("drawing");
+  const [mode, setMode] = useState<SheetMode>(intent === "section" ? "section_title" : "drawing");
+  const [destinationId, setDestinationId] = useState(activeSectionId ?? (sections.length === 0 ? "new" : ""));
+  const [newSectionTitle, setNewSectionTitle] = useState("");
+  const [error, setError] = useState<string>();
   const [drawingName, setDrawingName] = useState(`Sheet ${nextSheetNumber}`);
-  const [sectionName, setSectionName] = useState(
-    `Section ${nextSectionNumber} Title Page`
-  );
-  const [sectionTitle, setSectionTitle] = useState(
-    `Section ${nextSectionNumber}`
-  );
+  const [sectionName, setSectionName] = useState("");
+  const [sectionTitle, setSectionTitle] = useState("");
   const [sectionSubtitle, setSectionSubtitle] = useState("");
   const [panelMode, setPanelMode] = useState<"reference" | "create">(
     "reference"
@@ -75,20 +86,44 @@ export function AddSheetDialog({
   const [panelTitle, setPanelTitle] = useState("Junction Box");
   const [panelSheetName, setPanelSheetName] = useState("");
   const [panelDescription, setPanelDescription] = useState("");
-  const titleId = "add-sheet-dialog-title";
-  const descriptionId = "add-sheet-dialog-description";
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const form = formRef.current;
+      // Never steal focus from an engineer who has already started entering
+      // values while the native dialog's opening frame was being scheduled.
+      if (!form || form.contains(document.activeElement)) return;
+      form.querySelector<HTMLElement>("input, select")?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  const defaultDestinationId = activeSectionId ?? (sections.length === 0 ? "new" : "");
+  const effectiveDrawingName = drawingName === `Sheet ${nextSheetNumber}`
+    ? `Sheet ${nextSheetNumber + (destinationId === "new" ? 1 : 0)}` : drawingName;
+  const dirty = drawingName !== `Sheet ${nextSheetNumber}` || Boolean(sectionName || sectionTitle ||
+    sectionSubtitle || newSectionTitle || panelSheetName || panelDescription) || panelMode === "create" ||
+    destinationId !== defaultDestinationId || panelAssetId !== (panelOptions[0]?.assetId ?? "") ||
+    mode !== (intent === "section" ? "section_title" : "drawing");
+  const cancel = () => {
+    if (!dirty || window.confirm("Discard unsaved changes to this entry?")) onCancel();
+  };
+  const add = (submission: AddSheetDialogSubmission) => setError(onAdd(submission));
 
   const submit = () => {
+    const destination: WorkingSheetDestination = destinationId === "new"
+      ? { kind: "new", title: newSectionTitle }
+      : { kind: "existing", sectionId: destinationId };
     if (mode === "drawing") {
-      onAdd({
+      add({
         kind: "drawing",
-        name: drawingName
+        name: effectiveDrawingName,
+        destination
       });
       return;
     }
 
     if (mode === "section_title") {
-      onAdd({
+      add({
         kind: "section_title",
         name: sectionName,
         title: sectionTitle,
@@ -98,9 +133,10 @@ export function AddSheetDialog({
     }
 
     if (panelMode === "reference") {
-      onAdd({
+      add({
         kind: "detailed_panel",
         mode: "reference",
+        destination,
         panelAssetId,
         name: panelSheetName.trim() || undefined,
         description: panelDescription.trim() || undefined
@@ -108,9 +144,10 @@ export function AddSheetDialog({
       return;
     }
 
-    onAdd({
+    add({
       kind: "detailed_panel",
       mode: "create",
+      destination,
       panelType,
       tag: panelTag,
       title: panelTitle,
@@ -122,55 +159,21 @@ export function AddSheetDialog({
     (option) => option.assetId === panelAssetId
   );
   const canSubmit =
-    mode !== "detailed_panel" ||
-    (panelMode === "reference"
+    (mode === "section_title" ? Boolean(sectionTitle.trim()) :
+      destinationId === "new" ? Boolean(newSectionTitle.trim()) : sections.some(section => section.id === destinationId)) &&
+    (mode !== "detailed_panel" || (panelMode === "reference"
       ? Boolean(selectedPanel)
-      : Boolean(panelTag.trim() && panelTitle.trim()));
+      : Boolean(panelTag.trim() && panelTitle.trim())));
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/20 p-4 backdrop-blur-[2px]"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onCancel();
-        }
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-        className="w-full max-w-2xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
-      >
-        <div className="flex items-start gap-3 border-b border-slate-200 px-5 py-4">
-          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-700">
-            <Layers aria-hidden="true" size={18} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="text-sm font-semibold text-slate-950">
-              Add Sheet
-            </h2>
-            <p id={descriptionId} className="mt-1 text-xs leading-5 text-slate-600">
-              Add a drawing, section divider, or panel-specific drawing sheet.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="icon-button h-8 w-8 p-0"
-            onClick={onCancel}
-            aria-label="Close add sheet dialog"
-          >
-            <X aria-hidden="true" size={14} />
-          </button>
-        </div>
-
-        <div className="space-y-4 px-5 py-4">
+    <EngineeringDialog title={intent === "section" ? "Add Section" : "Add Sheet"}
+      subtitle={intent === "section" ? `Section ${nextSectionNumber} · Includes its own title page` : "Choose a section for the new working sheet."}
+      compact contentSized dirty={dirty} onClose={onCancel}>
+      <form ref={formRef} className="flex min-h-0 flex-1 flex-col" onSubmit={event => { event.preventDefault(); if (canSubmit) submit(); }}>
+        <div className="min-h-0 space-y-4 overflow-y-auto px-5 py-4">
+          {intent === "sheet" ? <>
           <div
-            className={`grid gap-2 ${
-              allowDetailedPanel ? "grid-cols-3" : "grid-cols-2"
-            }`}
+            className={`grid gap-2 ${allowDetailedPanel ? "grid-cols-2" : "grid-cols-1"}`}
           >
             <button
               type="button"
@@ -189,25 +192,6 @@ export function AddSheetDialog({
               </span>
               <span className="mt-1 block text-slate-500">
                 Blank drawing canvas sheet.
-              </span>
-            </button>
-            <button
-              type="button"
-              className={[
-                "rounded-md border px-3 py-2 text-left text-xs transition",
-                mode === "section_title"
-                  ? "border-sky-300 bg-sky-50 text-sky-900"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              ].join(" ")}
-              aria-pressed={mode === "section_title"}
-              onClick={() => setMode("section_title")}
-            >
-              <span className="flex items-center gap-2 font-bold">
-                <Layers aria-hidden="true" size={14} />
-                Section Title Page
-              </span>
-              <span className="mt-1 block text-slate-500">
-                Divider page for drawing sections.
               </span>
             </button>
             {allowDetailedPanel ? (
@@ -232,6 +216,22 @@ export function AddSheetDialog({
               </button>
             ) : null}
           </div>
+          <div>
+            <label className="field-label" htmlFor="add-sheet-section">Section</label>
+            <select id="add-sheet-section" className="field-input" value={destinationId}
+              onChange={event => { setDestinationId(event.currentTarget.value); setError(undefined); }}>
+              <option value="" disabled>Choose a section</option>
+              {sections.map(section => <option key={section.id} value={section.id}>Section {section.number} — {section.title}</option>)}
+              <option value="new">Create a new section</option>
+            </select>
+            {destinationId === "new" ? <div className="mt-3">
+              <label className="field-label" htmlFor="add-sheet-new-section">New section title</label>
+              <input id="add-sheet-new-section" className="field-input" maxLength={160} required
+                placeholder="For example, Panel Layout" value={newSectionTitle} onChange={event => setNewSectionTitle(event.currentTarget.value)} />
+              <p className="mt-2 text-xs text-slate-500">A section title page and this sheet will be added together. Existing sheets stay in place.</p>
+            </div> : null}
+          </div>
+          </> : null}
 
           {mode === "drawing" ? (
             <div>
@@ -241,7 +241,8 @@ export function AddSheetDialog({
               <input
                 id="add-drawing-sheet-name"
                 className="field-input"
-                value={drawingName}
+                maxLength={120}
+                value={effectiveDrawingName}
                 onChange={(event) => setDrawingName(event.currentTarget.value)}
               />
             </div>
@@ -254,6 +255,8 @@ export function AddSheetDialog({
                 <input
                   id="add-section-sheet-name"
                   className="field-input"
+                  maxLength={120}
+                  placeholder="Generated from the section title"
                   value={sectionName}
                   onChange={(event) => setSectionName(event.currentTarget.value)}
                 />
@@ -265,6 +268,9 @@ export function AddSheetDialog({
                 <input
                   id="add-section-title"
                   className="field-input"
+                  maxLength={160}
+                  required
+                  placeholder="For example, Panel Layout"
                   value={sectionTitle}
                   onChange={(event) => setSectionTitle(event.currentTarget.value)}
                 />
@@ -276,6 +282,7 @@ export function AddSheetDialog({
                 <textarea
                   id="add-section-subtitle"
                   className="field-input min-h-20 resize-y leading-relaxed"
+                  maxLength={400}
                   value={sectionSubtitle}
                   onChange={(event) =>
                     setSectionSubtitle(event.currentTarget.value)
@@ -283,7 +290,7 @@ export function AddSheetDialog({
                 />
               </div>
               <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-800">
-                The section number is assigned automatically from package order.
+                The section number is assigned automatically. The new section is added after existing sheets.
               </p>
             </div>
           ) : (
@@ -396,23 +403,23 @@ export function AddSheetDialog({
               </div>
             </div>
           )}
+          {error ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</p> : null}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
-          <button type="button" className="icon-button" onClick={onCancel}>
+        <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 px-5 py-3">
+          <button type="button" className="icon-button" onClick={cancel}>
             Cancel
           </button>
           <button
-            type="button"
+            type="submit"
             className="icon-button icon-button-primary"
-            onClick={submit}
             disabled={!canSubmit}
           >
             <Plus aria-hidden="true" size={14} />
-            Add sheet
+            {intent === "section" ? "Add section" : "Add sheet"}
           </button>
         </div>
-      </div>
-    </div>
+      </form>
+    </EngineeringDialog>
   );
 }

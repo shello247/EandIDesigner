@@ -39,7 +39,8 @@ function newImage(fileName: string, isPrimary: boolean, sortOrder: number) {
 test.beforeAll(async () => {
   const item = await createBomItem({
     displayName,
-    category: "accessory",
+    category: "other",
+    deviceType: "other",
     unit: "each",
     images: [
       newImage(`first-${runId}.png`, true, 0),
@@ -61,7 +62,8 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await prisma.bomItem.deleteMany({
+  await prisma.bomItem.updateMany({
+    data: { status: "archived" },
     where: { displayName: { in: [displayName, foreignDisplayName] } }
   });
 });
@@ -185,7 +187,8 @@ test("reconciles metadata, ordering, additions, and removals without replacing I
 
   const foreignItem = await createBomItem({
     displayName: foreignDisplayName,
-    category: "accessory",
+    category: "other",
+    deviceType: "other",
     unit: "each",
     images: [newImage(`foreign-${runId}.png`, true, 0)]
   });
@@ -218,12 +221,13 @@ test("renders persisted images and saves pasted images without retransmitting ex
   const row = page.getByRole("row").filter({ hasText: displayName });
   await expect(row.locator("img")).toBeVisible();
   await row.getByRole("button", { name: `Edit ${displayName}` }).click();
-  await expect(page.getByRole("dialog", { name: `Edit ${displayName}` })).toBeVisible();
-  await page.getByRole("button", { name: "2 Images", exact: true }).click();
+  await page.getByRole("button", { name: "Manage images", exact: true }).click();
+  const images = page.getByRole("dialog", { name: "Manage images", exact: true });
+  await expect(images).toBeVisible();
   await expect(page.getByText(`second-${runId}.png`)).toBeVisible();
   await expect(page.getByText(`third-${runId}.png`)).toBeVisible();
 
-  await page.getByTestId("bom-item-image-dropzone").evaluate(
+  await images.locator("form").evaluate(
     (dropZone, input) => {
       const bytes = Uint8Array.from(atob(input.base64), (character) =>
         character.charCodeAt(0)
@@ -245,17 +249,13 @@ test("renders persisted images and saves pasted images without retransmitting ex
     }
   );
   await expect(page.getByText(`pasted-phase2-${runId}.png`)).toBeVisible();
-  await page.locator("#bom-image-caption-1").fill("Retained caption");
+  await images.getByRole("textbox", { name: "Caption for image 2", exact: true }).fill("Retained caption");
   await page
-    .getByRole("button", { name: `Remove second-${runId}.png` })
+    .getByRole("button", { name: `Remove image second-${runId}.png` })
     .click();
-  await page
-    .getByRole("button", { name: `Make pasted-phase2-${runId}.png primary` })
-    .click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Save item" }).click();
-  await expect(page.getByText("BOM item saved.")).toBeVisible();
+  await images.locator("article").filter({ hasText: `pasted-phase2-${runId}.png` }).getByRole("radio", { name: "Primary image", exact: true }).check();
+  await images.getByRole("button", { name: "Save images", exact: true }).click();
+  await expect(images).toHaveCount(0);
 
   const finalImages = await prisma.bomItemImage.findMany({
     where: { itemId },
@@ -271,7 +271,7 @@ test("renders persisted images and saves pasted images without retransmitting ex
     `pasted-phase2-${runId}.png`
   );
 
-  await page.getByRole("link", { name: displayName }).click();
+  await page.reload();
   await expect(page.getByRole("heading", { name: displayName })).toBeVisible();
   await expect(page.locator("img")).toHaveCount(3);
 });

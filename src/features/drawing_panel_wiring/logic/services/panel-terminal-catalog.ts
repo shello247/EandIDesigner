@@ -7,7 +7,8 @@ import type {
   PanelTerminalCatalogRow,
   PanelTerminalOccupant,
   PanelTerminalSideNode,
-  PanelTerminalSideOccupancy
+  PanelTerminalSideOccupancy,
+  PackageTerminalOccupancyIndex
 } from "../../types";
 import type {
   PanelBondRecord,
@@ -19,6 +20,7 @@ import {
   terminalNodeId,
   terminalSideNodeId
 } from "./terminal-resolution";
+import { buildPackageTerminalOccupancyIndex } from "./package-terminal-occupancy";
 
 export type PanelTerminalCatalogBuildIndex = {
   externalTerminationsByPanelAssetId: ReadonlyMap<
@@ -32,6 +34,7 @@ export type PanelTerminalCatalogBuildIndex = {
   terminalSidesByAssetId: ReadonlyMap<string, PanelTerminalSideNode[]>;
   findingsByTerminalId: ReadonlyMap<string, PanelConnectivityFinding[]>;
   assetFindingsByAssetId: ReadonlyMap<string, PanelConnectivityFinding[]>;
+  packageTerminalOccupancy: PackageTerminalOccupancyIndex;
 };
 
 function appendIndexValue<T>(map: Map<string, T[]>, key: string, value: T) {
@@ -98,7 +101,8 @@ export function buildPanelTerminalCatalogIndex(
     terminalsByAssetId,
     terminalSidesByAssetId,
     findingsByTerminalId,
-    assetFindingsByAssetId
+    assetFindingsByAssetId,
+    packageTerminalOccupancy: buildPackageTerminalOccupancyIndex(graph)
   };
 }
 
@@ -170,47 +174,16 @@ export function buildPanelTerminalCatalog({
   const associatedAssetIds =
     graph.assetIdsByPanelAssetId.get(panelAssetId) ?? new Set<string>();
   const occupantsBySideId = new Map<string, PanelTerminalOccupant[]>();
-
-  for (const termination of
-    index.externalTerminationsByPanelAssetId.get(panelAssetId) ?? []) {
-    if (
-      termination.panelAssetId !== panelAssetId ||
-      termination.status !== "resolved" ||
-      !termination.target
-    ) {
-      continue;
+  const packageOccupancy = index.packageTerminalOccupancy;
+  for (const assetId of associatedAssetIds) {
+    for (const sideNode of index.terminalSidesByAssetId.get(assetId) ?? []) {
+      const conductors = packageOccupancy.conductorOccupantsBySideId.get(
+        sideNode.id
+      );
+      if (conductors?.length) {
+        occupantsBySideId.set(sideNode.id, [...conductors]);
+      }
     }
-
-    appendOccupant(occupantsBySideId, termination.target, {
-      id: termination.id,
-      kind: "external_termination",
-      label:
-        termination.wireId ??
-        `${termination.sourceSheet.name}:${termination.source.anchorKey}`,
-      wireId: termination.wireId,
-      cableTag: termination.cableTag,
-      conductorKey: termination.conductorKey,
-      sourceSheet: termination.sourceSheet,
-      channel: "conductor"
-    });
-  }
-
-  for (const wire of index.internalWiresByPanelAssetId.get(panelAssetId) ?? []) {
-
-    (["from", "to"] as const).forEach((endpointRole) => {
-      const endpoint = wire[endpointRole];
-      appendOccupant(occupantsBySideId, endpoint, {
-        id: `${wire.id}:${endpointRole}`,
-        kind: "internal_wire",
-        label: wire.wireNumber
-          ? String(wire.wireNumber).padStart(3, "0")
-          : wire.wireId,
-        wireNumber: wire.wireNumber,
-        wireId: wire.wireId,
-        channel: "conductor",
-        ownerPatternId: wire.ownerPatternId
-      });
-    });
   }
 
   for (const bridge of index.bridgesByPanelAssetId.get(panelAssetId) ?? []) {
@@ -341,7 +314,6 @@ export function buildPanelTerminalCatalog({
         label: terminal.label,
         function: terminal.function,
         supportedSides: terminal.supportedSides,
-        requiredSides: terminal.requiredSides,
         allowedDomains: terminal.allowedDomains,
         occupancy: {},
         findings: []

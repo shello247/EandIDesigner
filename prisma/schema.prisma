@@ -1,3 +1,165 @@
+model StandardReference {
+  id String @id
+  key String @unique
+  title String
+  status String @default("active")
+  currentRevisionNumber Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  revisions StandardReferenceRevision[]
+  @@index([status, title])
+}
+
+model StandardReferenceRevision {
+  id String @id
+  entityId String
+  entity StandardReference @relation(fields: [entityId], references: [id], onDelete: Restrict)
+  revisionNumber Int
+  payloadJson String
+  contentHash String
+  createdAt DateTime @default(now())
+  requirements StandardRequirementRevision[]
+  @@unique([entityId, revisionNumber])
+}
+
+model StandardRequirement {
+  id String @id
+  key String @unique
+  title String
+  status String @default("active")
+  currentRevisionNumber Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  revisions StandardRequirementRevision[]
+  @@index([status, title])
+}
+
+model StandardRequirementRevision {
+  id String @id
+  entityId String
+  entity StandardRequirement @relation(fields: [entityId], references: [id], onDelete: Restrict)
+  revisionNumber Int
+  payloadJson String
+  contentHash String
+  createdAt DateTime @default(now())
+  sourceRevisionId String
+  source StandardReferenceRevision @relation(fields: [sourceRevisionId], references: [id], onDelete: Restrict)
+  implementations StandardImplementationRevision[]
+  evidence StandardEvidence[]
+  entries StandardProfileEntry[]
+  @@unique([entityId, revisionNumber])
+}
+
+model StandardImplementation {
+  id String @id
+  key String @unique
+  title String
+  status String @default("active")
+  currentRevisionNumber Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  revisions StandardImplementationRevision[]
+  @@index([status, title])
+}
+
+model StandardImplementationRevision {
+  id String @id
+  entityId String
+  entity StandardImplementation @relation(fields: [entityId], references: [id], onDelete: Restrict)
+  revisionNumber Int
+  payloadJson String
+  contentHash String
+  createdAt DateTime @default(now())
+  requirementRevisionId String
+  requirement StandardRequirementRevision @relation(fields: [requirementRevisionId], references: [id], onDelete: Restrict)
+  evidence StandardEvidence[]
+  entries StandardProfileEntry[]
+  @@unique([entityId, revisionNumber])
+}
+
+model StandardProfile {
+  id String @id
+  key String @unique
+  title String
+  status String @default("active")
+  currentRevisionNumber Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  revisions StandardProfileRevision[]
+  @@index([status, title])
+}
+
+model StandardProfileRevision {
+  id String @id
+  entityId String
+  entity StandardProfile @relation(fields: [entityId], references: [id], onDelete: Restrict)
+  revisionNumber Int
+  payloadJson String
+  contentHash String
+  createdAt DateTime @default(now())
+  entries StandardProfileEntry[]
+  snapshots StandardSnapshot[]
+  @@unique([entityId, revisionNumber])
+}
+
+model StandardProfileEntry {
+  profileRevisionId String
+  requirementRevisionId String
+  implementationRevisionId String?
+  applicability String
+  rationale String
+  conflict String
+  profile StandardProfileRevision @relation(fields: [profileRevisionId], references: [id], onDelete: Restrict)
+  requirement StandardRequirementRevision @relation(fields: [requirementRevisionId], references: [id], onDelete: Restrict)
+  implementation StandardImplementationRevision? @relation(fields: [implementationRevisionId], references: [id], onDelete: Restrict)
+  @@id([profileRevisionId, requirementRevisionId])
+  @@index([requirementRevisionId])
+  @@index([implementationRevisionId])
+}
+
+model StandardEvidence {
+  id String @id
+  requirementRevisionId String
+  implementationRevisionId String?
+  sourceRevisionId String
+  payloadJson String
+  contentHash String
+  createdAt DateTime @default(now())
+  requirement StandardRequirementRevision @relation(fields: [requirementRevisionId], references: [id], onDelete: Restrict)
+  implementation StandardImplementationRevision? @relation(fields: [implementationRevisionId], references: [id], onDelete: Restrict)
+  @@index([requirementRevisionId, createdAt])
+}
+
+model StandardReviewNote {
+  id String @id
+  targetKind String
+  targetRevisionId String
+  payloadJson String
+  createdAt DateTime @default(now())
+  @@index([targetKind, targetRevisionId, createdAt])
+}
+
+model StandardSnapshot {
+  id String @id
+  profileRevisionId String
+  payloadJson String
+  contentHash String
+  createdAt DateTime @default(now())
+  profile StandardProfileRevision @relation(fields: [profileRevisionId], references: [id], onDelete: Restrict)
+  @@index([profileRevisionId, createdAt])
+}
+
+model StandardAuditEvent {
+  id String @id
+  operationId String @unique
+  requestHash String
+  kind String
+  targetId String
+  resultJson String
+  createdAt DateTime @default(now())
+  @@index([kind, targetId, createdAt])
+}
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -22,8 +184,8 @@ model Symbol {
   versions         SymbolVersion[]
   sourceAssets     SymbolSourceAsset[]
   validationIssues SymbolValidationIssue[]
-  engineerNotes    SymbolEngineerNote[]
-  documents        SymbolDocument[]
+
+
   bomTemplate      SymbolBomTemplate?
 
   @@index([status])
@@ -68,16 +230,19 @@ model SymbolVersion {
   status             String                  @default("needs_review")
   svg                String
   metadataJson       String
+  deviceType         String?
   sourceInputSummary String?
   aiResponseId       String?
   createdAt          DateTime                @default(now())
   sourceAssets       SymbolSourceAsset[]
   validationIssues   SymbolValidationIssue[]
-  engineerNotes      SymbolEngineerNote[]
-  documents          SymbolDocument[]
+
+
+  itemConfigurations SymbolItemConfiguration[]
 
   @@unique([symbolId, versionNumber])
   @@index([symbolId, status])
+  @@index([deviceType])
 }
 
 model SymbolValidationIssue {
@@ -113,44 +278,6 @@ model SymbolSourceAsset {
   @@index([versionId])
 }
 
-model SymbolEngineerNote {
-  id            String         @id @default(cuid())
-  symbolId      String
-  versionId     String?
-  symbol        Symbol         @relation(fields: [symbolId], references: [id], onDelete: Cascade)
-  version       SymbolVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
-  notes         String
-  imageFileName String?
-  imageMimeType String?
-  imageSizeBytes Int?
-  imageDataUrl  String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-
-  @@index([symbolId])
-  @@index([versionId])
-  @@index([createdAt])
-}
-
-model SymbolDocument {
-  id          String         @id @default(cuid())
-  symbolId    String
-  versionId   String?
-  symbol      Symbol         @relation(fields: [symbolId], references: [id], onDelete: Cascade)
-  version     SymbolVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
-  title       String
-  fileName    String
-  mimeType    String
-  sizeBytes   Int
-  dataUrl     String
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-
-  @@index([symbolId])
-  @@index([versionId])
-  @@index([createdAt])
-}
-
 model BomItem {
   id                    String                  @id @default(cuid())
   itemKey               String                  @unique
@@ -181,6 +308,8 @@ model BomItem {
   images                BomItemImage[]
   documents             BomItemDocument[]
   templateLines         SymbolBomTemplateLine[]
+  engineeringRevisions  BomItemEngineeringRevision[]
+  engineerNotes         BomItemEngineerNote[]
 
   @@index([status])
   @@index([category])
@@ -244,9 +373,143 @@ model BomItemDocument {
   dataUrl   String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  archivedAt DateTime?
+  contentHash String?
+  revisionLinks BomItemRevisionDocument[]
 
+  @@unique([id, itemId])
   @@index([itemId])
   @@index([itemId, createdAt])
+}
+
+model EngineeringAttributeType {
+  id String @id @default(cuid())
+  name String
+  normalizedName String @unique
+  status String @default("active")
+  analysisKey String? @unique
+  currentRevision Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  revisions EngineeringAttributeTypeRevision[]
+  @@index([status, name])
+}
+
+model EngineeringAttributeTypeRevision {
+  id String @id @default(cuid())
+  typeId String
+  type EngineeringAttributeType @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  revisionNumber Int
+  definitionJson String
+  contentHash String
+  createdAt DateTime @default(now())
+  @@unique([typeId, revisionNumber])
+}
+
+model BomItemEngineeringRevision {
+  id String @id @default(cuid())
+  itemId String
+  item BomItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  revisionNumber Int
+  identityJson String
+  profileJson String
+  contentHash String
+  createdAt DateTime @default(now())
+  notes BomItemRevisionNote[]
+  documents BomItemRevisionDocument[]
+  configurationOptions SymbolItemConfigurationOption[]
+  configurationParts SymbolItemConfigurationPart[]
+
+  @@unique([itemId, revisionNumber])
+  @@unique([id, itemId])
+}
+
+model BomItemEngineerNote {
+  id String @id @default(cuid())
+  itemId String
+  item BomItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  notes String
+  imageFileName String?
+  imageMimeType String?
+  imageSizeBytes Int?
+  imageDataUrl String?
+  contentHash String
+  supersedesId String?
+  createdAt DateTime @default(now())
+  archivedAt DateTime?
+  libraryPosition Int?
+  revisionLinks BomItemRevisionNote[]
+
+  @@unique([id, itemId])
+  @@index([itemId, createdAt])
+}
+
+model BomItemRevisionNote {
+  revisionId String
+  itemId String
+  noteId String
+  revision BomItemEngineeringRevision @relation(fields: [revisionId, itemId], references: [id, itemId], onDelete: Restrict, onUpdate: Restrict)
+  note BomItemEngineerNote @relation(fields: [noteId, itemId], references: [id, itemId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([revisionId, noteId])
+  @@index([noteId, itemId])
+}
+
+model BomItemRevisionDocument {
+  revisionId String
+  itemId String
+  documentId String
+  revision BomItemEngineeringRevision @relation(fields: [revisionId, itemId], references: [id, itemId], onDelete: Restrict, onUpdate: Restrict)
+  document BomItemDocument @relation(fields: [documentId, itemId], references: [id, itemId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([revisionId, documentId])
+  @@index([documentId, itemId])
+}
+
+model SymbolItemConfiguration {
+  id String @id @default(cuid())
+  symbolVersionId String
+  symbolVersion SymbolVersion @relation(fields: [symbolVersionId], references: [id], onDelete: Restrict)
+  revisionNumber Int
+  symbolContractHash String
+  createdAt DateTime @default(now())
+  options SymbolItemConfigurationOption[]
+  parts SymbolItemConfigurationPart[]
+
+  @@unique([symbolVersionId, revisionNumber])
+}
+
+model SymbolItemConfigurationOption {
+  id String @id @default(cuid())
+  configurationId String
+  configuration SymbolItemConfiguration @relation(fields: [configurationId], references: [id], onDelete: Restrict)
+  itemEngineeringRevisionId String
+  itemEngineeringRevision BomItemEngineeringRevision @relation(fields: [itemEngineeringRevisionId], references: [id], onDelete: Restrict)
+  usage String
+  evidence String
+  interfaceJson String @default("{}")
+  parts SymbolItemConfigurationPart[]
+
+  @@unique([configurationId, itemEngineeringRevisionId])
+  @@unique([id, configurationId])
+  @@index([itemEngineeringRevisionId])
+}
+
+model SymbolItemConfigurationPart {
+  id String @id @default(cuid())
+  configurationId String
+  configuration SymbolItemConfiguration @relation(fields: [configurationId], references: [id], onDelete: Restrict)
+  optionId String?
+  option SymbolItemConfigurationOption? @relation(fields: [optionId, configurationId], references: [id, configurationId], onDelete: Restrict, onUpdate: Restrict)
+  itemEngineeringRevisionId String
+  itemEngineeringRevision BomItemEngineeringRevision @relation(fields: [itemEngineeringRevisionId], references: [id], onDelete: Restrict)
+  lineKey String
+  quantityRule String
+  quantity Float @default(1)
+
+  @@unique([configurationId, lineKey])
+  @@index([optionId, configurationId])
+  @@index([itemEngineeringRevisionId])
 }
 
 model SymbolBomTemplate {
@@ -277,10 +540,49 @@ model SymbolBomTemplateLine {
   @@index([quantityRule])
 }
 
+model Project {
+  id                      String    @id @default(cuid())
+  name                    String
+  projectNumber           String?
+  normalizedProjectNumber String?   @unique
+  client                  String?
+  clientId                String?
+  clientRecord            Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  description             String?
+  status                  String    @default("active")
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  drawings                Drawing[]
+
+  @@index([name])
+  @@index([status, updatedAt])
+  @@index([clientId])
+}
+
+model Client {
+  id             String    @id @default(cuid())
+  name           String
+  normalizedName String    @unique
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  projects       Project[]
+
+  @@index([name])
+}
+
+model ProjectNumberSequence {
+  scope     String   @id
+  lastValue Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
 model Drawing {
   id               String                   @id @default(cuid())
   drawingKey       String                   @unique
   title            String
+  description      String?
+  projectId        String?
+  project          Project?                 @relation(fields: [projectId], references: [id], onDelete: SetNull)
   status           String                   @default("draft")
   modelJson        String
   createdAt        DateTime                 @default(now())
@@ -289,6 +591,7 @@ model Drawing {
 
   @@index([status])
   @@index([updatedAt])
+  @@index([projectId])
 }
 
 model DrawingValidationIssue {

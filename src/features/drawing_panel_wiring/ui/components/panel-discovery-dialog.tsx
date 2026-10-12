@@ -7,11 +7,11 @@ import {
   Hash,
   MoreHorizontal,
   Network,
-  Search,
   Settings2,
   Trash2,
   X,
 } from "lucide-react";
+import { SearchInput } from "@/shared/ui/search-input";
 import {
   EngineeringTablePagination,
   paginateTableRows,
@@ -367,23 +367,16 @@ export function PanelDiscoveryDialog({
             </div>
           ) : null}
           <div className="flex items-center gap-2">
-            <div className="relative min-w-0 flex-1">
-              <Search
-                aria-hidden="true"
-                size={15}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                className="field-input pl-9"
-                value={query}
-                placeholder="Search tags, wires, cables, sheets, or provenance"
-                onChange={(event) => {
-                  setPage(1);
-                  setQuery(event.currentTarget.value);
-                }}
-                aria-label="Search panel engineering workbench"
-              />
-            </div>
+            <SearchInput
+              containerClassName="flex-1"
+              value={query}
+              placeholder="Search tags, wires, cables, sheets, or provenance"
+              onChange={(event) => {
+                setPage(1);
+                setQuery(event.currentTarget.value);
+              }}
+              aria-label="Search panel engineering workbench"
+            />
             <details className="group relative shrink-0">
               <summary
                 className="icon-button cursor-pointer list-none [&::-webkit-details-marker]:hidden"

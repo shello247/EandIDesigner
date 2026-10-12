@@ -7,13 +7,16 @@ export type DrawingWorkspaceContext =
 
 export type DrawingSheetPresentation = {
   workspaceContext: DrawingWorkspaceContext;
-  typeLabel: "Drawing" | "Section Title" | "Detailed Panel";
-  heading: "Drawing Sheet" | "Section Title Page" | "Detailed Panel Drawing";
+  typeLabel: "Drawing" | "Title Sheet" | "Section Title" | "Detailed Panel";
+  heading: "Drawing Sheet" | "Title Sheet" | "Section Title Page" | "Detailed Panel Drawing";
 };
 
 export function getDrawingSheetPresentation(
   sheet: DrawingPackageSheet
 ): DrawingSheetPresentation {
+  if (sheet.kind === "title_sheet") {
+    return { workspaceContext: "section_title", typeLabel: "Title Sheet", heading: "Title Sheet" };
+  }
   if (sheet.panelDrawingContext?.kind === "detailed_panel_wiring") {
     return {
       workspaceContext: "detailed_panel",

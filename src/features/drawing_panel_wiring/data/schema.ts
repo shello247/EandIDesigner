@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { deviceTypeSchema } from "@/shared/device-classification/device-types";
 import { wireSpecificationSnapshotSchema } from "@/features/wire_catalog/api/public";
 
 const identifierSchema = z.string().trim().min(1);
@@ -228,24 +229,7 @@ export const panelWiringPackageDataSchema = z.object({
   patternSettings: z.array(panelPatternSettingsSchema).optional()
 });
 
-export const panelWiringAssetTypeSchema = z.enum([
-  "instrument",
-  "controller",
-  "panel",
-  "junction_box",
-  "terminal_block",
-  "breaker",
-  "fuse",
-  "relay",
-  "power_supply",
-  "isolator",
-  "converter",
-  "io_module",
-  "network_device",
-  "earth_bar",
-  "cable",
-  "other"
-]);
+export const panelWiringAssetTypeSchema = deviceTypeSchema;
 
 export const panelWiringOccurrenceRoleSchema = z.enum([
   "device",
@@ -258,7 +242,8 @@ export const panelWiringOccurrenceRoleSchema = z.enum([
 export const panelWiringOccurrenceKindSchema = z.enum([
   "wiring",
   "layout",
-  "enclosure_reference"
+  "enclosure_reference",
+  "derived_reference"
 ]);
 
 export const panelTerminalResolutionStatusSchema = z.enum([
@@ -289,7 +274,6 @@ export const panelWiringSourceTerminalSchema = z.object({
   label: z.string().trim().min(1).max(120),
   function: z.string().trim().max(200).optional(),
   supportedSides: z.array(panelTerminalSideSchema),
-  requiredSides: z.array(panelTerminalSideSchema).optional(),
   allowedDomains: z.array(panelElectricalDomainSchema).optional(),
   anchors: z.array(panelWiringSourceTerminalAnchorSchema).min(1),
   status: z.enum(["resolved", "ambiguous"])
@@ -379,7 +363,7 @@ export const panelWiringSourceSheetSchema = z.object({
   id: identifierSchema,
   sheetNumber: z.number().int().positive(),
   name: z.string().trim().min(1).max(120),
-  kind: z.enum(["drawing", "section_title"]),
+  kind: z.enum(["drawing", "section_title", "title_sheet"]),
   description: z.string().trim().max(400).optional(),
   panelDrawingContext: panelDrawingContextSchema.optional(),
   occurrences: z.array(panelWiringSourceOccurrenceSchema),

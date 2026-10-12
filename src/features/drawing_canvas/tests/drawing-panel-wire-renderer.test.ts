@@ -26,7 +26,6 @@ const symbol: ApprovedDrawingSymbol = {
         label: "Terminal",
         anchorKey: "T",
         panelSide: "single",
-        requiredForWiring: true
       }
     ]
   }

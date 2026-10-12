@@ -57,12 +57,8 @@ export function normalizeTerminalMapVerificationOutput(
 function createMockVerification(
   input: VerifyTerminalMapInput
 ): TerminalMapVerificationResult {
-  const requiredTerminals = input.metadata.terminals.filter(
-    (terminal) => terminal.requiredForWiring
-  );
-
   return {
-    confidence: requiredTerminals.length > 0 ? "medium" : "low",
+    confidence: input.metadata.terminals.length > 0 ? "medium" : "low",
     summary:
       "Mock AI verification completed. Review source datasheets before final engineering approval.",
     issues: [],
@@ -78,7 +74,7 @@ function buildPrompt(input: VerifyTerminalMapInput): string {
   return [
     "You are verifying an engineering SVG symbol terminal map.",
     "Compare the visible SVG labels and terminal layout against the current terminal metadata and source notes.",
-    "Flag missing terminals, incorrect labels, wrong functions, anchor mismatches, ambiguous terminals, and wiring-relevant terminals marked not required.",
+    "Flag missing terminals, incorrect labels, wrong functions, anchor mismatches, and ambiguous terminals.",
     "Do not invent datasheet facts. If evidence is weak, mark confidence low or medium and explain what must be manually checked.",
     "Return suggestedTerminals as the corrected full terminal table only when a correction is justified. Otherwise return the current terminal table.",
     "Use empty strings for terminalKey, evidence, or suggestedFix when not applicable.",

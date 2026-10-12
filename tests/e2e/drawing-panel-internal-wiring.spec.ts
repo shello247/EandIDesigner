@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "./drawing-test";
+import { confirmCanvasPlacement } from "./drawing-placement-helpers";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -40,7 +41,7 @@ test("loads Wire Catalog only on request and preserves close/reopen and retry be
     expect(requests).toEqual([]);
     await page.getByRole("button", { name: "Open sheet loader" }).click();
     const loader = page.getByRole("dialog", { name: "Sheet Loader" });
-    await loader.getByRole("button", { name: "Expand Front Matter" }).click();
+    await expect(loader.getByRole("button", { name: "Collapse Package Information" })).toHaveAttribute("aria-expanded", "true");
     await loader.getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
       .getByRole("button", { name: "Load" }).click();
     const workbench = await openPanelEngineeringWorkbench(page);
@@ -157,9 +158,7 @@ test("authors, removes, re-represents, and reloads an internal panel wire", asyn
     await page.goto(`/drawings/${fixture.drawingId}`);
     await page.getByRole("button", { name: "Open sheet loader" }).click();
     const sheetLoader = page.getByRole("dialog", { name: "Sheet Loader" });
-    await sheetLoader
-      .getByRole("button", { name: "Expand Front Matter" })
-      .click();
+    await expect(sheetLoader.getByRole("button", { name: "Collapse Package Information" })).toHaveAttribute("aria-expanded", "true");
     await sheetLoader
       .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
       .getByRole("button", { name: "Load" })
@@ -170,11 +169,13 @@ test("authors, removes, re-represents, and reloads an internal panel wire", asyn
       .getByRole("row", { name: /TB-101/ })
       .getByRole("button", { name: "Add", exact: true })
       .click();
+    await confirmCanvasPlacement(page, { x: 80, y: 75 });
+    await openPanelEngineeringWorkbench(page);
     await queue
       .getByRole("row", { name: /MCB-101/ })
       .getByRole("button", { name: "Add", exact: true })
       .click();
-    await queue.getByRole("button", { name: "Close", exact: true }).click();
+    await confirmCanvasPlacement(page, { x: 170, y: 75 });
 
     const sourceMarker = page.locator(
       '[data-anchor-marker$=":T1_TOP"]',
@@ -289,9 +290,7 @@ test("authors, removes, re-represents, and reloads an internal panel wire", asyn
     const reloadedSheetLoader = page.getByRole("dialog", {
       name: "Sheet Loader",
     });
-    await reloadedSheetLoader
-      .getByRole("button", { name: "Expand Front Matter" })
-      .click();
+    await expect(reloadedSheetLoader.getByRole("button", { name: "Collapse Package Information" })).toHaveAttribute("aria-expanded", "true");
     await reloadedSheetLoader
       .getByRole("row", { name: /JB001 Detailed Panel Drawing Detailed Panel/ })
       .getByRole("button", { name: "Load" })

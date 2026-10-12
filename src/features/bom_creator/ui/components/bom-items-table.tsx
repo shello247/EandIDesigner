@@ -65,7 +65,7 @@ export function BomItemsTable({
         <thead>
           <tr>
             <th>Item</th>
-            <th>Category</th>
+            <th>Device Type</th>
             <th>Unit</th>
             <th>Cost</th>
             <th>Actions</th>
@@ -107,7 +107,7 @@ export function BomItemsTable({
                   </div>
                 </div>
               </td>
-              <td className="capitalize">{categoryLabel(item.category)}</td>
+              <td>{categoryLabel(item.category)}</td>
               <td>{item.unit}</td>
               <td>{formatCost(item)}</td>
               <td>

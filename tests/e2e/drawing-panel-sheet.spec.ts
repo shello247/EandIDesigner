@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./drawing-test";
 import {
   createE2eDetailedPanelDrawingPackage,
   deleteE2eDrawing
@@ -20,6 +20,7 @@ test("creates and reloads a Detailed Panel Drawing without duplicating its asset
       .getByRole("button", { name: "Add Sheet" })
       .click();
     const dialog = page.getByRole("dialog", { name: "Add Sheet" });
+    await dialog.getByLabel("New section title").fill("Internal Wiring");
 
     await dialog
       .getByRole("button", {
@@ -31,7 +32,7 @@ test("creates and reloads a Detailed Panel Drawing without duplicating its asset
     );
     await dialog.getByRole("button", { name: "Add sheet", exact: true }).click();
 
-    await expect(page.getByTestId("active-sheet-readout")).toContainText(
+    await expect(page.getByTestId("active-sheet-heading")).toContainText(
       "JB001 Detailed Panel Drawing"
     );
     await expect(
@@ -57,7 +58,7 @@ test("creates and reloads a Detailed Panel Drawing without duplicating its asset
       "JB001 Detailed Panel Drawing",
       /JB001 Detailed Panel Drawing Detailed Panel/
     );
-    await expect(page.getByTestId("active-sheet-readout")).toContainText(
+    await expect(page.getByTestId("active-sheet-heading")).toContainText(
       "JB001 Detailed Panel Drawing"
     );
     await page.getByRole("button", { name: "Asset Manager" }).click();

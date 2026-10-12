@@ -39,6 +39,10 @@ function occurrenceAssetId(placement: DrawingPlacement): string | undefined {
 function occurrenceKind(
   placement: DrawingPlacement
 ): PanelWiringSourceOccurrence["occurrenceKind"] {
+  if (placement.panelConnectionView?.kind === "schematic_reference") {
+    return "derived_reference";
+  }
+
   if (placement.layoutKind) {
     return "layout";
   }
@@ -203,22 +207,11 @@ function approvedSymbolSourceTerminals(
           : isExplicitSided
             ? ([...uniqueSides].sort() as PanelWiringSourceTerminal["supportedSides"])
             : [];
-      const requiredSides = [
-        ...new Set(
-          terminals.flatMap((terminal) => {
-            if (!terminal.requiredForWiring) return [];
-            if (terminal.panelSide) return [terminal.panelSide];
-            return terminals.length === 1 ? (["single"] as const) : [];
-          })
-        )
-      ].sort() as NonNullable<PanelWiringSourceTerminal["requiredSides"]>;
-
       return {
         terminalKey,
         label: first.label,
         function: first.function,
         supportedSides,
-        requiredSides: requiredSides.length > 0 ? requiredSides : undefined,
         allowedDomains: [
           ...new Set(terminals.flatMap((terminal) => terminal.electricalDomains ?? []))
         ].sort(),
@@ -253,16 +246,22 @@ function terminalSourceForPlacement(
     };
   }
 
-  const expectsTerminals = ["device", "terminal_block"].includes(placement.role);
+  const symbol = getRenderableSymbolForPlacement(placement, symbols, assets);
+  const requiresTerminalMetadata = ["device", "terminal_block"].includes(
+    placement.role
+  );
+  const suppliesWiringMetadata = Boolean(
+    symbol &&
+      (symbol.metadata.terminals.length > 0 ||
+        symbol.metadata.electricalTopology?.permanentContinuityGroups.length)
+  );
 
-  if (!expectsTerminals) {
+  if (!requiresTerminalMetadata && !suppliesWiringMetadata) {
     return {
       terminalResolutionStatus: "not_applicable",
       terminals: []
     };
   }
-
-  const symbol = getRenderableSymbolForPlacement(placement, symbols, assets);
 
   if (!symbol) {
     return {

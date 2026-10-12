@@ -14,7 +14,7 @@ export function auditSymbol(index=0): ApprovedDrawingSymbol {
     symbolKey,displayName:"Audit Device "+token,category:"other",layoutUsage:"both",
     physicalWidthMm:30,physicalHeightMm:50,viewBox:{x:0,y:0,width:30,height:50},
     anchors:Array.from({length:10},(_,i)=>({key:"T"+(i+1),x:i<5?2:28,y:6+(i%5)*9,kind:"terminal" as const})),
-    terminals:Array.from({length:10},(_,i)=>({key:"T"+(i+1),label:String(i+1),anchorKey:"T"+(i+1),panelSide:"single" as const,requiredForWiring:true})),
+    terminals:Array.from({length:10},(_,i)=>({key:"T"+(i+1),label:String(i+1),anchorKey:"T"+(i+1),panelSide:"single" as const})),
     panelWiring:{assetType:"breaker",tagPrefix:"MCB",schematicScale:0.5}
   });
   return {symbolId:symbolKey,symbolKey,versionId:symbolKey+"_v1",versionNumber:1,displayName:"Audit Device "+token,category:"other",svg:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 50"><rect x=".5" y=".5" width="29" height="49" fill="white" stroke="#334155"/>'+Array.from({length:10},(_,i)=>'<circle cx="'+(i<5?2:28)+'" cy="'+(6+(i%5)*9)+'" r="1.5" fill="none" stroke="#0f766e"/>').join("")+'</svg>',metadata:parseMetadataJson(metadataJson)};

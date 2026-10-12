@@ -1,9 +1,18 @@
+import { ensureStandardsStorage, seedStandards } from "../src/features/standards_assurance/api/server";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { prisma } from "../src/lib/prisma";
+import { ensureItemEngineeringStorage } from "../src/features/item_engineering/api/server";
+import { ensureDeviceClassificationStorage } from "../src/features/device_classification/api/server";
 import {
   BOM_ITEM_KEY_SCOPE,
   parseBomItemKeySequence
 } from "../src/features/bom_creator/logic/services/bom-item-key";
+import { normalizeDrawingClientName } from "../src/features/drawing_clients/api/public";
+import {
+  DRAWING_PROJECT_NUMBER_SCOPE,
+  parseDrawingProjectNumberSequence
+} from "../src/features/drawing_projects/api/public";
 import {
   normalizeSymbolCategoryName,
   PROTECTED_SYMBOL_CATEGORY_NAME,
@@ -58,6 +67,65 @@ async function initializeBomItemKeySequence() {
         WHEN excluded."lastValue" > "BomItemKeySequence"."lastValue"
           THEN CURRENT_TIMESTAMP
         ELSE "BomItemKeySequence"."updatedAt"
+      END;
+  `;
+}
+
+function legacyClientId(normalizedName: string): string {
+  return `client_${createHash("sha256")
+    .update(normalizedName)
+    .digest("hex")
+    .slice(0, 24)}`;
+}
+
+async function initializeDrawingClients() {
+  const projects = await prisma.$queryRawUnsafe<
+    Array<{ id: string; client: string | null; clientId: string | null }>
+  >(
+    'SELECT "id", "client", "clientId" FROM "Project" WHERE "client" IS NOT NULL AND TRIM("client") <> \'\''
+  );
+
+  for (const project of projects) {
+    if (project.clientId) continue;
+    const name = project.client!.trim();
+    const normalizedName = normalizeDrawingClientName(name);
+    const id = legacyClientId(normalizedName);
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "Client" ("id", "name", "normalizedName", "createdAt", "updatedAt")
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT("normalizedName") DO NOTHING`,
+      id,
+      name,
+      normalizedName
+    );
+    await prisma.$executeRawUnsafe(
+      `UPDATE "Project"
+       SET "clientId" = (SELECT "id" FROM "Client" WHERE "normalizedName" = ?)
+       WHERE "id" = ? AND "clientId" IS NULL`,
+      normalizedName,
+      project.id
+    );
+  }
+}
+
+async function initializeDrawingProjectNumberSequence() {
+  const rows = await prisma.$queryRawUnsafe<Array<{ projectNumber: string | null }>>(
+    'SELECT "projectNumber" FROM "Project" WHERE "projectNumber" IS NOT NULL'
+  );
+  const highestSequence = rows.reduce((highest, row) => {
+    const sequence = parseDrawingProjectNumberSequence(row.projectNumber);
+    return sequence === null ? highest : Math.max(highest, sequence);
+  }, 0);
+
+  await prisma.$executeRaw`
+    INSERT INTO "ProjectNumberSequence" ("scope", "lastValue", "updatedAt")
+    VALUES (${DRAWING_PROJECT_NUMBER_SCOPE}, ${highestSequence}, CURRENT_TIMESTAMP)
+    ON CONFLICT("scope") DO UPDATE SET
+      "lastValue" = MAX("ProjectNumberSequence"."lastValue", excluded."lastValue"),
+      "updatedAt" = CASE
+        WHEN excluded."lastValue" > "ProjectNumberSequence"."lastValue"
+          THEN CURRENT_TIMESTAMP
+        ELSE "ProjectNumberSequence"."updatedAt"
       END;
   `;
 }
@@ -174,7 +242,6 @@ type SeedSymbolInput = {
       label: string;
       function?: string;
       anchorKey: string;
-      requiredForWiring: boolean;
     }>;
     anchors: Array<{
       key: string;
@@ -414,78 +481,6 @@ async function main() {
   await execute(`
     CREATE INDEX IF NOT EXISTS "SymbolSourceAsset_versionId_idx"
     ON "SymbolSourceAsset"("versionId");
-  `);
-
-  await execute(`
-    CREATE TABLE IF NOT EXISTS "SymbolEngineerNote" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "symbolId" TEXT NOT NULL,
-      "versionId" TEXT,
-      "notes" TEXT NOT NULL,
-      "imageFileName" TEXT,
-      "imageMimeType" TEXT,
-      "imageSizeBytes" INTEGER,
-      "imageDataUrl" TEXT,
-      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updatedAt" DATETIME NOT NULL,
-      CONSTRAINT "SymbolEngineerNote_symbolId_fkey"
-        FOREIGN KEY ("symbolId") REFERENCES "Symbol" ("id")
-        ON DELETE CASCADE ON UPDATE CASCADE,
-      CONSTRAINT "SymbolEngineerNote_versionId_fkey"
-        FOREIGN KEY ("versionId") REFERENCES "SymbolVersion" ("id")
-        ON DELETE SET NULL ON UPDATE CASCADE
-    );
-  `);
-
-  await execute(`
-    CREATE INDEX IF NOT EXISTS "SymbolEngineerNote_symbolId_idx"
-    ON "SymbolEngineerNote"("symbolId");
-  `);
-
-  await execute(`
-    CREATE INDEX IF NOT EXISTS "SymbolEngineerNote_versionId_idx"
-    ON "SymbolEngineerNote"("versionId");
-  `);
-
-  await execute(`
-    CREATE INDEX IF NOT EXISTS "SymbolEngineerNote_createdAt_idx"
-    ON "SymbolEngineerNote"("createdAt");
-  `);
-
-  await execute(`
-    CREATE TABLE IF NOT EXISTS "SymbolDocument" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "symbolId" TEXT NOT NULL,
-      "versionId" TEXT,
-      "title" TEXT NOT NULL,
-      "fileName" TEXT NOT NULL,
-      "mimeType" TEXT NOT NULL,
-      "sizeBytes" INTEGER NOT NULL,
-      "dataUrl" TEXT NOT NULL,
-      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updatedAt" DATETIME NOT NULL,
-      CONSTRAINT "SymbolDocument_symbolId_fkey"
-        FOREIGN KEY ("symbolId") REFERENCES "Symbol" ("id")
-        ON DELETE CASCADE ON UPDATE CASCADE,
-      CONSTRAINT "SymbolDocument_versionId_fkey"
-        FOREIGN KEY ("versionId") REFERENCES "SymbolVersion" ("id")
-        ON DELETE SET NULL ON UPDATE CASCADE
-    );
-  `);
-
-  await execute(`
-    CREATE INDEX IF NOT EXISTS "SymbolDocument_symbolId_idx"
-    ON "SymbolDocument"("symbolId");
-  `);
-
-  await execute(`
-    CREATE INDEX IF NOT EXISTS "SymbolDocument_versionId_idx"
-    ON "SymbolDocument"("versionId");
-  `);
-
-  await execute(`
-    CREATE INDEX IF NOT EXISTS "SymbolDocument_createdAt_idx"
-    ON "SymbolDocument"("createdAt");
   `);
 
   await execute(`
@@ -750,16 +745,103 @@ async function main() {
   `);
 
   await execute(`
-    CREATE TABLE IF NOT EXISTS "Drawing" (
+    CREATE TABLE IF NOT EXISTS "Client" (
       "id" TEXT NOT NULL PRIMARY KEY,
-      "drawingKey" TEXT NOT NULL,
-      "title" TEXT NOT NULL,
-      "status" TEXT NOT NULL DEFAULT 'draft',
-      "modelJson" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "normalizedName" TEXT NOT NULL,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL
     );
   `);
+
+  await execute(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "Client_normalizedName_key"
+    ON "Client"("normalizedName");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "Client_name_idx"
+    ON "Client"("name");
+  `);
+
+  await execute(`
+    CREATE TABLE IF NOT EXISTS "ProjectNumberSequence" (
+      "scope" TEXT NOT NULL PRIMARY KEY,
+      "lastValue" INTEGER NOT NULL DEFAULT 0,
+      "updatedAt" DATETIME NOT NULL
+    );
+  `);
+
+  await execute(`
+    CREATE TABLE IF NOT EXISTS "Project" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "name" TEXT NOT NULL,
+      "projectNumber" TEXT,
+      "normalizedProjectNumber" TEXT,
+      "client" TEXT,
+      "clientId" TEXT,
+      "description" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'active',
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL,
+      CONSTRAINT "Project_clientId_fkey"
+        FOREIGN KEY ("clientId") REFERENCES "Client" ("id")
+        ON DELETE SET NULL ON UPDATE CASCADE
+    );
+  `);
+
+  await addColumnIfMissing(
+    "Project",
+    "clientId",
+    '"clientId" TEXT REFERENCES "Client"("id") ON DELETE SET NULL ON UPDATE CASCADE'
+  );
+
+  await execute(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "Project_normalizedProjectNumber_key"
+    ON "Project"("normalizedProjectNumber");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "Project_name_idx"
+    ON "Project"("name");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "Project_status_updatedAt_idx"
+    ON "Project"("status", "updatedAt");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "Project_clientId_idx"
+    ON "Project"("clientId");
+  `);
+
+  await initializeDrawingClients();
+  await initializeDrawingProjectNumberSequence();
+
+  await execute(`
+    CREATE TABLE IF NOT EXISTS "Drawing" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "drawingKey" TEXT NOT NULL,
+      "title" TEXT NOT NULL,
+      "description" TEXT,
+      "projectId" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'draft',
+      "modelJson" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL,
+      CONSTRAINT "Drawing_projectId_fkey"
+        FOREIGN KEY ("projectId") REFERENCES "Project" ("id")
+        ON DELETE SET NULL ON UPDATE CASCADE
+    );
+  `);
+
+  await addColumnIfMissing("Drawing", "description", '"description" TEXT');
+  await addColumnIfMissing(
+    "Drawing",
+    "projectId",
+    '"projectId" TEXT REFERENCES "Project"("id") ON DELETE SET NULL ON UPDATE CASCADE'
+  );
 
   await execute(`
     CREATE UNIQUE INDEX IF NOT EXISTS "Drawing_drawingKey_key"
@@ -774,6 +856,11 @@ async function main() {
   await execute(`
     CREATE INDEX IF NOT EXISTS "Drawing_updatedAt_idx"
     ON "Drawing"("updatedAt");
+  `);
+
+  await execute(`
+    CREATE INDEX IF NOT EXISTS "Drawing_projectId_idx"
+    ON "Drawing"("projectId");
   `);
 
   await execute(`
@@ -807,6 +894,9 @@ async function main() {
     WHERE "symbolKey" IN ('clx_cable_1_pair', 'clx_cable_2_pair');
   `);
 
+  await ensureItemEngineeringStorage(prisma);
+  await ensureDeviceClassificationStorage(prisma);
+
   const miniatureCircuitBreaker3PoleSvg = await readFile(
     new URL(
       "../src/features/symbol_registry/assets/miniature-circuit-breaker-3-pole.svg",
@@ -835,14 +925,12 @@ async function main() {
           label: "Terminal 1",
           function: "Temperature signal conductor",
           anchorKey: "1",
-          requiredForWiring: true
         },
         {
           key: "2",
           label: "Terminal 2",
           function: "Temperature signal conductor",
           anchorKey: "2",
-          requiredForWiring: true
         }
       ],
       anchors: [
@@ -872,14 +960,12 @@ async function main() {
           label: "Terminal E1",
           function: "Local HART signal conductor",
           anchorKey: "E1",
-          requiredForWiring: true
         },
         {
           key: "E2",
           label: "Terminal E2",
           function: "Local HART signal conductor",
           anchorKey: "E2",
-          requiredForWiring: true
         }
       ],
       anchors: [
@@ -907,28 +993,24 @@ async function main() {
           label: "Channel 1 terminal 1",
           function: "Cable pair conductor 1",
           anchorKey: "CH1_T1",
-          requiredForWiring: true
         },
         {
           key: "CH1_T2",
           label: "Channel 1 terminal 2",
           function: "Cable pair conductor 2",
           anchorKey: "CH1_T2",
-          requiredForWiring: true
         },
         {
           key: "CH2_T1",
           label: "Channel 2 terminal 1",
           function: "Cable pair conductor 1",
           anchorKey: "CH2_T1",
-          requiredForWiring: true
         },
         {
           key: "CH2_T2",
           label: "Channel 2 terminal 2",
           function: "Cable pair conductor 2",
           anchorKey: "CH2_T2",
-          requiredForWiring: true
         }
       ],
       anchors: [
@@ -958,42 +1040,36 @@ async function main() {
           label: "Line 1",
           function: "Incoming line phase 1",
           anchorKey: "L1",
-          requiredForWiring: true
         },
         {
           key: "L2",
           label: "Line 2",
           function: "Incoming line phase 2",
           anchorKey: "L2",
-          requiredForWiring: true
         },
         {
           key: "L3",
           label: "Line 3",
           function: "Incoming line phase 3",
           anchorKey: "L3",
-          requiredForWiring: true
         },
         {
           key: "T1",
           label: "Load 1",
           function: "Outgoing protected phase 1",
           anchorKey: "T1",
-          requiredForWiring: true
         },
         {
           key: "T2",
           label: "Load 2",
           function: "Outgoing protected phase 2",
           anchorKey: "T2",
-          requiredForWiring: true
         },
         {
           key: "T3",
           label: "Load 3",
           function: "Outgoing protected phase 3",
           anchorKey: "T3",
-          requiredForWiring: true
         }
       ],
       anchors: [
@@ -1007,6 +1083,8 @@ async function main() {
     }
   });
 
+  await ensureStandardsStorage(prisma);
+  await seedStandards(prisma);
   console.log("SQLite schema is ready.");
 }
 

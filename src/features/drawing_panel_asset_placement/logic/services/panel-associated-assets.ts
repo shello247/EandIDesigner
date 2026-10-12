@@ -553,6 +553,7 @@ export function placeAssociatedPanelAssetOnBackplane({
   backplaneId,
   assetId,
   symbols,
+  positionMode = "automatic",
   placementId = `pal_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }: {
   model: DrawingModel;
@@ -560,6 +561,7 @@ export function placeAssociatedPanelAssetOnBackplane({
   backplaneId: string;
   assetId: string;
   symbols: ApprovedDrawingSymbol[];
+  positionMode?: "automatic" | "interactive";
   placementId?: string;
 }): { model: DrawingModel; placement: DrawingPlacement } {
   const sheet = model.sheets.find((candidate) => candidate.id === sheetId);
@@ -632,7 +634,15 @@ export function placeAssociatedPanelAssetOnBackplane({
       terminalBlock: layout.terminalBlock
     }
   });
-  const placement = constrainComponentCompositionToBackplane({
+  const mounted = model.sheets.flatMap(s => s.placements).find(p =>
+    p.assetId === assetId && p.layoutParentId && p.layoutPosition && p.layoutDimensions);
+  if (mounted && mounted.containerAssetId !== backplane.containerAssetId) {
+    throw new Error("The physical asset is mounted in a different panel.");
+  }
+  const candidate = mounted
+    ? { ...initialPlacement, layoutPosition: mounted.layoutPosition, rotation: mounted.rotation }
+    : initialPlacement;
+  const placement = positionMode === "interactive" || mounted ? candidate : constrainComponentCompositionToBackplane({
     placement: initialPlacement,
     asset,
     symbol: layout.symbol,
@@ -682,6 +692,7 @@ export function placeAssociatedPanelAssetOnConnectionView({
   connectionViewId,
   assetId,
   symbols,
+  positionMode = "automatic",
   placementId = `pcv_asset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }: {
   model: DrawingModel;
@@ -689,6 +700,7 @@ export function placeAssociatedPanelAssetOnConnectionView({
   connectionViewId: string;
   assetId: string;
   symbols: ApprovedDrawingSymbol[];
+  positionMode?: "automatic" | "interactive";
   placementId?: string;
 }): { model: DrawingModel; placement: DrawingPlacement } {
   const sheet = model.sheets.find((candidate) => candidate.id === sheetId);
@@ -763,7 +775,7 @@ export function placeAssociatedPanelAssetOnConnectionView({
       candidates.push({ x: round(x), y: round(y) });
     }
   }
-  const position = candidates.find((candidate) =>
+  const position = positionMode === "interactive" ? centered : candidates.find((candidate) =>
       occupied.every(
         (bounds) => !overlaps({ ...candidate, width, height }, bounds)
       )

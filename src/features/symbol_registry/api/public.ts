@@ -28,6 +28,7 @@ export type {
   SymbolPanelWiringAssetType,
   SymbolPanelWiringCapability,
   SymbolTerminal,
+  SymbolTerminalElectricalRole,
   SymbolTerminalPanelSide,
   SymbolTechnicalKind,
   ValidationIssue
@@ -45,6 +46,7 @@ export {
   symbolPermanentContinuityGroupSchema,
   symbolPanelWiringAssetTypeSchema,
   symbolPanelWiringCapabilitySchema,
+  symbolTerminalElectricalRoleSchema,
   symbolTerminalPanelSideSchema,
   parseMetadataJson,
   stringifyMetadata

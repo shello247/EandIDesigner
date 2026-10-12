@@ -17,8 +17,7 @@ function terminalsFromAnchors(
             key: anchor.key,
             label: anchor.key,
             function: "",
-            anchorKey: anchor.key,
-            requiredForWiring: anchor.kind === "terminal"
+            anchorKey: anchor.key
           }
         ]
   );

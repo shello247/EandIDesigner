@@ -1,3 +1,4 @@
+import { confirmCanvasPlacement } from "./drawing-placement-helpers";
 import { expect, test, type Page } from "./drawing-test";
 import {
   createE2eTerminalBlockGroupPackage,
@@ -20,7 +21,7 @@ async function expectNoGenericPanelAssignment(page: Page) {
 async function loadDetailSheet(page: Page) {
   await page.getByRole("button", { name: "Open sheet loader" }).click();
   const loader = page.getByRole("dialog", { name: "Sheet Loader" });
-  await loader.getByRole("button", { name: "Expand Front Matter" }).click();
+  await expect(loader.getByRole("button", { name: "Collapse Package Information" })).toHaveAttribute("aria-expanded", "true");
   await loader.getByRole("row", {
     name: /JB001 Detailed Panel Drawing Detailed Panel/
   }).getByRole("button", { name: "Load", exact: true }).click();
@@ -40,8 +41,9 @@ test("retains panel ownership from layout through detailed wiring and reload", a
     const builder = page.getByRole("dialog", { name: "Terminal Strip Builder" });
     await expect(builder.getByLabel("Tag / ID")).toHaveValue("TB-101");
     await expect(builder).toContainText("JB001");
-    await builder.getByRole("button", { name: "Create terminal strip" }).click();
-    await expect(page.getByTestId("drawing-toast")).toContainText("TB-101 terminal strip placed");
+    await builder.getByRole("button", { name: "Continue to placement" }).click();
+    await confirmCanvasPlacement(page);
+    await expect(page.getByTestId("placement-session")).toHaveCount(0);
     await expect(page.locator("[data-terminal-strip-member]")).toHaveCount(7);
     await expectNoGenericPanelAssignment(page);
 
@@ -55,6 +57,8 @@ test("retains panel ownership from layout through detailed wiring and reload", a
     const equipment = workbench.getByRole("row", { name: /TB-101/ });
     await expect(equipment).toContainText("Available");
     await equipment.getByRole("button", { name: "Add", exact: true }).click();
+    await confirmCanvasPlacement(page);
+    await openPanelEngineeringWorkbench(page);
     await expect(equipment).toContainText("Represented");
     await workbench.getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.locator("[data-terminal-strip-member]")).toHaveCount(7);

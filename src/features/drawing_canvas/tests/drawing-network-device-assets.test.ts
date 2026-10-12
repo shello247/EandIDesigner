@@ -46,7 +46,6 @@ const switchSymbol: ApprovedDrawingSymbol = {
         label: "24 VDC supply",
         anchorKey: "US",
         panelSide: "internal",
-        requiredForWiring: true
       }
     ]
   }

@@ -3,15 +3,40 @@ import {
   calculateScrollForZoomAnchor,
   calculateFitTransform,
   clampZoom,
+  formatZoomPercent,
+  wheelDeltaInPixels,
   zoomAtPoint
 } from "../logic/services/viewport-transform";
 
 describe("viewport transform", () => {
+  it.each([
+    [0, -48, -48],
+    [1, -3, -48],
+    [2, -1, -600],
+    [1, 3, 48],
+    [0, -0.5, -0.5],
+    [0, 0, 0]
+  ])("normalizes wheel units (mode %i, delta %f)", (deltaMode, deltaY, expected) => {
+    expect(wheelDeltaInPixels({ deltaMode, deltaY }, 600)).toBe(expected);
+  });
+
   it("clamps zoom to the supported drawing viewport range", () => {
     expect(clampZoom(0.05)).toBe(0.2);
     expect(clampZoom(2)).toBe(2);
-    expect(clampZoom(10)).toBe(4);
+    expect(clampZoom(4)).toBe(4);
+    expect(clampZoom(6)).toBe(6);
+    expect(clampZoom(8)).toBe(8);
+    expect(clampZoom(8.001)).toBe(8);
+    expect(clampZoom(10)).toBe(8);
     expect(clampZoom(Number.NaN)).toBe(1);
+  });
+
+  it("displays the full 800 percent zoom range", () => {
+    expect(formatZoomPercent(0.2)).toBe("20%");
+    expect(formatZoomPercent(1)).toBe("100%");
+    expect(formatZoomPercent(6)).toBe("600%");
+    expect(formatZoomPercent(8)).toBe("800%");
+    expect(formatZoomPercent(10)).toBe("800%");
   });
 
   it("fits and centers a sheet inside a viewport with padding", () => {
@@ -26,11 +51,12 @@ describe("viewport transform", () => {
     expect(transform.panY).toBeCloseTo(53);
   });
 
-  it("keeps the drawing point under the cursor stable while zooming", () => {
-    const current = { zoom: 1, panX: 100, panY: 80 };
+  it.each([[1, 2], [4, 8], [8, 4], [4, 12]])(
+    "keeps the cursor anchor stable from %fx to %fx (clamped)", (currentZoom, nextZoom) => {
+    const current = { zoom: currentZoom, panX: 100, panY: 80 };
     const next = zoomAtPoint({
       current,
-      nextZoom: 2,
+      nextZoom,
       pointerX: 300,
       pointerY: 240
     });
@@ -45,6 +71,13 @@ describe("viewport transform", () => {
     };
 
     expect(after).toEqual(before);
+  });
+
+  it("does not move the anchor when already at the 800 percent ceiling", () => {
+    const current = { zoom: 8, panX: -1400, panY: -720 };
+    expect(zoomAtPoint({
+      current, nextZoom: 12, pointerX: 300, pointerY: 240
+    })).toEqual(current);
   });
 
   it("calculates scroll offsets that keep a sheet point under the cursor", () => {

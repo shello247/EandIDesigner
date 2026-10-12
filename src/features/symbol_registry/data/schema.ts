@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { deviceTypeSchema } from "@/shared/device-classification/device-types";
 import { symbolComponentPositionsSchema } from "@/features/symbol_components/api/public";
 import { symbolCategorySummarySchema } from "@/features/symbol_categories/api/public";
 
@@ -68,6 +69,10 @@ const symbolRegistryPageSchema = z.preprocess((value) => {
 export const symbolRegistryListInputSchema = z
   .object({
     categoryId: symbolRegistryCategoryFilterSchema,
+    deviceType: z.preprocess(value => {
+      const candidate = firstSymbolRegistryQueryValue(value);
+      return candidate === "all" || candidate === "" ? undefined : candidate;
+    }, z.union([deviceTypeSchema, z.literal("needs_classification")]).optional()),
     page: symbolRegistryPageSchema
   })
   .strict();
@@ -207,21 +212,22 @@ export const symbolElectricalDomainSchema = z.enum([
   "signal_ground"
 ]);
 
-export const symbolPanelWiringAssetTypeSchema = z.enum([
-  "instrument",
-  "controller",
-  "terminal_block",
-  "breaker",
-  "fuse",
-  "relay",
-  "power_supply",
-  "isolator",
-  "converter",
-  "io_module",
-  "network_device",
-  "earth_bar",
+export const symbolTerminalElectricalRoleSchema = z.enum([
+  "power_line",
+  "power_neutral",
+  "dc_positive",
+  "dc_return",
+  "analog_signal_positive",
+  "analog_signal_return",
+  "digital_signal",
+  "communication_a",
+  "communication_b",
+  "shield",
+  "protective_earth",
   "other"
 ]);
+
+export const symbolPanelWiringAssetTypeSchema = deviceTypeSchema;
 
 export const symbolPanelWiringCapabilitySchema = z.object({
   assetType: symbolPanelWiringAssetTypeSchema,
@@ -253,7 +259,7 @@ export const symbolTerminalSchema = z.object({
   anchorKey: z.string().trim().min(1).max(80),
   panelSide: symbolTerminalPanelSideSchema.optional(),
   electricalDomains: z.array(symbolElectricalDomainSchema).optional(),
-  requiredForWiring: z.boolean()
+  electricalRole: symbolTerminalElectricalRoleSchema.optional()
 });
 
 export const symbolPermanentContinuityGroupSchema = z.object({
@@ -521,6 +527,7 @@ export const symbolSourceAssetInputSchema = z.object({
 });
 
 export const saveSymbolDraftInputSchema = z.object({
+  deviceType: deviceTypeSchema.nullable().optional(),
   svg: z.string().trim().min(1),
   metadata: symbolMetadataSchema,
   categoryId: z.string().trim().min(1).max(120).optional(),
@@ -567,6 +574,7 @@ export const drawingSymbolCatalogCapabilitiesSchema = z.object({
 });
 
 export const drawingSymbolCatalogSummarySchema = z.object({
+  deviceType: deviceTypeSchema.nullable().optional(),
   symbolId: z.string().trim().min(1).max(120),
   symbolKey: z.string().trim().min(1).max(120),
   displayName: z.string().trim().min(1).max(200),
@@ -593,30 +601,6 @@ export const terminalMapVerificationResultSchema = z.object({
   issues: z.array(terminalMapVerificationIssueSchema),
   suggestedTerminals: z.array(symbolTerminalSchema),
   reviewNotes: z.array(z.string().trim().min(1).max(400))
-});
-
-export const engineerNoteImageInputSchema = z.object({
-  fileName: z.string().trim().min(1).max(240),
-  mimeType: z.string().trim().min(1).max(120),
-  sizeBytes: z.number().int().nonnegative(),
-  dataUrl: z.string().trim().min(1)
-});
-
-export const createEngineerNoteInputSchema = z.object({
-  symbolId: z.string().trim().min(1),
-  versionId: z.string().trim().min(1).optional(),
-  notes: z.string().trim().min(1).max(20000),
-  image: engineerNoteImageInputSchema.optional()
-});
-
-export const uploadSymbolDocumentInputSchema = z.object({
-  symbolId: z.string().trim().min(1),
-  versionId: z.string().trim().min(1).optional(),
-  title: z.string().trim().min(1).max(240),
-  fileName: z.string().trim().min(1).max(240),
-  mimeType: z.string().trim().min(1).max(120),
-  sizeBytes: z.number().int().positive(),
-  dataUrl: z.string().trim().min(1)
 });
 
 export const terminalMapVerificationJsonSchema = {
@@ -658,13 +642,12 @@ export const terminalMapVerificationJsonSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["key", "label", "function", "anchorKey", "requiredForWiring"],
+        required: ["key", "label", "function", "anchorKey"],
         properties: {
           key: { type: "string" },
           label: { type: "string" },
           function: { type: "string" },
-          anchorKey: { type: "string" },
-          requiredForWiring: { type: "boolean" }
+          anchorKey: { type: "string" }
         }
       }
     },
@@ -719,6 +702,9 @@ export type SymbolTerminalPanelSide = z.infer<
 export type SymbolElectricalDomain = z.infer<
   typeof symbolElectricalDomainSchema
 >;
+export type SymbolTerminalElectricalRole = z.infer<
+  typeof symbolTerminalElectricalRoleSchema
+>;
 export type ValidationIssue = z.infer<typeof validationIssueSchema>;
 export type SaveSymbolDraftInput = z.infer<typeof saveSymbolDraftInputSchema>;
 export type SaveSymbolMetadataChangesInput = z.infer<
@@ -739,13 +725,6 @@ export type TerminalMapVerificationIssue = z.infer<
 export type TerminalMapVerificationResult = z.infer<
   typeof terminalMapVerificationResultSchema
 >;
-export type CreateEngineerNoteInput = z.infer<
-  typeof createEngineerNoteInputSchema
->;
-export type UploadSymbolDocumentInput = z.infer<
-  typeof uploadSymbolDocumentInputSchema
->;
-
 export function parseMetadataJson(metadataJson: string): SymbolMetadata {
   return symbolMetadataSchema.parse(JSON.parse(metadataJson));
 }

@@ -43,16 +43,22 @@ test("creates session guides and snaps placement bounds without persisting them"
     const activeFrame = page.getByTestId("drawing-sheet-frame");
     const ruler = activeFrame.getByTestId("drawing-horizontal-ruler");
     const paper = activeFrame.locator("[data-sheet-paper]");
-    const caption = page.locator(".drawing-sheet-caption");
+    const toolbar = page.getByTestId("drawing-sheet-toolbar");
+    // Actual-size zoom is centre-anchored and may scroll the ruler partly out
+    // of view. Inspect the full ruler at the top before testing its clearance.
+    const viewport = page.getByTestId("drawing-canvas-viewport");
+    await viewport.evaluate(element => element.scrollTo({ top: 0, behavior: "instant" }));
+    await expect.poll(() => viewport.evaluate(element => element.scrollTop)).toBe(0);
     const rulerBox = await ruler.boundingBox();
     const paperBox = await paper.boundingBox();
-    const captionBox = await caption.boundingBox();
+    const toolbarBox = await toolbar.boundingBox();
 
-    if (!rulerBox || !paperBox || !captionBox) {
-      throw new Error("Expected drawing caption, ruler, and paper bounds.");
+    if (!rulerBox || !paperBox || !toolbarBox) {
+      throw new Error("Expected drawing toolbar, ruler, and paper bounds.");
     }
 
-    expect(captionBox.y + captionBox.height).toBeLessThanOrEqual(rulerBox.y);
+    expect(toolbarBox.y + toolbarBox.height).toBeLessThanOrEqual(rulerBox.y);
+    await expect(page.locator(".drawing-sheet-caption")).toHaveCount(0);
 
     await ruler.hover({ position: { x: 100, y: rulerBox.height / 2 } });
     await page.mouse.down();

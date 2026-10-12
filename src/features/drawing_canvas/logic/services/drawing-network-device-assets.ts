@@ -6,9 +6,6 @@ import {
 } from "../../data/schema";
 import type { ApprovedDrawingSymbol } from "../../types";
 
-const NETWORK_DEVICE_CATEGORY = "network device";
-const LEGACY_NETWORK_DEVICE_CATEGORY_ID = "symbol_category_network_device";
-
 function symbolReferenceKey(input: {
   symbolId?: string;
   versionId?: string;
@@ -25,13 +22,10 @@ export function isNetworkDeviceDrawingSymbol(
     return false;
   }
 
-  const managedCategory = symbol.managedCategory?.name
-    .trim()
-    .toLocaleLowerCase("en-US");
-
   return (
-    symbol.managedCategory?.id === LEGACY_NETWORK_DEVICE_CATEGORY_ID ||
-    managedCategory === NETWORK_DEVICE_CATEGORY ||
+    // Read-only compatibility for the former built-in category ID. Do not use
+    // mutable category names or new Device Type selection to invent capability.
+    symbol.managedCategory?.id === "symbol_category_network_device" ||
     symbol.technicalKind === "network_device" ||
     symbol.category === "network_device" ||
     symbol.metadata.category === "network_device" ||
@@ -74,15 +68,9 @@ export function normalizeNetworkDeviceDrawingAssets(
   const assetsById = new Map<string, DrawingAssetRecord>();
 
   for (const asset of model.assets ?? []) {
-    const key = symbolReferenceKey(asset);
-    const symbol = key ? symbolsByReference.get(key) : undefined;
-    const nextAsset =
-      isNetworkDeviceDrawingSymbol(symbol) && asset.type !== "network_device"
-        ? { ...asset, type: "network_device" as const }
-        : asset;
-
-    changed ||= nextAsset !== asset;
-    assetsById.set(nextAsset.id, nextAsset);
+    // Retain the saved classification snapshot. Review/repair is an explicit
+    // drawing command, not a catalogue-load side effect.
+    assetsById.set(asset.id, asset);
   }
 
   const sheets = model.sheets.map((sheet) => {

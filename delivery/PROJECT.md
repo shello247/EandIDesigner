@@ -1,5 +1,19 @@
 # PROJECT — EI Designer drawing performance
 
+## Current application context — 12 October 2026
+
+The application has progressed beyond this historical performance milestone.
+The [numbered feature register](../docs/application/REGISTER.md) owns the current
+capability inventory; [release runbook](../docs/application/releases/2026-10-12.md)
+owns consolidated verification and rollout guidance. Feature modules remain under
+src/features, public contracts preserve engineering identities, Prisma uses SQLite,
+and Vitest/Playwright operate on isolated synthetic data.
+
+PLAN-016 started 12 October 2026 (America/Port_of_Spain); release work is in
+progress. Timing and final checks are recorded in its release receipt. Wider
+engineering and manufacturer-review programmes are not implicitly completed.
+Preserve all uncommitted local work; no public checkpoint includes customer data.
+
 ## 1) What we’re building (purpose)
 
 - Problem: make the existing electrical-engineering drawing core fast, predictable, and recoverable without changing engineering meaning.
@@ -16,7 +30,7 @@
 - Testing: Vitest unit suites and Playwright production workflows; guarded synthetic databases and serial performance harnesses.
 - Env: local secrets remain in uncommitted environment files; no environment file or database is published.
 - Boundaries: UI does not call the database directly; data access remains in feature layers; terminal/wire/symbol identities and pinned versions are preserved.
-- Implementation: linked `drawing-performance-pass-1` worktree on `codex/drawing-performance-pass-1`; original `reliability-hardening` remains live and unchanged.
+- Implementation: current local rollout from the reconciled linked worktree. Publication uses a clean release branch from main to exclude unpublished customer-report history. Recheck runtime ownership before maintenance; historical checkout names below are not startup instructions.
 
 ## 3) Feature inventory
 
@@ -28,13 +42,13 @@
 
 ### In progress (Active plan)
 
-- None. Current task: none.
+- PLAN-016 — [Package Information reconciliation and release](plans/planned/PLAN-016-reconcile_package_information_release.md). Current task: PLAN-016-TASK-003 publication; independent engineering-audit closure is outside this release.
 
 ### Planned / queued
 
-- None. Squash-PR/live promotion and the production-readiness programme require a separate user decision.
+- Wider engineering-record review and office-server production readiness remain separate programmes. This release does not complete either.
 
-Time summary: no active plan/task; most recent completed task PLAN-002-TASK-023 took approximately 8 minutes. Final branch CI `33021358639` passed exact remote tip `01337ef7acc33d063ad1167411141be8a54a67c9`.
+Time summary: PLAN-016 started 12 October 2026; exact plan/task elapsed time was not captured. Current gate durations are retained in the release receipt. Historical PLAN-002-TASK-023 took approximately 8 minutes; CI `33021358639` qualified that older checkpoint only.
 
 ## 4) Delivery OS workflow
 
@@ -51,5 +65,5 @@ Time summary: no active plan/task; most recent completed task PLAN-002-TASK-023 
 - Drawing E2E: `npm run test:drawing -- --reporter=line`
 - Lint: `npm run lint`
 - Type-check: `npm run typecheck`
-- Guarded build: `$env:DATABASE_URL='file:./dev.db'; npm run build` only for the standard isolated verification convention; development worktrees must never be started against that path.
-- Env notes: do not read, print, copy, or commit `.env.local`; port 3000 remains the shared live editor and port 3100 is reserved for guarded synthetic tests.
+- Guarded build/browser checks: follow [current release runbook](../docs/application/releases/2026-10-12.md). Never bootstrap canonical storage.
+- Env notes: do not read, print, copy, or commit `.env.local`; port 3000 is the shared live editor and current release tests use guarded port 3121.

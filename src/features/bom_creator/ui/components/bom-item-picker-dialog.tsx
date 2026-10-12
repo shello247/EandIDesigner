@@ -2,7 +2,9 @@
 
 import { FormEvent, useEffect, useState, useTransition } from "react";
 import { Search, X } from "lucide-react";
+import { SearchInput } from "@/shared/ui/search-input";
 import { searchBomItemPickerAction } from "../../api/actions";
+import { categoryLabel } from "./bom-item-options";
 import type {
   BomGenerationItem,
   BomItemPickerResult
@@ -61,7 +63,7 @@ export function BomItemPickerDialog({
 
         <form className="flex gap-2 border-b border-slate-200 p-4" onSubmit={submitSearch}>
           <label className="sr-only" htmlFor="bom-item-picker-search">Search items</label>
-          <input id="bom-item-picker-search" className="field-input" value={draftQuery} onChange={(event) => setDraftQuery(event.currentTarget.value)} maxLength={120} autoFocus />
+          <SearchInput id="bom-item-picker-search" containerClassName="flex-1" value={draftQuery} onChange={(event) => setDraftQuery(event.currentTarget.value)} maxLength={120} autoFocus />
           <button type="submit" className="icon-button icon-button-primary" disabled={isPending}><Search aria-hidden="true" size={14} />Search</button>
         </form>
 
@@ -76,7 +78,7 @@ export function BomItemPickerDialog({
             <div className="divide-y divide-slate-200">
               {result.items.map((item) => (
                 <button key={item.id} type="button" className="flex w-full items-start justify-between gap-4 px-5 py-3 text-left hover:bg-slate-50" onClick={() => onSelect(item)}>
-                  <span><span className="block text-sm font-semibold text-slate-950">{item.displayName}</span><span className="mt-1 block text-xs text-slate-500">{item.itemKey} / {item.category.replace(/_/g, " ")} / {item.unit}</span></span>
+                  <span><span className="block text-sm font-semibold text-slate-950">{item.displayName}</span><span className="mt-1 block text-xs text-slate-500">{item.itemKey} / {categoryLabel(item.category)} / {item.unit}</span></span>
                   <span className="text-right text-xs text-slate-500">{item.manufacturer ?? ""}{item.partNumber ? <span className="block">{item.partNumber}</span> : null}</span>
                 </button>
               ))}

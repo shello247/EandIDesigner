@@ -36,7 +36,41 @@
   that points at a different database and makes current application records
   appear to be missing.
 
+## Guided drawing authoring — user direction, 2026-09-11
+
+- Product goal: engineers describe a design in conversation (typed or spoken);
+  Codex develops and refines the actual drawing in EI Designer with them. This
+  is the intended end-to-end product experience, not merely drawing advice.
+- For these collaborative authoring sessions, use the visible application in
+  the Codex right-hand browser. This supersedes the earlier external-browser
+  preference for this workflow; follow an explicit request for another surface.
+- Reuse the existing application tab, keep the requested drawing/sheet visible,
+  and carry out bounded, observable steps. Briefly explain the next meaningful
+  operation, perform it, and verify the visible result before continuing.
+- Use supported browser controls and application commands. Do not silently
+  author production drawings by direct database edits or hidden model rewrites.
+  Preserve application validation, canonical identities, pinned versions,
+  undo/history, revision checks and unsaved drafts. Verify save acknowledgments
+  at agreed milestones; distinguish saved results from local draft changes.
+- Use the applicable drawing-authoring skills for actual drawing work. Ask
+  only for missing choices that materially affect engineering intent; do not
+  invent product ratings, connections, compatibility or engineering approval.
+- Treat each session as iterative product feedback: explain any UI/command gap
+  or failed operation, preserve the current design, and separately scope a
+  software correction when needed. Do not bypass safeguards to make a demo work.
+- This direction is not blanket permission for deletion, schema changes,
+  publishing, procurement or engineering sign-off. Unsupported browser/canvas
+  capabilities must be stated plainly; do not imply a hidden action was visible.
+- Persistent product context: `delivery/PROJECT.md` and `delivery/CURRENT.md`.
+
 ## Verification
+
+### Device classification and record review
+
+- Use the controlled registry in `src/shared/device-classification/`; never infer a Device Type from a tag, name, folder or first Mini BOM line. Follow `src/features/device_classification/README.md` for the repeatable audit and correction procedure.
+- Preserve exact Item revisions and Symbol versions. Classification-only repairs do not change geometry, wiring, asset tags, product selections or BOM quantities. Approved/archived drawings receive findings for explicit engineering review.
+- An automated structural audit is not manufacturer revalidation. Account for every census row, parse failure, inaccessible image/document and unresolved installation condition before reporting audit completion.
+- Update the numbered feature catalogue, owning module documentation and audit receipts when these behaviours change. Keep current implementation, qualified rollout and planned work explicitly distinguished.
 
 - Dependency security: `npm run audit:dependencies`
 - Logic changes: `npm run test -- <relevant test files>`

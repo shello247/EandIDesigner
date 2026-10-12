@@ -102,3 +102,5 @@ export type {
   SymbolBomTemplateDetail,
   SymbolBomTemplateLineDetail
 } from "../types";
+export { getItemWorkspaceOverview } from "../data/item-workspace";
+export type { ItemOverview } from "../data/item-workspace";

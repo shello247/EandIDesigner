@@ -3,10 +3,16 @@ import {
   findCanonicalMainWorktree,
   parseGitWorktreeList,
   resolveDevelopmentDatabaseUrl,
-  toPrismaSqliteFileUrl
+  toPrismaSqliteFileUrl,
+  toPrismaMaintenanceSqliteFileUrl
 } from "../development-runtime";
 
 describe("development runtime", () => {
+  it("pins maintenance locks and manual transactions without restricting the app pool", () => {
+    const file = process.platform === "win32" ? "C:/Workspace/prisma/fixture.db" : "/workspace/prisma/fixture.db";
+    expect(toPrismaMaintenanceSqliteFileUrl(file)).toBe(toPrismaSqliteFileUrl(file) + "?connection_limit=1");
+    expect(resolveDevelopmentDatabaseUrl({ canonicalDatabasePath: file })).toBe(toPrismaSqliteFileUrl(file));
+  });
   it("finds the canonical main worktree without truncating paths with spaces", () => {
     const worktrees = parseGitWorktreeList(
       [

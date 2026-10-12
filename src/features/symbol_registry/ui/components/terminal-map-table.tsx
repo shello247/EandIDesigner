@@ -18,6 +18,7 @@ import type {
   SymbolMetadata,
   SymbolElectricalDomain,
   SymbolTerminal,
+  SymbolTerminalElectricalRole,
   SymbolTerminalPanelSide,
   TerminalMapVerificationResult
 } from "../../data/schema";
@@ -42,6 +43,25 @@ const ELECTRICAL_DOMAIN_OPTIONS: Array<{
   { value: "shield", label: "Shield" },
   { value: "protective_earth", label: "PE" },
   { value: "signal_ground", label: "Signal ground" }
+];
+
+const ELECTRICAL_ROLE_OPTIONS: Array<{
+  value: SymbolTerminalElectricalRole | "";
+  label: string;
+}> = [
+  { value: "", label: "Not specified" },
+  { value: "power_line", label: "AC line" },
+  { value: "power_neutral", label: "AC neutral" },
+  { value: "dc_positive", label: "DC positive" },
+  { value: "dc_return", label: "DC return" },
+  { value: "analog_signal_positive", label: "Analog signal +" },
+  { value: "analog_signal_return", label: "Analog signal return" },
+  { value: "digital_signal", label: "Digital signal" },
+  { value: "communication_a", label: "Communication A / +" },
+  { value: "communication_b", label: "Communication B / -" },
+  { value: "shield", label: "Shield / drain" },
+  { value: "protective_earth", label: "Protective earth" },
+  { value: "other", label: "Other" }
 ];
 
 function cloneTerminals(metadata: SymbolMetadata): SymbolTerminal[] {
@@ -74,7 +94,7 @@ function normalizeTerminal(terminal: SymbolTerminal): SymbolTerminal {
       terminal.electricalDomains && terminal.electricalDomains.length > 0
         ? terminal.electricalDomains
         : undefined,
-    requiredForWiring: terminal.requiredForWiring
+    electricalRole: terminal.electricalRole
   };
 }
 
@@ -118,7 +138,7 @@ function VerificationReport({
         ) : (
           <div className="flex items-center gap-2 rounded-md border border-teal-100 bg-white px-3 py-2 text-xs font-semibold text-teal-700">
             <CheckCircle2 aria-hidden="true" size={14} />
-            No AI concerns returned. Manual engineering approval is still required.
+            No AI concerns returned. Check the terminal details manually before saving.
           </div>
         )}
       </div>
@@ -176,8 +196,7 @@ export function TerminalMapTable({
         key,
         label: key,
         function: "",
-        anchorKey: metadata.anchors[0]?.key ?? "",
-        requiredForWiring: true
+        anchorKey: metadata.anchors[0]?.key ?? ""
       }
     ]);
   };
@@ -254,7 +273,7 @@ export function TerminalMapTable({
             <th>Anchor</th>
             <th>Panel side</th>
             <th>Domains</th>
-            <th>Required</th>
+            <th>Electrical role</th>
           </tr>
         </thead>
         <tbody>
@@ -277,7 +296,11 @@ export function TerminalMapTable({
                     )?.label ?? domain
                 ).join(", ") || "Unknown / unrestricted"}
               </td>
-              <td>{terminal.requiredForWiring ? "Yes" : "No"}</td>
+              <td>
+                {ELECTRICAL_ROLE_OPTIONS.find(
+                  (option) => option.value === (terminal.electricalRole ?? "")
+                )?.label ?? "Not specified"}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -304,7 +327,7 @@ export function TerminalMapTable({
                   Edit terminal map
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  Update terminal rows, then save to refresh symbol validation.
+                  Update terminal rows, then save your changes.
                 </p>
               </div>
               <button
@@ -328,7 +351,7 @@ export function TerminalMapTable({
                     <th>Anchor</th>
                     <th>Panel side</th>
                     <th>Domains</th>
-                    <th>Required</th>
+                    <th>Electrical role</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -435,16 +458,25 @@ export function TerminalMapTable({
                         </div>
                       </td>
                       <td>
-                        <input
-                          aria-label={`Required for terminal ${terminal.key}`}
-                          type="checkbox"
-                          checked={terminal.requiredForWiring}
+                        <select
+                          aria-label={`Electrical role for terminal ${terminal.key}`}
+                          className="field-input min-w-48"
+                          value={terminal.electricalRole ?? ""}
                           onChange={(event) =>
                             updateDraftTerminal(index, {
-                              requiredForWiring: event.currentTarget.checked
+                              electricalRole:
+                                (event.currentTarget.value as
+                                  | SymbolTerminalElectricalRole
+                                  | "") || undefined
                             })
                           }
-                        />
+                        >
+                          {ELECTRICAL_ROLE_OPTIONS.map((option) => (
+                            <option key={option.value || "unspecified"} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td>
                         <button

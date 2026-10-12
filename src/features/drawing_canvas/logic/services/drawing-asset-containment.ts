@@ -150,7 +150,7 @@ export function createPanelEnclosurePlacement({
       model,
       prefix: PANEL_ENCLOSURE_TAG_PREFIX
     });
-  const placementId = `panel_${Date.now()}`;
+  const placementId = createDrawingAssetId().replace(/^asset_/, "panel_");
   const panelWidth = Math.max(MIN_PANEL_ENCLOSURE_WIDTH, width);
   const panelHeight = Math.max(MIN_PANEL_ENCLOSURE_HEIGHT, height);
   const sheet = {
@@ -187,6 +187,42 @@ export function createPanelEnclosurePlacement({
       height: panelHeight
     }
   };
+}
+
+/** Reuse engineering identity; a physical enclosure does not need a backplane yet. */
+export function createExistingPanelEnclosurePlacement({
+  model,
+  activeSheet,
+  assetId,
+  x,
+  y
+}: {
+  model: DrawingModel;
+  activeSheet: DrawingPackageSheet;
+  assetId: string;
+  x?: number;
+  y?: number;
+}): DrawingPlacement {
+  if (activeSheet.kind !== "drawing" || activeSheet.panelDrawingContext) {
+    throw new Error("Choose an ordinary drawing sheet for the physical panel layout.");
+  }
+  const panel = buildPanelAssetCatalog(model).find((entry) => entry.assetId === assetId);
+  if (!panel) throw new Error("This panel no longer exists. Choose an existing panel.");
+  if (activeSheet.placements.some((placement) =>
+    isGeneratedPanelEnclosurePlacement(placement) && placementAssetId(placement) === assetId
+  )) {
+    throw new Error(`${panel.tag} is already physically placed on this sheet. Select it to add a backplane.`);
+  }
+  const source = model.sheets.flatMap((sheet) => sheet.placements).find((placement) =>
+    isGeneratedPanelEnclosurePlacement(placement) && placementAssetId(placement) === assetId
+  );
+  return createPanelEnclosurePlacement({
+    model, activeSheet, assetId: panel.assetId, tag: panel.tag, title: panel.title,
+    kind: source?.enclosure?.kind ?? panel.kind,
+    width: source?.enclosure?.width,
+    height: source?.enclosure?.height,
+    x, y
+  });
 }
 
 export function buildPanelAssetCatalog(

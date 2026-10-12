@@ -11,7 +11,10 @@ import type {
 } from "../../data/schema";
 import { buildPanelAssetSchedule } from "./panel-asset-schedule";
 import { buildPanelBomProjection } from "./panel-bom-projection";
-import { buildPanelReportIndex } from "./panel-report-index";
+import {
+  buildPanelReportIndex,
+  type PanelReportIndex
+} from "./panel-report-index";
 import { buildPanelTerminalSchedule } from "./panel-terminal-schedule";
 import { buildPanelWireSchedule } from "./panel-wire-schedule";
 
@@ -58,6 +61,7 @@ export function buildPanelDeliverableBundle({
   scope,
   graph,
   quality,
+  index,
   bomByPanelAssetId
 }: {
   drawingId: string;
@@ -69,14 +73,17 @@ export function buildPanelDeliverableBundle({
   scope: PanelReportScope;
   graph: PanelConnectivityGraph;
   quality: PackagePanelDrawingQualityReport;
+  index?: PanelReportIndex;
   bomByPanelAssetId?: ReadonlyMap<string, GeneratedDrawingBom>;
 }): PanelDeliverableBundle {
   const panelIds = panelIdsForScope(graph, scope);
   const qcCounts = qualityForScope(quality, panelIds);
-  const reportIndex = buildPanelReportIndex({
-    graph,
-    qualityFindings: quality.reports.flatMap((report) => report.findings)
-  });
+  const reportIndex =
+    index ??
+    buildPanelReportIndex({
+      graph,
+      qualityFindings: quality.reports.flatMap((report) => report.findings)
+    });
   const panels = panelIds.flatMap((panelAssetId) => {
     const qualityReport = quality.reports.find((report) => report.panelAssetId === panelAssetId);
     if (!graph.assetsById.has(panelAssetId)) return [];

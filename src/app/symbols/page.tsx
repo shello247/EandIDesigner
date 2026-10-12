@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Plus } from "lucide-react";
-import { listSymbolCategories } from "@/features/symbol_categories/data/queries";
-import { SymbolCategoryManager } from "@/features/symbol_categories/ui/components/symbol-category-manager";
 import {
   listSymbolRegistryPage
 } from "@/features/symbol_registry/data/queries";
@@ -19,25 +17,15 @@ export default async function SymbolsPage({
 }) {
   const params = await searchParams;
   const input = symbolRegistryListInputSchema.parse({
-    categoryId: params.category,
+    deviceType: params.deviceType,
     page: params.page
   });
-  const [result, categories] = await Promise.all([
-    listSymbolRegistryPage(input),
-    listSymbolCategories()
-  ]);
-  const categoryExists =
-    !input.categoryId ||
-    categories.some((category) => category.id === input.categoryId);
-
-  if (!categoryExists) {
-    redirect("/symbols");
-  }
+  const result = await listSymbolRegistryPage(input);
 
   if (result.page !== input.page) {
     redirect(
       buildSymbolRegistryListUrl({
-        categoryId: input.categoryId,
+        deviceType: input.deviceType,
         page: result.page
       })
     );
@@ -48,7 +36,6 @@ export default async function SymbolsPage({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <h1 className="text-xl font-semibold tracking-normal">Symbol Registry</h1>
         <div className="flex flex-wrap gap-2">
-          <SymbolCategoryManager initialCategories={categories} />
           <Link href="/symbols/new" className="icon-button icon-button-primary">
             <Plus aria-hidden="true" size={18} />
             Create symbol
@@ -57,7 +44,6 @@ export default async function SymbolsPage({
       </div>
 
       <SymbolTable
-        categories={categories.map(({ id, name }) => ({ id, name }))}
         result={result}
       />
     </div>

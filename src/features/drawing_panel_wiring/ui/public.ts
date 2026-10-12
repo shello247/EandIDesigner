@@ -17,5 +17,3 @@ export {
 export { PanelPatternReviewDialog } from "./components/panel-pattern-review-dialog";
 export { PanelPatternWorkQueue } from "./components/panel-pattern-work-queue";
 export { PanelPatternDeleteDialog } from "./components/panel-pattern-delete-dialog";
-export { PanelDrawingReviewDialog } from "./components/panel-drawing-review-dialog";
-export { PanelRepairConfirmationDialog } from "./components/panel-repair-confirmation-dialog";

@@ -185,13 +185,20 @@ rejected. This release provides no autonomous AI caller or agent UI.
   connection anchors and are not persisted. Manual corrections store one
   `PanelTerminalMapping` override. Reset removes the override and returns to the
   inferred mapping when one exists.
-- Field mappings may target any associated panel asset, but only an `external` or
-  `single` terminal side. Internal, out-of-panel, missing, conflicting, and
-  occupied targets are rejected with structured reasons.
+- Field records may target an `internal`, `external`, or `single` physical
+  terminal side. Their engineering record kind remains a field connection, so
+  schedules and Connection Display filtering do not infer meaning from geometry.
+  Out-of-panel, missing, conflicting, and occupied targets are rejected with
+  structured reasons.
 - Terminal occupancy is indexed once per connectivity graph and separates
   conductor occupancy from structural jumper/bridge/bond occupancy. One
   conductor and one compatible structural relationship may coexist; conflicts
   within either channel remain loadable and are reported as repair work.
+- Conductor occupancy uses the physical asset, logical terminal, and terminal
+  side across the complete package. Repeated occurrences on different sheets
+  therefore share one landing limit. Canvas creation, endpoint editing,
+  copy/paste, and save validation use the same index; unchanged legacy conflicts
+  remain editable while new or worsened conflicts are rejected.
 - The Panel Engineering Workbench contains Equipment, External Terminations,
   Terminal Map, Internal Wires, and Connection Patterns views. Mapping changes
   use typed mutations and one canvas history commit; they never alter or
@@ -306,22 +313,18 @@ to a Backplane.
 
 ## Connectivity Quality Control
 
-- Panel Review derives deterministic findings from the package connectivity graph;
+- Panel Analysis derives deterministic findings from the package connectivity graph;
   it never inspects rendered SVG and does not persist a stale review snapshot.
-- There is no standalone review action in the drawing toolbar. Existing blocked
-  approval handling opens a review scoped to the affected physical panel;
-  a dedicated approval workflow is deferred. Findings include stable subjects,
-  source sheets, drawing objects, severity, and repair/navigation actions.
+- There is no standalone review action or repair dialog in the drawing editor.
+  Blocked approval opens the latest saved package in Panel Analysis. A dedicated
+  approval workflow is deferred. Findings include stable subjects, source sheets,
+  drawing objects, severity, evidence, and navigation targets.
 - Blocking errors cover identity conflicts, unresolved or over-occupied
   terminals, broken routes, invalid patterns, missing records, and panel-context
   mismatches. Warnings and information remain reviewable but do not block
   approval.
-- Approved-symbol `requiredForWiring` metadata becomes side-specific review data.
-  A generated feed-through terminal with an external field conductor also
-  requires an internal-side connection.
-- QC repairs are intentionally narrow: orphan or duplicate visual routes, stale
-  or redundant mapping overrides, and unreferenced duplicate occurrences. Every
-  repair requires confirmation and one drawing-history commit.
+- The narrow deterministic repair commands remain covered for possible future
+  workflows, but Panel Analysis V1 is read-only and exposes no repair controls.
 - Approval reruns package-wide panel QC on the server against the submitted model
   and current approved symbols. Any Detailed Panel blocking error preserves
   `needs_review`; field-only legacy packages retain their existing approval path.
@@ -346,9 +349,10 @@ The v2 drawing model remains unchanged. `panelDrawingContext`, `panelWiring`,
 `panelConnectionId`, and per-occurrence connection display are optional and
 additive. `sheet_only`, `internal_connected`, `external_connected`, and
 `all_connected` use the package connectivity graph to project existing
-canonical rows onto a selected symbol occurrence. Generated sided terminals map
-internal wires to TOP and external field connections to BOTTOM; generic and
-single-sided symbols are filtered by canonical wire kind instead of geometry.
+canonical rows onto a selected symbol occurrence. Generated sided terminals use
+their recorded physical anchors; internal/external filtering follows canonical
+wire kind even when a field record intentionally lands on an internal/TOP end.
+Generic and single-sided symbols use the same semantic filtering.
 Projection never creates records or changes terminal occupancy. No Prisma
 migration is required.
 

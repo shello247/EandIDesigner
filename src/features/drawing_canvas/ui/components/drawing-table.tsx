@@ -38,6 +38,7 @@ export function DrawingTable({ result }: { result: DrawingListPage }) {
         <thead>
           <tr>
             <th>Drawing</th>
+            <th>Project</th>
             <th>Status</th>
             <th>Sheets</th>
             <th>Updated</th>
@@ -54,6 +55,32 @@ export function DrawingTable({ result }: { result: DrawingListPage }) {
                 >
                   {drawing.title}
                 </Link>
+                {drawing.description ? (
+                  <p className="mt-1 max-w-xl text-xs text-slate-500">
+                    {drawing.description}
+                  </p>
+                ) : null}
+              </td>
+              <td>
+                {drawing.project ? (
+                  <div>
+                    <Link
+                      href={`/projects/${drawing.project.id}`}
+                      className="font-semibold text-slate-700 hover:text-teal-800"
+                    >
+                      {drawing.project.projectNumber
+                        ? `${drawing.project.projectNumber} — ${drawing.project.name}`
+                        : drawing.project.name}
+                    </Link>
+                    {drawing.project.status === "archived" ? (
+                      <span className="mt-1 block text-xs font-medium text-amber-700">
+                        Archived
+                      </span>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span className="text-slate-400">Unassigned</span>
+                )}
               </td>
               <td>{statusLabels[drawing.status]}</td>
               <td>{drawing.sheetCount}</td>

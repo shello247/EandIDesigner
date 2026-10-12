@@ -136,6 +136,9 @@ export function pasteClipboardToSheet(params: {
   assetMapping?: CopiedAssetResolutionMap;
 }): PasteClipboardResult {
   const target = params.model.sheets.find((sheet) => sheet.id === params.sheetId);
+  if (target?.kind === "title_sheet") {
+    throw new Error("Select a drawing sheet to paste drawing objects. The Title Sheet uses shared drawing information.");
+  }
 
   if (!target) {
     return {
