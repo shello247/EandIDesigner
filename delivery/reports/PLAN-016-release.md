@@ -55,6 +55,8 @@ PR #13 at ff32cc4 passed dependency audit, lint and types on GitHub. Run 3830665
 
 Added four guard cases and a complete rollback regression. Focused Standards/upgrade verification passed 31 tests in 10 files locally. Original CI failures remain visible. GitHub also warns about existing v4 action runtime deprecation and the upcoming ubuntu-latest image change; no protection or required check was disabled.
 
+The clean release checkout then passed all 1,308 unit tests in 202 files (157.81 s). GitHub run 38307341651 passed 1,307/1,308; the remaining timeout exposed the legacy required-for-wiring retirement command's EXCLUSIVE lock across pooled connections. Its CLI and synthetic fixtures now explicitly use one connection, with a regression for that configuration. Both maintenance suites passed 16 tests; timeout limits were not increased. This follows the [Prisma v6 connection-pool contract](https://www.prisma.io/docs/orm/v6/prisma-client/setup-and-configuration/databases-connections/connection-pool). No retirement command was run on live storage.
+
 ## Verification commands and limitations
 
 Use [release runbook](../../docs/application/releases/2026-10-12.md) for exact guarded commands. Do not bootstrap the canonical catalogue. No shared runtime build while engineers have unsaved work.

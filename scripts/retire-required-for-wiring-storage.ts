@@ -21,6 +21,13 @@ const TABLE_NAME = "SymbolVersion";
 const RETIRED_PROPERTY = "requiredForWiring";
 const ARCHIVE_DIRECTORY_NAME = "symbol-required-for-wiring-retirement";
 
+// This offline maintenance command holds SQLite EXCLUSIVE locking mode across
+// backup and verification. Every statement must reuse the same connection;
+// another pooled connection can block on the command's own exclusive lock.
+export function retirementDatabaseUrl(databasePath: string) {
+  return toPrismaSqliteFileUrl(databasePath) + "?connection_limit=1";
+}
+
 type SqlExecutor = {
   $queryRawUnsafe<T>(query: string, ...values: unknown[]): Promise<T>;
   $executeRawUnsafe(query: string, ...values: unknown[]): Promise<number>;
@@ -497,7 +504,7 @@ async function main() {
     ARCHIVE_DIRECTORY_NAME
   );
   const prisma = new PrismaClient({
-    datasourceUrl: toPrismaSqliteFileUrl(canonicalDatabasePath)
+    datasourceUrl: retirementDatabaseUrl(canonicalDatabasePath)
   });
 
   try {

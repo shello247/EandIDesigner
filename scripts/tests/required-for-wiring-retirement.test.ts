@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { toPrismaSqliteFileUrl } from "../development-runtime";
 import {
   parseRetirementArguments,
+  retirementDatabaseUrl,
   retireRequiredForWiringStorage
 } from "../retire-required-for-wiring-storage";
 
@@ -44,7 +45,7 @@ async function fixture() {
   const root = mkdtempSync(path.join(tmpdir(), "ei-required-wiring-retirement-"));
   const databasePath = path.join(root, "fixture.db");
   const prisma = new PrismaClient({
-    datasourceUrl: toPrismaSqliteFileUrl(databasePath)
+    datasourceUrl: retirementDatabaseUrl(databasePath)
   });
   clients.push(prisma);
   await prisma.$executeRawUnsafe(
@@ -102,6 +103,11 @@ afterEach(async () => {
 });
 
 describe("requiredForWiring metadata retirement", () => {
+  it("pins the offline exclusive-lock command to one SQLite connection", () => {
+    expect(retirementDatabaseUrl(path.resolve("synthetic.db"))).toBe(
+      toPrismaSqliteFileUrl(path.resolve("synthetic.db")) + "?connection_limit=1"
+    );
+  });
   it("accepts only the explicit apply flag", () => {
     expect(parseRetirementArguments([])).toEqual({ apply: false });
     expect(parseRetirementArguments(["--apply"])).toEqual({ apply: true });
